@@ -27,7 +27,7 @@ const REGIONS = [
 ];
 
 export function FilterBar({ onQuery, onReset }: FilterBarProps) {
-  const [collapsed, setCollapsed] = useState(false);
+  const [collapsed, setCollapsed] = useState(true);
   const [values, setValues] = useState<FilterValues>({
     name: "",
     region: "",

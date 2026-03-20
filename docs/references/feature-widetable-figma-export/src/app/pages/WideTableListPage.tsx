@@ -1,5 +1,6 @@
 import { useState, useMemo } from "react";
 import { useNavigate } from "react-router";
+import { Table2 } from "lucide-react";
 import { FilterBar } from "@/app/components/FilterBar";
 import { WideTableList, WideTableRow } from "@/app/components/WideTableList";
 import { Pagination } from "@/app/components/Pagination";
@@ -66,11 +67,21 @@ export function WideTableListPage() {
     <div className="min-h-full bg-gray-50/70">
       <main className="max-w-screen-2xl mx-auto px-6 py-6 flex flex-col gap-4">
         <div className="flex items-center gap-3">
-          <div>
-            <h1 className="text-gray-800">Feature WideTable</h1>
-            <p className="text-xs text-gray-400 mt-0.5">
-              Manage and monitor all WideTable instances across regions.
-            </p>
+          <div className="flex items-center gap-2.5">
+            <div className="w-7 h-7 rounded-lg bg-[#13c2c2] flex items-center justify-center shadow-sm">
+              <Table2 size={14} className="text-white" />
+            </div>
+            <div>
+              <h1
+                className="text-gray-800 leading-tight"
+                style={{ fontSize: "15px", fontWeight: 600 }}
+              >
+                Feature WideTable
+              </h1>
+              <p className="text-xs text-gray-400 mt-0.5">
+                Manage and monitor all WideTable instances across regions.
+              </p>
+            </div>
           </div>
         </div>
 

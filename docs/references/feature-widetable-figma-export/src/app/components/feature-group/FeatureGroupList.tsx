@@ -446,13 +446,22 @@ export default function FeatureGroupList() {
       <div className="bg-white border-b border-gray-200">
         <div className="px-6 py-3 flex items-center justify-between">
           <div className="flex items-center gap-3">
-            <div className="w-1 h-5 rounded-full" style={{ backgroundColor: "#13c2c2" }} />
-            <span className="text-gray-800" style={{ fontWeight: 600, fontSize: 16 }}>
-              Feature Groups
-            </span>
-            <span className="text-xs px-2 py-0.5 rounded-full bg-gray-100 text-gray-500">
-              {filtered.length} items
-            </span>
+            <div className="flex items-center gap-2.5">
+              <div className="w-7 h-7 rounded-lg bg-[#13c2c2] flex items-center justify-center shadow-sm">
+                <Layers size={14} className="text-white" />
+              </div>
+              <div className="flex items-center gap-2 flex-wrap">
+                <h1
+                  className="text-gray-800 leading-tight"
+                  style={{ fontSize: "15px", fontWeight: 600 }}
+                >
+                  Feature Groups
+                </h1>
+                <span className="text-xs px-2 py-0.5 rounded-full bg-gray-100 text-gray-500">
+                  {filtered.length} items
+                </span>
+              </div>
+            </div>
           </div>
           <div className="flex items-center gap-2">
             {/* Search */}
