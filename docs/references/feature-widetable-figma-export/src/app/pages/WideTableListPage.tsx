@@ -2,7 +2,8 @@ import { useState, useMemo } from "react";
 import { useNavigate } from "react-router";
 import { Table2 } from "lucide-react";
 import { FilterBar } from "@/app/components/FilterBar";
-import { WideTableList, WideTableRow } from "@/app/components/WideTableList";
+import { WideTableList, WideTableRow, Instance } from "@/app/components/WideTableList";
+import { DataReportModal, parseColumnCount } from "@/app/components/DataReportModal";
 import { Pagination } from "@/app/components/Pagination";
 import { AddWideTableModal, WideTableFormValues } from "@/app/components/AddWideTableModal";
 import { MOCK_WIDE_TABLES } from "@/data/mockWideTables";
@@ -21,6 +22,7 @@ export function WideTableListPage() {
   const [currentPage, setCurrentPage] = useState(1);
   const [pageSize, setPageSize] = useState(5);
   const [showAddModal, setShowAddModal] = useState(false);
+  const [reportInst, setReportInst] = useState<Instance | null>(null);
 
   const filtered = useMemo(() => {
     return MOCK_WIDE_TABLES.filter((row) => {
@@ -101,6 +103,10 @@ export function WideTableListPage() {
           onAdd={() => setShowAddModal(true)}
           onEdit={goCanvasEdit}
           onView={goCanvasInstance}
+          onReport={(_, inst) => setReportInst(inst)}
+          onTask={(_, inst) =>
+            navigate(`/wt/task/${encodeURIComponent(inst.id)}`)
+          }
           ownedByMe={ownedByMe}
           onOwnedByMeChange={(v) => {
             setOwnedByMe(v);
@@ -124,6 +130,16 @@ export function WideTableListPage() {
         <AddWideTableModal
           onClose={() => setShowAddModal(false)}
           onConfirm={goCanvasNew}
+        />
+      )}
+
+      {reportInst && (
+        <DataReportModal
+          key={reportInst.id}
+          variant="tabs"
+          rawColumnCount={parseColumnCount(reportInst.columnsCnt)}
+          cleanColumnCount={Math.max(1, parseColumnCount(reportInst.columnsCnt) - 4)}
+          onClose={() => setReportInst(null)}
         />
       )}
     </div>

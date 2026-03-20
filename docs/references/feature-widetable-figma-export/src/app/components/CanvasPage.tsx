@@ -3,12 +3,13 @@ import {
   ArrowLeft, Pencil, ChevronDown, History, Zap, Square,
   AlertCircle, X, Database, Layers, Minus, Plus,
   Maximize2, RotateCcw, GitBranch, Trash2, Search, Eye,
-  Copy, Check, Settings, Sparkles, Download,
+  Copy, Check, Settings, Sparkles,
 } from "lucide-react";
 import { WideTableFormValues } from "./AddWideTableModal";
 import { WideTableRow, Instance, InstanceStatus } from "./WideTableList";
 import { WideTableMetaModal } from "./WideTableMetaModal";
 import { TriggerInstanceModal } from "./TriggerInstanceModal";
+import { DataReportModal, parseColumnCount } from "./DataReportModal";
 
 // ─── Canvas constants ─────────────────────────────────────────────────────────
 const CANVAS_W = 1060;
@@ -280,103 +281,6 @@ function ReadonlyCopyRow({ label, value }: { label: string; value: string }) {
   );
 }
 
-// ─── Data quality report (modal) — shared by Data Ingestion / Data Cleaning ───
-const MOCK_REPORT_FEATURES = [
-  { name: "user_id", cnt: 2847392, cntUniq: 1200192, max: "—", min: "—", avg: "—", zcnt: 0, nullcnt: 0, negcnt: 0 },
-  { name: "age", cnt: 2847392, cntUniq: 98, max: "92", min: "18", avg: "34.2", zcnt: 120, nullcnt: 890, negcnt: 0 },
-  { name: "total_orders", cnt: 2847392, cntUniq: 156, max: "420", min: "0", avg: "12.4", zcnt: 40211, nullcnt: 0, negcnt: 0 },
-  { name: "credit_score", cnt: 2847392, cntUniq: 801, max: "850", min: "300", avg: "641", zcnt: 0, nullcnt: 1203, negcnt: 0 },
-];
-
-function QualityReportModal({ title, onClose }: { title: string; onClose: () => void }) {
-  const [q, setQ] = useState("");
-  const rows = MOCK_REPORT_FEATURES.filter(r => r.name.toLowerCase().includes(q.trim().toLowerCase()));
-  const downloadCsv = () => {
-    const head = ["Column Name","Cnt","Cnt Uniq","Max","Min","Avg","0 cnt","null cnt","neg cnt"];
-    const lines = [head.join(",")].concat(
-      MOCK_REPORT_FEATURES.map(r =>
-        [r.name, r.cnt, r.cntUniq, r.max, r.min, r.avg, r.zcnt, r.nullcnt, r.negcnt].join(",")
-      )
-    );
-    const blob = new Blob([lines.join("\n")], { type: "text/csv;charset=utf-8" });
-    const a = document.createElement("a");
-    a.href = URL.createObjectURL(blob);
-    a.download = "data-quality-report.csv";
-    a.click();
-    URL.revokeObjectURL(a.href);
-  };
-  return (
-    <div className="fixed inset-0 z-[120] flex items-center justify-center p-4 bg-black/50" onClick={onClose}>
-      <div
-        className="bg-white rounded-2xl shadow-2xl border border-gray-100 w-full max-w-5xl max-h-[90vh] flex flex-col overflow-hidden"
-        onClick={e => e.stopPropagation()}
-      >
-        <div className="px-5 py-3.5 border-b border-gray-100 flex items-center justify-between gap-3 bg-gradient-to-r from-teal-50/80 to-white">
-          <div className="flex items-center gap-2 min-w-0">
-            <div className="w-8 h-8 rounded-xl bg-teal-100 flex items-center justify-center shrink-0">
-              <Database size={15} className="text-teal-600" />
-            </div>
-            <div>
-              <div className="text-sm font-medium text-gray-800">{title}</div>
-              <div className="text-xs text-gray-400">Column-level statistics</div>
-            </div>
-          </div>
-          <div className="flex items-center gap-2 shrink-0">
-            <button
-              type="button"
-              onClick={downloadCsv}
-              className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs rounded-lg border border-gray-200 text-gray-600 hover:border-teal-300 hover:text-teal-700 hover:bg-teal-50/50 transition-all"
-            >
-              <Download size={13} /> Download CSV
-            </button>
-            <button type="button" onClick={onClose} className="p-1.5 rounded-lg text-gray-400 hover:bg-gray-100 hover:text-gray-600"><X size={16} /></button>
-          </div>
-        </div>
-        <div className="px-5 py-3 border-b border-gray-50">
-          <div className="relative max-w-sm">
-            <Search size={13} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
-            <input
-              value={q}
-              onChange={e => setQ(e.target.value)}
-              placeholder="Search feature / column name…"
-              className="w-full pl-9 pr-3 py-2 text-sm border border-gray-200 rounded-xl bg-gray-50 focus:outline-none focus:border-teal-400 focus:bg-white transition-all"
-            />
-          </div>
-        </div>
-        <div className="flex-1 overflow-auto">
-          <table className="w-full text-xs">
-            <thead className="sticky top-0 bg-gray-50 border-b border-gray-100">
-              <tr className="text-left text-gray-500">
-                {["Column Name","Cnt","Cnt Uniq","Max","Min","Avg","0 cnt","null cnt","neg cnt"].map(h => (
-                  <th key={h} className="px-3 py-2.5 font-medium whitespace-nowrap">{h}</th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {rows.map(r => (
-                <tr key={r.name} className="border-b border-gray-50 hover:bg-teal-50/30">
-                  <td className="px-3 py-2 font-mono text-gray-800">{r.name}</td>
-                  <td className="px-3 py-2 tabular-nums text-gray-700">{r.cnt.toLocaleString()}</td>
-                  <td className="px-3 py-2 tabular-nums text-gray-700">{r.cntUniq.toLocaleString()}</td>
-                  <td className="px-3 py-2 font-mono text-gray-600">{r.max}</td>
-                  <td className="px-3 py-2 font-mono text-gray-600">{r.min}</td>
-                  <td className="px-3 py-2 font-mono text-gray-600">{r.avg}</td>
-                  <td className="px-3 py-2 tabular-nums">{r.zcnt.toLocaleString()}</td>
-                  <td className="px-3 py-2 tabular-nums">{r.nullcnt.toLocaleString()}</td>
-                  <td className="px-3 py-2 tabular-nums">{r.negcnt.toLocaleString()}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-          {rows.length === 0 && (
-            <div className="py-12 text-center text-sm text-gray-400">No columns match your search.</div>
-          )}
-        </div>
-      </div>
-    </div>
-  );
-}
-
 // ─── Data Ingestion panel ─────────────────────────────────────────────────────
 function DataIngestionPanel({
   isInstanceView: _isInstanceView, nodeStatus, instance, onClose,
@@ -395,6 +299,9 @@ function DataIngestionPanel({
     rows: 2_847_392,
     cols: 42,
   };
+  const rawReportColumnCount = instance?.columnsCnt?.trim()
+    ? parseColumnCount(instance.columnsCnt)
+    : last.cols;
   const st = STATUS_STYLES[nodeStatus ?? "success"];
 
   return (
@@ -472,7 +379,12 @@ function DataIngestionPanel({
         </div>
       </div>
       {reportOpen && (
-        <QualityReportModal title="Raw Data Report" onClose={() => setReportOpen(false)} />
+        <DataReportModal
+          variant="single"
+          singleTitle="Raw Data Report"
+          columnCount={rawReportColumnCount}
+          onClose={() => setReportOpen(false)}
+        />
       )}
     </>
   );
@@ -505,6 +417,9 @@ function DataCleaningPanel({
     rows: 2_847_100,
     cols: 38,
   };
+  const cleanReportColumnCount = instance?.columnsCnt?.trim()
+    ? Math.max(1, parseColumnCount(instance.columnsCnt) - 4)
+    : last.cols;
   const st = STATUS_STYLES[nodeStatus ?? "success"];
 
   return (
@@ -661,7 +576,12 @@ function DataCleaningPanel({
         </div>
       </div>
       {reportOpen && (
-        <QualityReportModal title="Clean Data Report" onClose={() => setReportOpen(false)} />
+        <DataReportModal
+          variant="single"
+          singleTitle="Clean Data Report"
+          columnCount={cleanReportColumnCount}
+          onClose={() => setReportOpen(false)}
+        />
       )}
       {vmFullscreen && (
         <div className="fixed inset-0 z-[130] flex items-center justify-center p-6 bg-black/50" onClick={() => setVmFullscreen(null)}>
@@ -2016,13 +1936,13 @@ export function CanvasPage({ mode, formValues, row, initialInstanceId, onBack }:
               <button
                 onClick={() => viewMode !== "instance-view" && setShowMetaModal(true)}
                 disabled={viewMode === "instance-view"}
-                title={viewMode === "instance-view" ? "Only available in Config Canvas" : "Edit metadata"}
-                className={`flex items-center gap-1 px-1.5 py-0.5 text-xs rounded transition-all shrink-0 ${
+                title={viewMode === "instance-view" ? "Only available in Config Canvas" : "Edit table metadata"}
+                className={`flex items-center gap-1.5 px-2.5 py-1 text-xs font-medium rounded-lg border shadow-sm transition-all shrink-0 ${
                   viewMode === "instance-view"
-                    ? "text-gray-300 cursor-not-allowed"
-                    : "text-gray-400 hover:text-gray-700 hover:bg-gray-100 cursor-pointer"
+                    ? "text-gray-300 border-gray-100 bg-gray-50 cursor-not-allowed opacity-70"
+                    : "text-teal-700 border-teal-200 bg-gradient-to-b from-teal-50 to-white hover:border-teal-400 hover:shadow cursor-pointer"
                 }`}>
-                <Pencil size={10} /> Edit
+                <Pencil size={11} className="shrink-0" /> Edit Meta
               </button>
             </div>
           </div>
@@ -2056,8 +1976,8 @@ export function CanvasPage({ mode, formValues, row, initialInstanceId, onBack }:
               <div ref={historyRef} className="relative">
                 <button
                   onClick={() => setActiveDropdown(p => p === "history" ? null : "history")}
-                  className="flex items-center gap-1.5 px-3 py-1.5 text-xs text-gray-600 border border-gray-200 rounded-lg hover:border-gray-300 hover:bg-gray-50 transition-all">
-                  <History size={13} className="text-gray-500" /> Instance History
+                  className="flex items-center gap-1.5 px-3 py-1.5 text-xs text-slate-700 border-2 border-slate-300 bg-slate-50/90 rounded-lg hover:border-slate-400 hover:bg-white transition-all shadow-sm">
+                  <History size={13} className="text-slate-600" /> Instance History
                   <ChevronDown size={11} className={`text-gray-400 transition-transform ${activeDropdown === "history" ? "rotate-180" : ""}`} />
                 </button>
 
@@ -2111,7 +2031,7 @@ export function CanvasPage({ mode, formValues, row, initialInstanceId, onBack }:
                 <button
                   type="button"
                   onClick={() => { setShowExecConfig(true); setActiveDropdown(null); }}
-                  className="flex items-center gap-1.5 px-3 py-1.5 text-xs text-gray-700 border border-gray-200 rounded-lg hover:border-teal-300 hover:bg-teal-50/40 transition-all"
+                  className="flex items-center gap-1.5 px-3 py-1.5 text-xs text-teal-800 border-2 border-teal-400/80 bg-teal-50/70 rounded-lg hover:border-teal-500 hover:bg-teal-50 transition-all shadow-sm"
                 >
                   <Settings size={13} className="text-teal-600" /> Execute Config
                 </button>

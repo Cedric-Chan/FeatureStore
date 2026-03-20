@@ -10,6 +10,7 @@ import {
 import { FeatureGroupDetailPage } from "@/app/pages/FeatureGroupDetailPage";
 import { FeatureGroupListPage } from "@/app/pages/FeatureGroupListPage";
 import { FeatureMapPage } from "@/app/pages/FeatureMapPage";
+import { TaskMonitorPage } from "@/app/pages/TaskMonitorPage";
 
 export default function App() {
   return (
@@ -45,6 +46,7 @@ export default function App() {
         <Route path="/fg/:fgId" element={<FeatureGroupDetailPage />} />
         <Route path="/fm" element={<FeatureMapPage />} />
         <Route path="/wt" element={<WideTableListPage />} />
+        <Route path="/wt/task/:instanceId" element={<TaskMonitorPage />} />
       </Route>
 
       <Route path="*" element={<Navigate to="/wt" replace />} />

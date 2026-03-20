@@ -146,7 +146,7 @@ function ActionBtn({
       className={`text-xs px-1.5 py-0.5 transition-colors ${
         disabled
           ? "text-gray-300 cursor-not-allowed"
-          : colors[variant]
+          : `${colors[variant]} cursor-pointer`
       }`}
     >
       {label}
@@ -158,9 +158,13 @@ function ActionBtn({
 function InstanceRow({
   inst,
   onView,
+  onReport,
+  onTask,
 }: {
   inst: Instance;
   onView?: () => void;
+  onReport?: () => void;
+  onTask?: () => void;
 }) {
   const canKill = inst.status === "RUNNING";
   const canReport = inst.status === "SUCCESS";
@@ -198,8 +202,12 @@ function InstanceRow({
         <div className="flex items-center gap-0.5">
           <ActionBtn label="View" onClick={onView} />
           <ActionBtn label="Kill" variant="danger" disabled={!canKill} />
-          <ActionBtn label="Report" disabled={!canReport} />
-          <ActionBtn label="Task" />
+          <ActionBtn
+            label="Report"
+            disabled={!canReport}
+            onClick={canReport ? onReport : undefined}
+          />
+          <ActionBtn label="Task" onClick={onTask} />
         </div>
       </td>
     </tr>
@@ -213,12 +221,16 @@ function WideTableRowComponent({
   onToggle,
   onEdit,
   onView,
+  onReport,
+  onTask,
 }: {
   row: WideTableRow;
   isExpanded: boolean;
   onToggle: () => void;
   onEdit?: () => void;
   onView?: (instanceId: string) => void;
+  onReport?: (inst: Instance) => void;
+  onTask?: (inst: Instance) => void;
 }) {
   return (
     <>
@@ -346,6 +358,8 @@ function WideTableRowComponent({
                         key={inst.id}
                         inst={inst}
                         onView={onView ? () => onView(inst.id) : undefined}
+                        onReport={onReport ? () => onReport(inst) : undefined}
+                        onTask={onTask ? () => onTask(inst) : undefined}
                       />
                     ))
                   ) : (
@@ -374,11 +388,22 @@ interface WideTableListProps {
   onAdd: () => void;
   onEdit?: (row: WideTableRow) => void;
   onView?: (row: WideTableRow, instanceId: string) => void;
+  onReport?: (row: WideTableRow, inst: Instance) => void;
+  onTask?: (row: WideTableRow, inst: Instance) => void;
   ownedByMe?: boolean;
   onOwnedByMeChange?: (v: boolean) => void;
 }
 
-export function WideTableList({ data, onAdd, onEdit, onView, ownedByMe = false, onOwnedByMeChange }: WideTableListProps) {
+export function WideTableList({
+  data,
+  onAdd,
+  onEdit,
+  onView,
+  onReport,
+  onTask,
+  ownedByMe = false,
+  onOwnedByMeChange,
+}: WideTableListProps) {
   const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set());
 
   const toggle = (id: string) => {
@@ -485,6 +510,8 @@ export function WideTableList({ data, onAdd, onEdit, onView, ownedByMe = false, 
                 onToggle={() => toggle(row.id)}
                 onEdit={onEdit ? () => onEdit(row) : undefined}
                 onView={onView ? (instId) => onView(row, instId) : undefined}
+                onReport={onReport ? (inst) => onReport(row, inst) : undefined}
+                onTask={onTask ? (inst) => onTask(row, inst) : undefined}
               />
             ))}
           </tbody>
