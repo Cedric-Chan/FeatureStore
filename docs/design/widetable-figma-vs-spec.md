@@ -14,7 +14,7 @@
 
 | # | 主题 | 导出稿（zip） | 《产品原型图》§3.5 | 说明与确认项 |
 |---|------|----------------|---------------------|--------------|
-| A | **整页壳层** | 独立顶栏 `Feature Platform / WideTable` + 标题区副文案 | 侧栏内嵌列表，未要求独立 breadcrumb 顶栏 | 原型保留全局侧栏+顶栏标题；**不**复刻 zip 全宽顶栏（与 Feature Map 处理一致） |
+| A | **整页壳层** | 独立顶栏 `Feature Store / WideTable` + 标题区副文案 | 侧栏内嵌列表，未要求独立 breadcrumb 顶栏 | 原型保留全局侧栏+顶栏标题；**不**复刻 zip 全宽顶栏（与 Feature Map 处理一致） |
 | B | **筛选区** | 「Filters」卡片：NAME / REGION / OWNER / BIZ TEAM；**Query** 才应用；Reset；整块可 Collapse | 检索区字段类似；未强调「Filters」标题条与折叠头 | `#page-ts-list` 对齐 zip：**应用式 Query** + 折叠 |
 | C | **工具栏** | **Owned by me** 开关、Refresh、Column Settings、**Add WideTable** | §3.5.1 提右上角 Add、嵌套表；未写 Owned by me / Column Settings | 与导出一致：**Owned by me** 过滤 `cedric.chencan@seamoney.com`；Refresh/Settings 为占位 |
 | D | **外层列** | **WIDETABLE NAME、REGION、OWNER、BIZ TEAM、DESCRIPTION、UPDATE TIME、ACTION** | 列含 WideTable、Region、Owner、Biz Team、UpdateTime；**未单列 Description** | 与导出一致：增加 **Description** 列（截断 + tooltip） |
