@@ -8,6 +8,8 @@ import {
   CanvasNewRoute,
 } from "@/app/pages/CanvasPageRoutes";
 import { FeatureGroupDetailPage } from "@/app/pages/FeatureGroupDetailPage";
+import { FeatureGroupListPage } from "@/app/pages/FeatureGroupListPage";
+import { FeatureMapPage } from "@/app/pages/FeatureMapPage";
 
 export default function App() {
   return (
@@ -39,25 +41,9 @@ export default function App() {
             />
           }
         />
-        <Route
-          path="/fg"
-          element={
-            <MigratedPlaceholderPage
-              title="Feature Group"
-              description="List and explore feature groups. Aligns with legacy `page-fg-list`. Open a detail route at /fg/:fgId when implemented."
-            />
-          }
-        />
+        <Route path="/fg" element={<FeatureGroupListPage />} />
         <Route path="/fg/:fgId" element={<FeatureGroupDetailPage />} />
-        <Route
-          path="/fm"
-          element={
-            <MigratedPlaceholderPage
-              title="Feature Map"
-              description="Feature map canvas and catalog. Aligns with legacy `page-fm`."
-            />
-          }
-        />
+        <Route path="/fm" element={<FeatureMapPage />} />
         <Route path="/wt" element={<WideTableListPage />} />
       </Route>
 

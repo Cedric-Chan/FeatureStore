@@ -1,0 +1,222 @@
+import { Feature, Module } from "./types";
+
+export const mockFeatures: Feature[] = [
+  {
+    id: "f1",
+    name: "risk_score",
+    region: "TH",
+    featureGroup: "user_risk_score_fg",
+    module: "credit_risk",
+    entity: "user_id",
+    dataType: "FLOAT",
+    training: true,
+    serving: true,
+    updateTime: "2026-02-16 14:00",
+  },
+  {
+    id: "f2",
+    name: "risk_level",
+    region: "TH",
+    featureGroup: "user_risk_score_fg",
+    module: "credit_risk",
+    entity: "user_id",
+    dataType: "STRING",
+    training: true,
+    serving: true,
+    updateTime: "2026-02-16 14:00",
+  },
+  {
+    id: "f3",
+    name: "overdue_days_30",
+    region: "ID",
+    featureGroup: "user_risk_score_fg",
+    module: "credit_risk",
+    entity: "user_id",
+    dataType: "INT",
+    training: true,
+    serving: false,
+    updateTime: "2026-02-15 10:30",
+  },
+  {
+    id: "f4",
+    name: "acard_score",
+    region: "MX",
+    featureGroup: "mx_acard_realtime_fg",
+    module: "acard",
+    entity: "user_id",
+    dataType: "FLOAT",
+    training: true,
+    serving: true,
+    updateTime: "2026-02-14 18:45",
+  },
+  {
+    id: "f5",
+    name: "acard_tier",
+    region: "MX",
+    featureGroup: "mx_acard_realtime_fg",
+    module: "acard",
+    entity: "user_id",
+    dataType: "STRING",
+    training: true,
+    serving: true,
+    updateTime: "2026-02-14 18:45",
+  },
+  {
+    id: "f6",
+    name: "user_embedding_v3",
+    region: "TH",
+    featureGroup: "th_embedding_fg_v3",
+    module: "acard",
+    entity: "user_id",
+    dataType: "VECTOR",
+    training: true,
+    serving: true,
+    updateTime: "2026-02-11 16:16",
+  },
+  {
+    id: "f7",
+    name: "rec_score",
+    region: "SHOPEE_SG",
+    featureGroup: "dp_recommend_score_fg",
+    module: "recommend",
+    entity: "user_id",
+    dataType: "FLOAT",
+    training: false,
+    serving: false,
+    updateTime: "2026-02-04 17:03",
+  },
+  {
+    id: "f8",
+    name: "degree_centrality",
+    region: "TH",
+    featureGroup: "user_graph_relation_fg",
+    module: "graph",
+    entity: "user_id",
+    dataType: "FLOAT",
+    training: true,
+    serving: true,
+    updateTime: "2026-02-13 13:30",
+  },
+  {
+    id: "f9",
+    name: "credit_limit",
+    region: "PH",
+    featureGroup: "user_risk_score_fg",
+    module: "credit_risk",
+    entity: "user_id",
+    dataType: "FLOAT",
+    training: true,
+    serving: true,
+    updateTime: "2026-02-10 09:00",
+  },
+  {
+    id: "f10",
+    name: "payment_ratio",
+    region: "VN",
+    featureGroup: "user_risk_score_fg",
+    module: "credit_risk",
+    entity: "user_id",
+    dataType: "FLOAT",
+    training: true,
+    serving: false,
+    updateTime: "2026-02-09 11:20",
+  },
+  {
+    id: "f11",
+    name: "acard_limit",
+    region: "BR",
+    featureGroup: "mx_acard_realtime_fg",
+    module: "acard",
+    entity: "user_id",
+    dataType: "INT",
+    training: false,
+    serving: true,
+    updateTime: "2026-02-08 15:00",
+  },
+  {
+    id: "f12",
+    name: "rec_click_rate",
+    region: "SG",
+    featureGroup: "dp_recommend_score_fg",
+    module: "recommend",
+    entity: "user_id",
+    dataType: "FLOAT",
+    training: true,
+    serving: true,
+    updateTime: "2026-02-07 12:30",
+  },
+  {
+    id: "f13",
+    name: "graph_degree",
+    region: "TH",
+    featureGroup: "user_graph_relation_fg",
+    module: "graph",
+    entity: "user_id",
+    dataType: "INT",
+    training: true,
+    serving: false,
+    updateTime: "2026-02-06 08:45",
+  },
+];
+
+export const mockModules: Module[] = [
+  {
+    id: "m1",
+    name: "credit_risk",
+    groups: [
+      {
+        id: "g1",
+        name: "user_risk_score_fg",
+        features: mockFeatures.filter(
+          (f) => f.featureGroup === "user_risk_score_fg"
+        ),
+      },
+    ],
+  },
+  {
+    id: "m2",
+    name: "acard",
+    groups: [
+      {
+        id: "g2",
+        name: "mx_acard_realtime_fg",
+        features: mockFeatures.filter(
+          (f) => f.featureGroup === "mx_acard_realtime_fg"
+        ),
+      },
+      {
+        id: "g3",
+        name: "th_embedding_fg_v3",
+        features: mockFeatures.filter(
+          (f) => f.featureGroup === "th_embedding_fg_v3"
+        ),
+      },
+    ],
+  },
+  {
+    id: "m3",
+    name: "recommend",
+    groups: [
+      {
+        id: "g4",
+        name: "dp_recommend_score_fg",
+        features: mockFeatures.filter(
+          (f) => f.featureGroup === "dp_recommend_score_fg"
+        ),
+      },
+    ],
+  },
+  {
+    id: "m4",
+    name: "graph",
+    groups: [
+      {
+        id: "g5",
+        name: "user_graph_relation_fg",
+        features: mockFeatures.filter(
+          (f) => f.featureGroup === "user_graph_relation_fg"
+        ),
+      },
+    ],
+  },
+];
