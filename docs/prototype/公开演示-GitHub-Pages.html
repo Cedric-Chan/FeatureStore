@@ -1,0 +1,40 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>公开演示（GitHub Pages）说明</title>
+  <style>
+    body { font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; max-width: 40rem; margin: 2rem auto; padding: 0 1rem; line-height: 1.65; color: #333; }
+    h1 { font-size: 1.35rem; }
+    h2 { font-size: 1.05rem; margin-top: 1.5rem; }
+    code { background: #f5f5f5; padding: 0.15rem 0.4rem; border-radius: 4px; font-size: 0.88em; }
+    ol { padding-left: 1.2rem; }
+    li { margin: 0.35rem 0; }
+    .url { word-break: break-all; background: #f0fdfa; padding: 0.75rem 1rem; border-radius: 6px; border: 1px solid #b5f5ec; margin: 0.75rem 0; }
+    a { color: #08979c; }
+  </style>
+</head>
+<body>
+  <h1>用 GitHub Pages 发布演示（不用学 npm）</h1>
+  <p>仓库已配置自动流水线：只要你把代码推到 GitHub，云端会自动执行构建并更新<strong>公开网页</strong>，链接可长期分享给同事，效果接近 Figma 的 Published / Share link。</p>
+
+  <h2>你需要做的（只做一次）</h2>
+  <ol>
+    <li>在 <a href="https://github.com" target="_blank" rel="noopener">GitHub</a> 上新建一个空仓库，或把本仓库推上去。</li>
+    <li>打开该仓库网页 → <strong>Settings</strong>（设置）→ 左侧 <strong>Pages</strong>。</li>
+    <li>在 <strong>Build and deployment</strong> 里，<strong>Source</strong> 选 <strong>GitHub Actions</strong>（不要选 Deploy from a branch，除非你知道区别）。</li>
+    <li>回到仓库首页 → 顶部 <strong>Actions</strong>，确认名为 <strong>Deploy Feature Store (GitHub Pages)</strong> 的工作流在推送后出现；若失败，点进去看日志（一般是权限或分支名问题）。</li>
+  </ol>
+
+  <h2>演示网址长什么样</h2>
+  <p>一般格式如下（把「用户名」「仓库名」换成你的）：</p>
+  <div class="url">https://<strong>你的GitHub用户名</strong>.github.io/<strong>仓库名</strong>/</div>
+  <p>打开后就是最新的 React 交互原型。以后你改代码并 <strong>push</strong> 到默认分支（<code>main</code> 或 <code>master</code>），等几分钟流水线跑完，网页会自动更新。</p>
+
+  <h2>什么时候会重新发布</h2>
+  <p>当你推送的改动涉及 <code>docs/references/feature-widetable-figma-export/</code> 里的文件时，会自动重新构建。也可在 Actions 里手动 <strong>Run workflow</strong>。</p>
+
+  <p><a href="FEATURE_STORE.html">← 返回 FEATURE_STORE 入口</a></p>
+</body>
+</html>

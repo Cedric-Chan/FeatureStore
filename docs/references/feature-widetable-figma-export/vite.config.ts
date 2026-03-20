@@ -3,9 +3,17 @@ import path from 'path'
 import tailwindcss from '@tailwindcss/vite'
 import react from '@vitejs/plugin-react'
 
+// GitHub Pages project sites need e.g. /repo-name/ (set in CI via VITE_BASE_PATH).
+// Local / zip builds omit env → './'
+function viteBase(): string {
+  const p = process.env.VITE_BASE_PATH
+  if (!p || p.length === 0) return './'
+  const withSlash = p.startsWith('/') ? p : `/${p}`
+  return withSlash.endsWith('/') ? withSlash : `${withSlash}/`
+}
+
 export default defineConfig({
-  // Relative assets so dist/index.html opens from file:// or any static host path
-  base: "./",
+  base: viteBase(),
   plugins: [
     // The React and Tailwind plugins are both required for Make, even if
     // Tailwind is not being actively used – do not remove them

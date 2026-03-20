@@ -5,9 +5,11 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Online Feature Store — 演示入口</title>
   <style>
-    body { font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; max-width: 40rem; margin: 2rem auto; padding: 0 1rem; line-height: 1.6; color: #333; }
+    body { font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; max-width: 44rem; margin: 2rem auto; padding: 0 1rem; line-height: 1.6; color: #333; }
     h1 { font-size: 1.25rem; margin-bottom: 0.5rem; }
     .note { font-size: 0.875rem; color: #666; margin: 1rem 0; }
+    .highlight { background: #e6fffb; border: 1px solid #87e8de; border-radius: 8px; padding: 1rem 1.25rem; margin: 1rem 0; }
+    .highlight strong { display: block; margin-bottom: 0.5rem; color: #006d75; }
     a { color: #08979c; }
     code { background: #f5f5f5; padding: 0.1rem 0.35rem; border-radius: 4px; font-size: 0.85em; }
     ol { padding-left: 1.25rem; }
@@ -16,29 +18,23 @@
 </head>
 <body>
   <h1>Online Feature Store 交互演示</h1>
-  <p class="note">交互原型已迁移为 <strong>Vite + React</strong> 工程（唯一真源）。本页仅作入口说明。</p>
+  <p class="note">交互原型为 <strong>Vite + React</strong>（仓库内唯一真源）。</p>
 
-  <p><strong>方式 A — 本地开发（热更新）</strong></p>
-  <ol>
-    <li>在终端进入：<code class="path">docs/references/feature-widetable-figma-export</code></li>
-    <li>执行：<code>npm install</code> 然后 <code>npm run dev</code></li>
-    <li>浏览器打开终端里提示的本地地址（一般为 <code>http://127.0.0.1:5173</code>）。</li>
-  </ol>
+  <div class="highlight">
+    <strong>推荐：公开网页分享（类似 Figma Published，无需本地 npm）</strong>
+    <p style="margin:0 0 0.5rem 0">把本仓库放到 GitHub 后，流水线会自动把<strong>最新界面</strong>发布成固定网址，发链接给别人即可。</p>
+    <p style="margin:0;font-size:0.9rem">演示地址格式一般为：<br><code>https://你的用户名.github.io/你的仓库名/</code></p>
+    <p style="margin:0.75rem 0 0 0"><a href="./公开演示-GitHub-Pages.html">一步步说明（首次只需设置一次 Pages）</a></p>
+  </div>
 
-  <p><strong>方式 B — 构建后离线打开 / 打包分享</strong></p>
-  <ol>
-    <li>在同一目录执行：<code>npm run build</code>（或 <code>npm run build:demo</code>）。</li>
-    <li>生成目录 <code>dist/</code>。可将整个 <code>dist</code> 打成 zip 发给他人。</li>
-    <li>解压后直接双击 <code>dist/index.html</code> 用浏览器打开（路由使用 hash，无需服务器）。若遇安全策略限制，可在 <code>dist</code> 下执行：<code>python3 -m http.server 8765</code> 后访问 <code>http://127.0.0.1:8765</code>。</li>
-  </ol>
+  <p><strong>其他方式（可选）</strong></p>
+  <ul>
+    <li><strong>本地开发：</strong>进入 <code class="path">docs/references/feature-widetable-figma-export</code>，执行 <code>npm install</code> 与 <code>npm run dev</code>。</li>
+    <li><strong>离线 zip：</strong>同目录执行 <code>npm run build</code>，使用生成的 <code>dist</code> 打包分享。</li>
+    <li><strong>本文件夹预览：</strong>同目录执行 <code>npm run sync-prototype</code> 后，可打开 <a href="./feature-store-demo/index.html">feature-store-demo/index.html</a>（需本机先执行过同步）。</li>
+  </ul>
 
-  <p><strong>直接打开已构建的演示（相对本文件）</strong></p>
-  <p><a href="../references/feature-widetable-figma-export/dist/index.html">打开 dist/index.html</a></p>
-  <p class="note">若链接无效，请先完成上述 <code>npm run build</code> 以生成 <code>dist</code>。</p>
-
-  <p><strong>归档的旧版单文件原型（只读参考）</strong></p>
-  <p><a href="FEATURE_STORE.legacy.html">FEATURE_STORE.legacy.html</a>（原内联 HTML/JS 大文件，不再作为维护真源）。</p>
-
-  <p class="note"><strong>可选：</strong>部署到静态托管后，可将公网 URL 写在此处或 <code>docs/prototype/README.md</code>，便于分享「固定链接」。</p>
+  <p><strong>归档的旧版单文件原型（只读）</strong></p>
+  <p><a href="FEATURE_STORE.legacy.html">FEATURE_STORE.legacy.html</a></p>
 </body>
 </html>
