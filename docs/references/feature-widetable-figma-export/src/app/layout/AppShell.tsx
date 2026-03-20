@@ -78,10 +78,7 @@ export function AppShell() {
         </div>
       </aside>
 
-      <div className="flex-1 flex flex-col min-w-0">
-        <header className="h-12 shrink-0 bg-white border-b border-gray-200 flex items-center px-6 text-sm font-medium text-gray-800">
-          Feature Store
-        </header>
+      <div className="flex-1 flex flex-col min-w-0 min-h-0">
         <div className="flex-1 overflow-y-auto min-h-0">
           <Outlet />
         </div>
