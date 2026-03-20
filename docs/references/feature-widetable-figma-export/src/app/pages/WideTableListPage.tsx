@@ -1,6 +1,6 @@
 import { useState, useMemo } from "react";
 import { useNavigate } from "react-router";
-import { Table2 } from "lucide-react";
+import { RefreshCw, Table2 } from "lucide-react";
 import { FilterBar } from "@/app/components/FilterBar";
 import { WideTableList, WideTableRow, Instance } from "@/app/components/WideTableList";
 import { DataReportModal, parseColumnCount } from "@/app/components/DataReportModal";
@@ -85,27 +85,28 @@ export function WideTableListPage() {
   };
 
   return (
-    <div className="min-h-full bg-gray-50/70">
-      <main className="max-w-screen-2xl mx-auto px-6 py-6 flex flex-col gap-4">
-        <div className="flex items-center gap-3">
-          <div className="flex items-center gap-2.5">
-            <div className="w-7 h-7 rounded-lg bg-[#13c2c2] flex items-center justify-center shadow-sm">
-              <Table2 size={14} className="text-white" />
-            </div>
-            <div>
-              <h1
-                className="text-gray-800 leading-tight"
-                style={{ fontSize: "15px", fontWeight: 600 }}
-              >
-                Feature WideTable
-              </h1>
-              <p className="text-xs text-gray-400 mt-0.5">
-                Manage and monitor all WideTable instances across regions.
-              </p>
-            </div>
+    <div className="min-h-full bg-[#f5f7fa]">
+      <header className="bg-white border-b border-gray-100 px-6 py-3 flex items-center gap-3 shadow-sm">
+        <div className="flex items-center gap-2.5">
+          <div className="w-7 h-7 rounded-lg bg-[#13c2c2] flex items-center justify-center shadow-sm">
+            <Table2 size={14} className="text-white" />
+          </div>
+          <div>
+            <h1
+              className="text-gray-800 leading-tight"
+              style={{ fontSize: "15px", fontWeight: 600 }}
+            >
+              Feature WideTable
+            </h1>
           </div>
         </div>
+        <div className="ml-auto flex items-center gap-2 text-xs text-gray-400">
+          <RefreshCw size={11} />
+          <span>Last updated: 2026-02-23 10:00</span>
+        </div>
+      </header>
 
+      <main className="p-5 flex flex-col gap-4 max-w-screen-2xl mx-auto">
         <FilterBar
           onQuery={(vals) => {
             setFilterValues(vals);
