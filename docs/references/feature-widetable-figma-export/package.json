@@ -3,10 +3,11 @@
   "private": true,
   "version": "0.0.1",
   "type": "module",
+  "packageManager": "pnpm@9.15.9",
   "scripts": {
     "build": "vite build",
     "build:demo": "vite build",
-    "sync-prototype": "npm run build && node scripts/sync-prototype.mjs",
+    "sync-prototype": "pnpm run build && node scripts/sync-prototype.mjs",
     "dev": "vite"
   },
   "dependencies": {

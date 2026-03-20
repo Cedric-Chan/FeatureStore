@@ -35,22 +35,19 @@ jobs:
       - uses: actions/setup-node@v6
         with:
           node-version: "22"
-          cache: npm
-          cache-dependency-path: docs/references/feature-widetable-figma-export/package-lock.json
+          cache: pnpm
+          cache-dependency-path: docs/references/feature-widetable-figma-export/pnpm-lock.yaml
 
-      # NODE_ENV=production 时 npm 会省略 devDependencies（vite 在 devDependencies）
+      # 使用 pnpm 避免 GitHub Actions 上 npm 偶发 “Exit handler never called” 崩溃
       - name: Install dependencies
         working-directory: docs/references/feature-widetable-figma-export
-        env:
-          NODE_ENV: development
-        # npm install 比 npm ci 在部分 runner/npm 组合上更稳；仍由 package-lock 锁定版本
-        run: npm install --no-audit --no-fund
+        run: corepack enable && pnpm install --frozen-lockfile
 
       - name: Build
         working-directory: docs/references/feature-widetable-figma-export
         env:
           VITE_BASE_PATH: /${{ github.event.repository.name }}/
-        run: npm run build
+        run: pnpm run build
 
       - uses: actions/configure-pages@v5
 

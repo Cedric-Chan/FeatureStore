@@ -7,9 +7,11 @@
 
 ## 开发
 
+推荐使用 **pnpm**（与 CI / `pnpm-lock.yaml` 一致；也可用 `corepack enable` 后使用）：
+
 ```bash
-npm install
-npm run dev
+pnpm install
+pnpm dev
 ```
 
 在浏览器打开终端提示的本地地址（默认 `http://127.0.0.1:5173`）。
@@ -17,9 +19,9 @@ npm run dev
 ## 构建与分享
 
 ```bash
-npm run build
+pnpm run build
 # 或
-npm run build:demo
+pnpm run build:demo
 ```
 
 产物在 **`dist/`**（已配置 `base: './'`）。路由使用 **HashRouter**，便于本地 `file://` 打开。
@@ -27,7 +29,7 @@ npm run build:demo
 ### 同步到文档入口旁（便于 FEATURE_STORE.html 点击打开）
 
 ```bash
-npm run sync-prototype
+pnpm run sync-prototype
 ```
 
 会执行 `build` 并把 `dist/` 复制到 **`docs/prototype/feature-store-demo/`**，与 [`../../prototype/FEATURE_STORE.html`](../../prototype/FEATURE_STORE.html) 同级；避免从 `file://` 跨目录链到 `references/.../dist` 时被浏览器拦截。
@@ -42,7 +44,7 @@ python3 -m http.server 8765
 
 ### GitHub Pages（云端自动构建，推荐对外分享）
 
-仓库根目录 [`.github/workflows/deploy-feature-store-pages.yml`](../../../.github/workflows/deploy-feature-store-pages.yml) 会在推送至 `main`/`master` 且变更涉及本目录时，自动执行 `npm ci` + `npm run build`（并设置 `VITE_BASE_PATH=/仓库名/`），将 `dist` 部署到 GitHub Pages。
+仓库根目录 [`.github/workflows/deploy-feature-store-pages.yml`](../../../.github/workflows/deploy-feature-store-pages.yml) 会在推送至 `main`/`master` 且变更涉及本目录时，自动执行 `pnpm install --frozen-lockfile` + `pnpm run build`（并设置 `VITE_BASE_PATH=/仓库名/`），将 `dist` 部署到 GitHub Pages。
 
 首次请在 GitHub 仓库 **Settings → Pages → Source：GitHub Actions**。详细说明见 [`../../prototype/公开演示-GitHub-Pages.html`](../../prototype/公开演示-GitHub-Pages.html)。
 
@@ -58,4 +60,4 @@ python3 -m http.server 8765
 
 ## 原始说明（导出自带）
 
-`package.json` 中定义了 `build`、`dev`、`build:demo` 脚本。
+`package.json` 中定义了 `build`、`dev`、`build:demo` 脚本；锁文件为 **`pnpm-lock.yaml`**。
