@@ -25,7 +25,8 @@ jobs:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
     runs-on: ubuntu-latest
-    # GitHub 逐步弃用 Action 内置的 Node 20；与 Node 24 对齐，见官方 changelog
+    # 官方 Actions 运行时迁到 Node 24；此处用 FORCE_* 满足要求。
+    # 项目构建使用 Node 22 LTS：Node 24 下 npm ci 曾出现 “Exit handler never called” 无输出失败。
     env:
       FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
     steps:
@@ -33,16 +34,17 @@ jobs:
 
       - uses: actions/setup-node@v6
         with:
-          node-version: "24"
+          node-version: "22"
           cache: npm
           cache-dependency-path: docs/references/feature-widetable-figma-export/package-lock.json
 
-      # 部分 CI 环境 NODE_ENV=production 时 npm ci 会跳过 devDependencies（vite 在 devDependencies 中）
+      # NODE_ENV=production 时 npm 会省略 devDependencies（vite 在 devDependencies）
       - name: Install dependencies
         working-directory: docs/references/feature-widetable-figma-export
         env:
           NODE_ENV: development
-        run: npm ci
+        # npm install 比 npm ci 在部分 runner/npm 组合上更稳；仍由 package-lock 锁定版本
+        run: npm install --no-audit --no-fund
 
       - name: Build
         working-directory: docs/references/feature-widetable-figma-export
