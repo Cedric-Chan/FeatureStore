@@ -34,14 +34,18 @@ jobs:
           cache: npm
           cache-dependency-path: docs/references/feature-widetable-figma-export/package-lock.json
 
-      - name: Install and build
+      # 部分 CI 环境 NODE_ENV=production 时 npm ci 会跳过 devDependencies（vite 在 devDependencies 中）
+      - name: Install dependencies
         working-directory: docs/references/feature-widetable-figma-export
         env:
-          # 与 GitHub Pages 项目站路径一致：https://<owner>.github.io/<repo>/
+          NODE_ENV: development
+        run: npm ci
+
+      - name: Build
+        working-directory: docs/references/feature-widetable-figma-export
+        env:
           VITE_BASE_PATH: /${{ github.event.repository.name }}/
-        run: |
-          npm ci
-          npm run build
+        run: npm run build
 
       - uses: actions/configure-pages@v4
 
