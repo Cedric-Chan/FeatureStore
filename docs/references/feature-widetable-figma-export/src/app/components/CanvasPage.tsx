@@ -1,8 +1,9 @@
 import React, { useState, useRef, useEffect, useCallback } from "react";
 import {
   ArrowLeft, Pencil, ChevronDown, History, Zap, Square,
-  AlertCircle, X, Database, Play, Layers, Minus, Plus,
-  Maximize2, RotateCcw, GitBranch, Trash2, Flag, Search, Eye,
+  AlertCircle, X, Database, Layers, Minus, Plus,
+  Maximize2, RotateCcw, GitBranch, Trash2, Search, Eye,
+  Copy, Check, Settings, Sparkles, Download,
 } from "lucide-react";
 import { WideTableFormValues } from "./AddWideTableModal";
 import { WideTableRow, Instance, InstanceStatus } from "./WideTableList";
@@ -13,7 +14,7 @@ import { TriggerInstanceModal } from "./TriggerInstanceModal";
 const CANVAS_W = 1060;
 const CANVAS_H = 520;
 
-type NodeId = "A" | "B" | "C" | "D" | "E" | "F" | "G";
+type NodeId = "B" | "C" | "D" | "E" | "F" | "G";
 type NodeStatus = "waiting" | "cache_skipped" | "running" | "failed" | "success";
 
 interface NodeDef {
@@ -23,24 +24,18 @@ interface NodeDef {
   title: string; subtitle: string;
 }
 
-//  Layout (canvas 1060 × 520):
-//  Col-1 x=22   A  START (source)
-//  Col-2 x=168  B  Frame Table (source)
-//  Col-3 x=336  C/D/E  Feature Groups (feature)
-//  Col-4 x=548  F  Data Sink (sink)
-//  Col-5 x=790  G  End (end)
+//  Layout (canvas 1060 × 520) — no Start node; FG → Data Ingestion → Data Cleaning
+//  B Frame Table | C/D/E Feature Groups | F Data Ingestion | G Data Cleaning
 const INITIAL_NODES: NodeDef[] = [
-  { id: "A", type: "source",  x: 22,  y: 224, w: 124, h: 72,  title: "START",                    subtitle: "Trigger"             },
-  { id: "B", type: "source",  x: 168, y: 224, w: 144, h: 72,  title: "Frame Table",              subtitle: "Source Table"        },
-  { id: "C", type: "feature", x: 336, y: 108, w: 185, h: 72,  title: "user_profile_features",    subtitle: "Feature Group"       },
-  { id: "D", type: "feature", x: 336, y: 224, w: 185, h: 72,  title: "order_history_features",   subtitle: "Feature Group"       },
-  { id: "E", type: "feature", x: 336, y: 340, w: 185, h: 72,  title: "credit_behavior_features", subtitle: "Feature Group"       },
-  { id: "F", type: "sink",    x: 548, y: 224, w: 188, h: 72,  title: "Data Sink",                subtitle: "Sink Table Result"   },
-  { id: "G", type: "end",     x: 790, y: 224, w: 140, h: 72,  title: "End",                      subtitle: "Output · Global Vars" },
+  { id: "B", type: "source",  x: 96,  y: 224, w: 144, h: 72,  title: "Frame Table",              subtitle: "Source Table"         },
+  { id: "C", type: "feature", x: 300, y: 108, w: 185, h: 72,  title: "user_profile_features",    subtitle: "Feature Group"        },
+  { id: "D", type: "feature", x: 300, y: 224, w: 185, h: 72,  title: "order_history_features",   subtitle: "Feature Group"        },
+  { id: "E", type: "feature", x: 300, y: 340, w: 185, h: 72,  title: "credit_behavior_features", subtitle: "Feature Group"        },
+  { id: "F", type: "sink",    x: 536, y: 224, w: 200, h: 72,  title: "Data Ingestion",           subtitle: "Raw wide table · S3"  },
+  { id: "G", type: "end",     x: 788, y: 224, w: 168, h: 72,  title: "Data Cleaning",            subtitle: "Optional clean step"  },
 ];
 
 const EDGES: [NodeId, NodeId][] = [
-  ["A", "B"],
   ["B", "C"], ["B", "D"], ["B", "E"],
   ["C", "F"], ["D", "F"], ["E", "F"],
   ["F", "G"],
@@ -69,37 +64,22 @@ const EDGE_COLORS: Record<NodeStatus, string> = {
 
 function getMockNodeStatuses(s: InstanceStatus): Record<NodeId, NodeStatus> {
   switch (s) {
-    case "SUCCESS": return { A: "success",      B: "success",      C: "success",      D: "success", E: "success", F: "success", G: "success" };
-    case "FAILED":  return { A: "success",      B: "success",      C: "success",      D: "failed",  E: "waiting", F: "waiting", G: "waiting" };
-    case "RUNNING": return { A: "success",      B: "success",      C: "cache_skipped",D: "running", E: "waiting", F: "waiting", G: "waiting" };
-    case "PENDING": return { A: "waiting",      B: "waiting",      C: "waiting",      D: "waiting", E: "waiting", F: "waiting", G: "waiting" };
-    case "KILLED":  return { A: "success",      B: "cache_skipped",C: "failed",       D: "waiting", E: "waiting", F: "waiting", G: "waiting" };
+    case "SUCCESS": return { B: "success",      C: "success",      D: "success",      E: "success", F: "success", G: "success" };
+    case "FAILED":  return { B: "success",      C: "success",      D: "failed",       E: "waiting", F: "waiting", G: "waiting" };
+    case "RUNNING": return { B: "success",      C: "cache_skipped",D: "running",      E: "waiting", F: "waiting", G: "waiting" };
+    case "PENDING": return { B: "waiting",      C: "waiting",      D: "waiting",      E: "waiting", F: "waiting", G: "waiting" };
+    case "KILLED":  return { B: "cache_skipped",C: "failed",       D: "waiting",      E: "waiting", F: "waiting", G: "waiting" };
   }
 }
 
 function getMockLogs(id: NodeId, st: NodeStatus): string[] {
-  const t = { A: "14:05", B: "14:07", C: "14:14", D: "14:22", E: "14:35", F: "15:01", G: "15:04" }[id];
+  const t = { B: "14:07", C: "14:14", D: "14:22", E: "14:35", F: "15:01", G: "15:04" }[id];
   if (st === "waiting")       return [`[--:--] ◷ Waiting for upstream nodes...`];
   if (st === "cache_skipped") return [`[${t}:00] ⚡ Cache hit detected.`, `[${t}:01] ⚡ Skipping recompute, using cached output.`];
   if (st === "running")       return [`[${t}:00] → Starting computation...`, `[${t}:??] ⟳ Processing… (67%)`];
   if (st === "failed")        return [`[${t}:00] → Starting...`, `[${t}:09] ✗ OOM during aggregation step.`];
   return [`[${t}:00] → Starting...`, `[${t}:12] → Processing batch data...`, `[${t}:58] ✓ Completed.`];
 }
-
-const NODE_CONFIGS: Record<NodeId, {
-  scheduleFreq?: string;
-  frameTable?: string; partitionKey?: string;
-  featureSource?: string; featureKey?: string; featureCount?: number;
-  outputTable?: string; writeMode?: string; minRows?: string;
-}> = {
-  A: { scheduleFreq: "ONCE" },
-  B: { frameTable: "ods_entity_frame", partitionKey: "ds" },
-  C: { featureSource: "ods_user_profile",  featureKey: "ds", featureCount: 24 },
-  D: { featureSource: "ods_order_history", featureKey: "ds", featureCount: 31 },
-  E: { featureSource: "ods_credit_events", featureKey: "ds", featureCount: 18 },
-  F: { outputTable: "dwd_wide_feat_sink",  writeMode: "OVERWRITE", minRows: "1,000,000" },
-  G: {},
-};
 
 // ─── InstanceStatusBadge ──────────────────────────────────────────────────────
 function InstanceStatusBadge({ status, small }: { status: InstanceStatus; small?: boolean }) {
@@ -134,7 +114,11 @@ function PipelineNodeCard({
   const accent  = instanceView && ss ? ss.accent  : ts.accent;
   const iconBg  = instanceView && ss ? ss.iconBg  : ts.iconBg;
   const iconCol = instanceView && ss ? ss.iconColor : ts.iconColor;
-  const Icon = node.type === "source" ? Play : node.type === "feature" ? Layers : node.type === "end" ? Flag : Database;
+  const Icon =
+    node.id === "B" ? Database
+    : node.type === "feature" ? Layers
+    : node.type === "end" ? Sparkles
+    : Database;
 
   return (
     <div
@@ -252,10 +236,7 @@ function ZoomControls({ zoom, onZoom, onFit }: { zoom: number; onZoom: (d: numbe
   );
 }
 
-// ─── Data types ───────────────────────────────────────────────────────────────
-const DATA_TYPES = ["string", "int", "long", "float", "double", "boolean", "date", "timestamp", "array", "map"];
-
-// ─── Right Config Panel ────────────────────────────────────���──────────────────
+// ─── Right Config Panel ─────────────────────────────────────────────────────────
 function PanelSection({ title, children }: { title: string; children: React.ReactNode }) {
   return (
     <div>
@@ -273,121 +254,433 @@ function PanelRow({ label, value }: { label: string; value: string }) {
   );
 }
 
-// ─── Start Node Panel (stateful sub-component) ────────────────────────────────
-interface InputField { id: string; name: string; type: string; }
+// ─── Clipboard + read-only field ──────────────────────────────────────────────
+function copyToClipboard(text: string, onDone: () => void) {
+  void navigator.clipboard.writeText(text).then(() => onDone());
+}
 
-function StartNodePanel({ defaultFreq }: { defaultFreq: string }) {
-  const [fields, setFields] = useState<InputField[]>([]);
-  const [frequency, setFrequency] = useState(defaultFreq);
+function ReadonlyCopyRow({ label, value }: { label: string; value: string }) {
+  const [copied, setCopied] = useState(false);
+  useEffect(() => { if (!copied) return; const t = setTimeout(() => setCopied(false), 1600); return () => clearTimeout(t); }, [copied]);
+  return (
+    <div>
+      <div className="text-xs text-gray-500 mb-1.5">{label}</div>
+      <div className="flex items-start gap-2 rounded-xl border border-gray-200 bg-gray-50 px-3 py-2">
+        <span className="flex-1 text-xs font-mono text-gray-600 break-all leading-relaxed">{value}</span>
+        <button
+          type="button"
+          title="Copy"
+          onClick={() => copyToClipboard(value, () => setCopied(true))}
+          className="shrink-0 p-1.5 rounded-lg text-gray-400 hover:text-teal-600 hover:bg-teal-50 border border-transparent hover:border-teal-100 transition-all"
+        >
+          {copied ? <Check size={14} className="text-teal-500" /> : <Copy size={14} />}
+        </button>
+      </div>
+    </div>
+  );
+}
 
-  const addField = () =>
-    setFields(prev => [...prev, { id: `f-${Date.now()}`, name: "", type: "string" }]);
-  const removeField = (id: string) =>
-    setFields(prev => prev.filter(f => f.id !== id));
-  const updateField = (id: string, key: "name" | "type", val: string) =>
-    setFields(prev => prev.map(f => f.id === id ? { ...f, [key]: val } : f));
+// ─── Data quality report (modal) — shared by Data Ingestion / Data Cleaning ───
+const MOCK_REPORT_FEATURES = [
+  { name: "user_id", cnt: 2847392, cntUniq: 1200192, max: "—", min: "—", avg: "—", zcnt: 0, nullcnt: 0, negcnt: 0 },
+  { name: "age", cnt: 2847392, cntUniq: 98, max: "92", min: "18", avg: "34.2", zcnt: 120, nullcnt: 890, negcnt: 0 },
+  { name: "total_orders", cnt: 2847392, cntUniq: 156, max: "420", min: "0", avg: "12.4", zcnt: 40211, nullcnt: 0, negcnt: 0 },
+  { name: "credit_score", cnt: 2847392, cntUniq: 801, max: "850", min: "300", avg: "641", zcnt: 0, nullcnt: 1203, negcnt: 0 },
+];
 
-  const FREQ_OPTIONS = ["ONCE", "HOURLY", "DAILY", "WEEKLY", "MONTHLY"];
-  const FREQ_HINTS: Record<string, string> = {
-    ONCE:    "Manual trigger only — no automatic schedule",
-    HOURLY:  "Runs every hour automatically",
-    DAILY:   "Runs once per day at configured time",
-    WEEKLY:  "Runs once per week on configured day",
-    MONTHLY: "Runs once per month on configured date",
+function QualityReportModal({ title, onClose }: { title: string; onClose: () => void }) {
+  const [q, setQ] = useState("");
+  const rows = MOCK_REPORT_FEATURES.filter(r => r.name.toLowerCase().includes(q.trim().toLowerCase()));
+  const downloadCsv = () => {
+    const head = ["Column Name","Cnt","Cnt Uniq","Max","Min","Avg","0 cnt","null cnt","neg cnt"];
+    const lines = [head.join(",")].concat(
+      MOCK_REPORT_FEATURES.map(r =>
+        [r.name, r.cnt, r.cntUniq, r.max, r.min, r.avg, r.zcnt, r.nullcnt, r.negcnt].join(",")
+      )
+    );
+    const blob = new Blob([lines.join("\n")], { type: "text/csv;charset=utf-8" });
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(blob);
+    a.download = "data-quality-report.csv";
+    a.click();
+    URL.revokeObjectURL(a.href);
   };
+  return (
+    <div className="fixed inset-0 z-[120] flex items-center justify-center p-4 bg-black/50" onClick={onClose}>
+      <div
+        className="bg-white rounded-2xl shadow-2xl border border-gray-100 w-full max-w-5xl max-h-[90vh] flex flex-col overflow-hidden"
+        onClick={e => e.stopPropagation()}
+      >
+        <div className="px-5 py-3.5 border-b border-gray-100 flex items-center justify-between gap-3 bg-gradient-to-r from-teal-50/80 to-white">
+          <div className="flex items-center gap-2 min-w-0">
+            <div className="w-8 h-8 rounded-xl bg-teal-100 flex items-center justify-center shrink-0">
+              <Database size={15} className="text-teal-600" />
+            </div>
+            <div>
+              <div className="text-sm font-medium text-gray-800">{title}</div>
+              <div className="text-xs text-gray-400">Column-level statistics</div>
+            </div>
+          </div>
+          <div className="flex items-center gap-2 shrink-0">
+            <button
+              type="button"
+              onClick={downloadCsv}
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs rounded-lg border border-gray-200 text-gray-600 hover:border-teal-300 hover:text-teal-700 hover:bg-teal-50/50 transition-all"
+            >
+              <Download size={13} /> Download CSV
+            </button>
+            <button type="button" onClick={onClose} className="p-1.5 rounded-lg text-gray-400 hover:bg-gray-100 hover:text-gray-600"><X size={16} /></button>
+          </div>
+        </div>
+        <div className="px-5 py-3 border-b border-gray-50">
+          <div className="relative max-w-sm">
+            <Search size={13} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+            <input
+              value={q}
+              onChange={e => setQ(e.target.value)}
+              placeholder="Search feature / column name…"
+              className="w-full pl-9 pr-3 py-2 text-sm border border-gray-200 rounded-xl bg-gray-50 focus:outline-none focus:border-teal-400 focus:bg-white transition-all"
+            />
+          </div>
+        </div>
+        <div className="flex-1 overflow-auto">
+          <table className="w-full text-xs">
+            <thead className="sticky top-0 bg-gray-50 border-b border-gray-100">
+              <tr className="text-left text-gray-500">
+                {["Column Name","Cnt","Cnt Uniq","Max","Min","Avg","0 cnt","null cnt","neg cnt"].map(h => (
+                  <th key={h} className="px-3 py-2.5 font-medium whitespace-nowrap">{h}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map(r => (
+                <tr key={r.name} className="border-b border-gray-50 hover:bg-teal-50/30">
+                  <td className="px-3 py-2 font-mono text-gray-800">{r.name}</td>
+                  <td className="px-3 py-2 tabular-nums text-gray-700">{r.cnt.toLocaleString()}</td>
+                  <td className="px-3 py-2 tabular-nums text-gray-700">{r.cntUniq.toLocaleString()}</td>
+                  <td className="px-3 py-2 font-mono text-gray-600">{r.max}</td>
+                  <td className="px-3 py-2 font-mono text-gray-600">{r.min}</td>
+                  <td className="px-3 py-2 font-mono text-gray-600">{r.avg}</td>
+                  <td className="px-3 py-2 tabular-nums">{r.zcnt.toLocaleString()}</td>
+                  <td className="px-3 py-2 tabular-nums">{r.nullcnt.toLocaleString()}</td>
+                  <td className="px-3 py-2 tabular-nums">{r.negcnt.toLocaleString()}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+          {rows.length === 0 && (
+            <div className="py-12 text-center text-sm text-gray-400">No columns match your search.</div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─── Data Ingestion panel ─────────────────────────────────────────────────────
+function DataIngestionPanel({
+  isInstanceView: _isInstanceView, nodeStatus, instance, onClose,
+}: {
+  isInstanceView: boolean; nodeStatus?: NodeStatus; instance?: Instance; onClose: () => void;
+}) {
+  const [tab, setTab] = useState<"config"|"lastInstance">("config");
+  const [reportOpen, setReportOpen] = useState(false);
+  const rawTable = "feature_store.dwd_wide_raw_feat_v1";
+  const datePart = "ds";
+  const rawS3 = "s3://data-lake-prod/widetable/reports/ts_demo/20240315/raw_stats.json";
+
+  const last = {
+    instanceId: instance?.id ?? "inst_20240315_083012",
+    hiveTable: rawTable,
+    rows: 2_847_392,
+    cols: 42,
+  };
+  const st = STATUS_STYLES[nodeStatus ?? "success"];
 
   return (
     <>
-      {/* INPUT FIELD */}
-      <div>
-        <div className="text-xs mb-3" style={{ color: "#334155", fontWeight: 700, letterSpacing: "0.07em" }}>
-          INPUT FIELD
+      <div className="w-80 shrink-0 bg-white border-l border-gray-100 flex flex-col h-full overflow-hidden">
+        <div className="px-4 pt-3 pb-0 border-b border-gray-100 bg-amber-50/50">
+          <div className="flex items-start justify-between gap-2 pb-3">
+            <div className="flex items-center gap-2.5 min-w-0">
+              <div className="w-9 h-9 rounded-xl flex items-center justify-center shrink-0 bg-amber-100">
+                <Database size={15} className="text-amber-700" />
+              </div>
+              <div className="min-w-0">
+                <div className="text-sm text-gray-800">Data Ingestion</div>
+                <div className="text-xs text-gray-400">Raw wide table · S3 report</div>
+              </div>
+            </div>
+            <button type="button" onClick={onClose} className="p-1 text-gray-300 hover:text-gray-500 shrink-0 mt-0.5"><X size={13}/></button>
+          </div>
+          <div className="flex gap-0 -mb-px">
+            {(["config","lastInstance"] as const).map(t => (
+              <button key={t} type="button" onClick={() => setTab(t)}
+                className={`px-4 py-2 text-xs border-b-2 transition-colors ${
+                  tab === t ? "border-teal-500 text-teal-600" : "border-transparent text-gray-400 hover:text-gray-600"
+                }`}>
+                {t === "config" ? "Config" : "Last Instance"}
+              </button>
+            ))}
+          </div>
         </div>
-
-        {/* Field list */}
-        {fields.length > 0 && (
-          <div className="flex flex-col gap-2 mb-2">
-            {fields.map((f, idx) => (
-              <div key={f.id} className="border border-gray-200 rounded-xl px-3 pt-2.5 pb-2 bg-white">
-                {/* Row 1: index + name input */}
-                <div className="flex items-center gap-2 mb-2">
-                  <span className="text-xs text-gray-400 w-4 shrink-0 tabular-nums">{idx + 1}</span>
-                  <input
-                    type="text"
-                    value={f.name}
-                    onChange={e => updateField(f.id, "name", e.target.value)}
-                    placeholder="field name"
-                    className="flex-1 text-xs border border-gray-200 rounded-lg px-2.5 py-1.5 focus:outline-none focus:border-teal-400 placeholder:text-gray-300 bg-white text-gray-700"
-                  />
+        <div className="flex-1 overflow-y-auto px-4 py-4 flex flex-col gap-4">
+          {tab === "config" ? (
+            <>
+              <ReadonlyCopyRow label="Raw Data Result" value={rawTable} />
+              <div>
+                <div className="text-xs text-gray-500 mb-1.5">Date Partition</div>
+                <div className="rounded-xl border border-gray-200 bg-gray-50 px-3 py-2 text-xs font-mono text-gray-500">{datePart}</div>
+              </div>
+              <ReadonlyCopyRow label="Raw Data Report" value={rawS3} />
+            </>
+          ) : (
+            <>
+              <div className="flex items-center justify-between">
+                <span className="text-xs text-gray-500">Status</span>
+                <span className={`inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs ${st.badge} ${st.badgeText}`}>
+                  <span className={`w-1.5 h-1.5 rounded-full ${st.dot}`} />{st.label}
+                </span>
+              </div>
+              <div className="flex items-center justify-between gap-2">
+                <span className="text-xs text-gray-500 shrink-0">Instance ID</span>
+                <span className="text-xs text-gray-700 font-mono bg-gray-100 px-2 py-0.5 rounded-lg truncate">{last.instanceId}</span>
+              </div>
+              <ReadonlyCopyRow label="Raw Data Hive table" value={last.hiveTable} />
+              <div className="grid grid-cols-2 gap-2">
+                <div className="rounded-xl border border-gray-100 bg-gray-50 px-3 py-2.5 text-center">
+                  <div className="text-lg font-semibold text-teal-600 tabular-nums">{last.rows.toLocaleString()}</div>
+                  <div className="text-[10px] text-gray-400 uppercase tracking-wide mt-1">Rows</div>
                 </div>
-                {/* Row 2: type label + select + delete */}
-                <div className="flex items-center gap-2 pl-6">
-                  <span className="text-xs text-gray-400 shrink-0">type</span>
-                  <div className="relative flex-1">
-                    <select
-                      value={f.type}
-                      onChange={e => updateField(f.id, "type", e.target.value)}
-                      className="w-full appearance-none text-xs border border-gray-200 rounded-lg px-2.5 py-1.5 pr-6 focus:outline-none focus:border-teal-400 bg-white text-gray-700 cursor-pointer"
-                    >
-                      {DATA_TYPES.map(dt => (
-                        <option key={dt} value={dt}>{dt}</option>
-                      ))}
-                    </select>
-                    <ChevronDown size={11} className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
-                  </div>
-                  <button
-                    onClick={() => removeField(f.id)}
-                    className="p-1 text-gray-300 hover:text-red-400 transition-colors shrink-0"
-                  >
-                    <Trash2 size={13} />
-                  </button>
+                <div className="rounded-xl border border-gray-100 bg-gray-50 px-3 py-2.5 text-center">
+                  <div className="text-lg font-semibold text-sky-600 tabular-nums">{last.cols}</div>
+                  <div className="text-[10px] text-gray-400 uppercase tracking-wide mt-1">Columns</div>
                 </div>
               </div>
-            ))}
-          </div>
-        )}
-
-        {/* Empty state */}
-        {fields.length === 0 && (
-          <div className="border border-dashed border-gray-200 rounded-xl px-3 py-5 mb-2 text-center bg-gray-50/40">
-            <div className="text-xs text-gray-400 mb-0.5">No input parameters</div>
-            <div className="text-xs text-gray-300">Click + Add to define input fields</div>
-          </div>
-        )}
-
-        {/* Add button */}
-        <button
-          onClick={addField}
-          className="w-full flex items-center justify-center gap-1.5 text-xs text-gray-500 border border-dashed border-gray-200 rounded-xl py-2 hover:border-teal-400 hover:text-teal-600 hover:bg-teal-50/30 transition-all"
-        >
-          <Plus size={12} /> Add
-        </button>
-      </div>
-
-      {/* SCHEDULE */}
-      <div>
-        <div className="text-xs mb-3" style={{ color: "#334155", fontWeight: 700, letterSpacing: "0.07em" }}>
-          SCHEDULE
+              <button
+                type="button"
+                onClick={() => setReportOpen(true)}
+                className="w-full py-2.5 rounded-xl text-sm text-white bg-teal-500 hover:bg-teal-600 shadow-sm shadow-teal-200/80 transition-all"
+              >
+                Data Report
+              </button>
+            </>
+          )}
         </div>
-        <div className="text-xs text-gray-500 mb-1.5">Frequency</div>
-        <div className="relative mb-3">
-          <select
-            value={frequency}
-            onChange={e => setFrequency(e.target.value)}
-            className="w-full appearance-none border border-gray-200 rounded-xl px-3 py-2 text-sm text-gray-700 bg-white focus:outline-none focus:border-teal-400 cursor-pointer pr-8"
-          >
-            {FREQ_OPTIONS.map(opt => (
-              <option key={opt} value={opt}>{opt}</option>
-            ))}
-          </select>
-          <ChevronDown size={13} className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
-        </div>
-        {/* Hint box */}
-        <div className="flex items-start gap-2 bg-slate-50 border border-slate-100 rounded-xl px-3 py-2.5">
-          <Zap size={12} className="text-slate-400 mt-0.5 shrink-0" />
-          <span className="text-xs text-slate-400 leading-relaxed">{FREQ_HINTS[frequency] ?? ""}</span>
+        <div className="px-4 py-2 border-t border-gray-50">
+          <span className="text-xs text-gray-400">{tab === "lastInstance" ? "Node · Last Instance" : "Node · Config (read-only)"}</span>
         </div>
       </div>
+      {reportOpen && (
+        <QualityReportModal title="Raw Data Report" onClose={() => setReportOpen(false)} />
+      )}
+    </>
+  );
+}
+
+// ─── Data Cleaning panel ──────────────────────────────────────────────────────
+const FILLNA_METHODS = ["mean", "median", "constant", "forward_fill"] as const;
+
+function DataCleaningPanel({
+  isInstanceView: _isInstanceView, nodeStatus, instance, onClose,
+}: {
+  isInstanceView: boolean; nodeStatus?: NodeStatus; instance?: Instance; onClose: () => void;
+}) {
+  const [tab, setTab] = useState<"config"|"lastInstance">("config");
+  const [enabled, setEnabled] = useState(false);
+  const [fillnaRows, setFillnaRows] = useState<{ id: string; method: string; features: string }[]>([]);
+  const [vmRows, setVmRows] = useState<{ id: string; feature: string; sql: string }[]>([]);
+  const [vmFullscreen, setVmFullscreen] = useState<string | null>(null);
+  const [reportOpen, setReportOpen] = useState(false);
+
+  const cleanTable = "feature_store.dwd_wide_clean_feat_v1";
+  const cleanS3 = "s3://data-lake-prod/widetable/reports/ts_demo/20240315/clean_stats.json";
+
+  const addFillna = () => setFillnaRows(p => [...p, { id: `fn-${Date.now()}`, method: "mean", features: "" }]);
+  const addVm = () => setVmRows(p => [...p, { id: `vm-${Date.now()}`, feature: "", sql: "" }]);
+
+  const last = {
+    instanceId: instance?.id ?? "inst_20240315_083012",
+    hiveTable: cleanTable,
+    rows: 2_847_100,
+    cols: 38,
+  };
+  const st = STATUS_STYLES[nodeStatus ?? "success"];
+
+  return (
+    <>
+      <div className="w-80 shrink-0 bg-white border-l border-gray-100 flex flex-col h-full overflow-hidden">
+        <div className="px-4 pt-3 pb-0 border-b border-gray-100 bg-violet-50/40">
+          <div className="flex items-start justify-between gap-2 pb-3">
+            <div className="flex items-center gap-2.5 min-w-0">
+              <div className="w-9 h-9 rounded-xl flex items-center justify-center shrink-0 bg-violet-100">
+                <Sparkles size={15} className="text-violet-600" />
+              </div>
+              <div className="min-w-0">
+                <div className="text-sm text-gray-800">Data Cleaning</div>
+                <div className="text-xs text-gray-400">Fillna · Value mapping · Clean table</div>
+              </div>
+            </div>
+            <button type="button" onClick={onClose} className="p-1 text-gray-300 hover:text-gray-500 shrink-0 mt-0.5"><X size={13}/></button>
+          </div>
+          <div className="flex gap-0 -mb-px">
+            {(["config","lastInstance"] as const).map(t => (
+              <button key={t} type="button" onClick={() => setTab(t)}
+                className={`px-4 py-2 text-xs border-b-2 transition-colors ${
+                  tab === t ? "border-teal-500 text-teal-600" : "border-transparent text-gray-400 hover:text-gray-600"
+                }`}>
+                {t === "config" ? "Config" : "Last Instance"}
+              </button>
+            ))}
+          </div>
+        </div>
+        <div className="flex-1 overflow-y-auto px-4 py-4 flex flex-col gap-4">
+          {tab === "config" ? (
+            <>
+              <div className="flex items-center justify-between rounded-xl border border-gray-200 px-3 py-2.5 bg-gray-50/80">
+                <span className="text-sm text-gray-700">Data Cleaning</span>
+                <button
+                  type="button"
+                  role="switch"
+                  aria-checked={enabled}
+                  onClick={() => setEnabled(e => !e)}
+                  className={`relative w-11 h-6 rounded-full transition-colors ${enabled ? "bg-teal-500" : "bg-gray-200"}`}
+                >
+                  <span className={`absolute top-1 left-1 w-4 h-4 rounded-full bg-white shadow transition-transform ${enabled ? "translate-x-5" : ""}`} />
+                </button>
+              </div>
+              {enabled && (
+                <>
+                  <div>
+                    <div className="flex items-center justify-between mb-2">
+                      <span className="text-xs text-gray-500 tracking-wide">Fillna</span>
+                      <button type="button" onClick={addFillna} className="text-xs text-teal-600 hover:text-teal-700 font-medium">+ Add row</button>
+                    </div>
+                    <div className="flex flex-col gap-2">
+                      {fillnaRows.map((row, idx) => (
+                        <div key={row.id} className="rounded-xl border border-gray-200 p-3 space-y-2 bg-white">
+                          <div className="flex items-center justify-between">
+                            <span className="text-xs text-gray-400">#{idx + 1}</span>
+                            <button type="button" onClick={() => setFillnaRows(p => p.filter(r => r.id !== row.id))} className="text-gray-300 hover:text-red-400"><Trash2 size={13} /></button>
+                          </div>
+                          <select
+                            value={row.method}
+                            onChange={e => setFillnaRows(p => p.map(r => r.id === row.id ? { ...r, method: e.target.value } : r))}
+                            className="w-full text-xs border border-gray-200 rounded-lg px-2 py-1.5 bg-gray-50 focus:outline-none focus:border-teal-400"
+                          >
+                            {FILLNA_METHODS.map(m => <option key={m} value={m}>{m}</option>)}
+                          </select>
+                          <input
+                            value={row.features}
+                            onChange={e => setFillnaRows(p => p.map(r => r.id === row.id ? { ...r, features: e.target.value } : r))}
+                            placeholder="Feature names (comma-separated, fuzzy match)"
+                            className="w-full text-xs border border-gray-200 rounded-lg px-2 py-1.5 font-mono bg-gray-50 focus:outline-none focus:border-teal-400"
+                          />
+                        </div>
+                      ))}
+                      {fillnaRows.length === 0 && (
+                        <p className="text-xs text-gray-400 border border-dashed border-gray-200 rounded-xl py-4 text-center">No Fillna rules — optional</p>
+                      )}
+                    </div>
+                  </div>
+                  <div>
+                    <div className="flex items-center justify-between mb-2">
+                      <span className="text-xs text-gray-500 tracking-wide">Value Mapping</span>
+                      <button type="button" onClick={addVm} className="text-xs text-teal-600 hover:text-teal-700 font-medium">+ Add row</button>
+                    </div>
+                    <div className="flex flex-col gap-2">
+                      {vmRows.map((row, idx) => (
+                        <div key={row.id} className="rounded-xl border border-gray-200 p-3 space-y-2 bg-white">
+                          <div className="flex items-center justify-between">
+                            <span className="text-xs text-gray-400">#{idx + 1}</span>
+                            <div className="flex items-center gap-1">
+                              <button type="button" title="Expand SQL" onClick={() => setVmFullscreen(row.id)} className="p-1 rounded-lg text-gray-400 hover:text-teal-600 hover:bg-teal-50"><Maximize2 size={13} /></button>
+                              <button type="button" onClick={() => setVmRows(p => p.filter(r => r.id !== row.id))} className="text-gray-300 hover:text-red-400"><Trash2 size={13} /></button>
+                            </div>
+                          </div>
+                          <input
+                            value={row.feature}
+                            onChange={e => setVmRows(p => p.map(r => r.id === row.id ? { ...r, feature: e.target.value } : r))}
+                            placeholder="Feature name (fuzzy)"
+                            className="w-full text-xs border border-gray-200 rounded-lg px-2 py-1.5 font-mono"
+                          />
+                          <textarea
+                            value={row.sql}
+                            onChange={e => setVmRows(p => p.map(r => r.id === row.id ? { ...r, sql: e.target.value } : r))}
+                            rows={3}
+                            placeholder="SQL / CASE WHEN …"
+                            className="w-full text-xs font-mono border border-gray-200 rounded-lg px-2 py-1.5 bg-gray-50 resize-y focus:outline-none focus:border-teal-400"
+                          />
+                        </div>
+                      ))}
+                      {vmRows.length === 0 && (
+                        <p className="text-xs text-gray-400 border border-dashed border-gray-200 rounded-xl py-4 text-center">No value mappings — optional</p>
+                      )}
+                    </div>
+                  </div>
+                </>
+              )}
+              <ReadonlyCopyRow label="Clean Data Result" value={cleanTable} />
+              <ReadonlyCopyRow label="Clean Data Report" value={cleanS3} />
+            </>
+          ) : (
+            <>
+              <div className="flex items-center justify-between">
+                <span className="text-xs text-gray-500">Status</span>
+                <span className={`inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs ${st.badge} ${st.badgeText}`}>
+                  <span className={`w-1.5 h-1.5 rounded-full ${st.dot}`} />{st.label}
+                </span>
+              </div>
+              <div className="flex items-center justify-between gap-2">
+                <span className="text-xs text-gray-500 shrink-0">Instance ID</span>
+                <span className="text-xs text-gray-700 font-mono bg-gray-100 px-2 py-0.5 rounded-lg truncate">{last.instanceId}</span>
+              </div>
+              <ReadonlyCopyRow label="Clean Data Hive table" value={last.hiveTable} />
+              <div className="grid grid-cols-2 gap-2">
+                <div className="rounded-xl border border-gray-100 bg-gray-50 px-3 py-2.5 text-center">
+                  <div className="text-lg font-semibold text-violet-600 tabular-nums">{last.rows.toLocaleString()}</div>
+                  <div className="text-[10px] text-gray-400 uppercase tracking-wide mt-1">Rows</div>
+                </div>
+                <div className="rounded-xl border border-gray-100 bg-gray-50 px-3 py-2.5 text-center">
+                  <div className="text-lg font-semibold text-sky-600 tabular-nums">{last.cols}</div>
+                  <div className="text-[10px] text-gray-400 uppercase tracking-wide mt-1">Columns</div>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setReportOpen(true)}
+                className="w-full py-2.5 rounded-xl text-sm text-white bg-violet-500 hover:bg-violet-600 shadow-sm transition-all"
+              >
+                Clean Data Report
+              </button>
+            </>
+          )}
+        </div>
+        <div className="px-4 py-2 border-t border-gray-50">
+          <span className="text-xs text-gray-400">{!enabled && tab === "config" ? "Cleaning off — node kept; execution may skip clean step" : "Node · Data Cleaning"}</span>
+        </div>
+      </div>
+      {reportOpen && (
+        <QualityReportModal title="Clean Data Report" onClose={() => setReportOpen(false)} />
+      )}
+      {vmFullscreen && (
+        <div className="fixed inset-0 z-[130] flex items-center justify-center p-6 bg-black/50" onClick={() => setVmFullscreen(null)}>
+          <div className="bg-white rounded-2xl w-full max-w-3xl shadow-2xl border border-gray-100 flex flex-col max-h-[85vh]" onClick={e => e.stopPropagation()}>
+            <div className="px-4 py-3 border-b border-gray-100 flex justify-between items-center">
+              <span className="text-sm font-medium text-gray-800">SQL editor</span>
+              <button type="button" onClick={() => setVmFullscreen(null)} className="p-1 text-gray-400 hover:text-gray-600"><X size={16} /></button>
+            </div>
+            <textarea
+              value={vmRows.find(r => r.id === vmFullscreen)?.sql ?? ""}
+              onChange={e => setVmRows(p => p.map(r => r.id === vmFullscreen ? { ...r, sql: e.target.value } : r))}
+              className="flex-1 min-h-[240px] m-4 font-mono text-sm border border-gray-200 rounded-xl p-3 focus:outline-none focus:border-teal-400"
+            />
+            <div className="px-4 py-3 border-t border-gray-100 flex justify-end">
+              <button type="button" onClick={() => setVmFullscreen(null)} className="px-4 py-2 text-sm bg-teal-500 text-white rounded-lg hover:bg-teal-600">Done</button>
+            </div>
+          </div>
+        </div>
+      )}
     </>
   );
 }
@@ -479,15 +772,6 @@ function FieldLabel({ children, required }: { children: React.ReactNode; require
     </div>
   );
 }
-
-// ─── System variables for END node ────────────────────────────────────────────
-const SYSTEM_VARS = [
-  { name: "sys.user_id",         type: "String" },
-  { name: "sys.app_id",          type: "String" },
-  { name: "sys.workflow_id",     type: "String" },
-  { name: "sys.workflow_run_id", type: "String" },
-  { name: "sys.timestamp",       type: "Number" },
-];
 
 // ─── Frame Table Panel ────────────────────────────────────────────────────────
 function FrameTablePanel({ isInstanceView, nodeStatus, instance, onClose }: {
@@ -946,218 +1230,6 @@ function FrameTablePanel({ isInstanceView, nodeStatus, instance, onClose }: {
   );
 }
 
-// ─── End Node Panel ────────────────────────────────────────────────────────────
-interface OutputVar { id: string; name: string; boundVar: string; }
-
-function EndNodePanel({ isInstanceView, nodeStatus, instance, onClose }: {
-  isInstanceView: boolean; nodeStatus?: NodeStatus; instance?: Instance; onClose: () => void;
-}) {
-  const [activeTab, setActiveTab] = useState<"settings" | "lastrun">("settings");
-  const [vars, setVars] = useState<OutputVar[]>([]);
-  const [openDropId, setOpenDropId] = useState<string | null>(null);
-  const [search, setSearch] = useState("");
-
-  const addVar = () => setVars(p => [...p, { id: `v-${Date.now()}`, name: "", boundVar: "" }]);
-  const removeVar = (id: string) => setVars(p => p.filter(v => v.id !== id));
-  const updateVar = (id: string, key: "name" | "boundVar", val: string) =>
-    setVars(p => p.map(v => v.id === id ? { ...v, [key]: val } : v));
-
-  const filteredSys = SYSTEM_VARS.filter(s => s.name.toLowerCase().includes(search.toLowerCase()));
-
-  const logs = nodeStatus ? (() => {
-    const t = "15:04";
-    if (nodeStatus === "waiting")       return [`[--:--] ◷ Waiting for upstream nodes...`];
-    if (nodeStatus === "success")       return [`[${t}:00] → Publishing output variables...`, `[${t}:02] ✓ All variables bound and published.`];
-    if (nodeStatus === "failed")        return [`[${t}:00] → Publishing...`, `[${t}:01] ✗ Variable binding failed.`];
-    return [`[${t}:00] → Processing...`];
-  })() : [];
-
-  return (
-    <div className="w-80 shrink-0 bg-white border-l border-gray-100 flex flex-col h-full overflow-hidden">
-      {/* Header */}
-      <div className="px-4 py-3 border-b border-gray-100 flex items-start justify-between gap-2 bg-orange-50/50">
-        <div className="flex items-center gap-2.5 min-w-0">
-          <div className="w-10 h-10 rounded-xl flex items-center justify-center shrink-0 bg-orange-100">
-            <Flag size={16} className="text-orange-500" />
-          </div>
-          <div className="min-w-0">
-            <div className="text-sm text-gray-900">End</div>
-            <div className="text-xs text-gray-400">Output node · Global Variables</div>
-          </div>
-        </div>
-        <button onClick={onClose} className="p-1 text-gray-300 hover:text-gray-500 shrink-0"><X size={13} /></button>
-      </div>
-
-      {/* Tabs */}
-      <div className="flex border-b border-gray-100 shrink-0">
-        {(["settings", "lastrun"] as const).map(tab => (
-          <button key={tab} onClick={() => setActiveTab(tab)}
-            className={`flex-1 py-2.5 text-xs font-medium transition-colors relative ${
-              activeTab === tab
-                ? "text-orange-500 after:absolute after:bottom-0 after:left-0 after:right-0 after:h-0.5 after:bg-orange-500"
-                : "text-gray-400 hover:text-gray-600"
-            }`}>
-            {tab === "settings" ? "Settings" : "Last Run"}
-          </button>
-        ))}
-      </div>
-
-      {/* Content */}
-      <div className="flex-1 overflow-y-auto px-4 py-4 flex flex-col gap-4">
-        {activeTab === "settings" ? (
-          <>
-            {/* OUTPUT VARIABLE section */}
-            <div>
-              <div className="flex items-center justify-between mb-3">
-                <span className="text-xs tracking-widest" style={{ color: "#1e293b", fontWeight: 700, letterSpacing: "0.08em" }}>
-                  OUTPUT VARIABLE <span className="text-orange-500">*</span>
-                </span>
-                <button onClick={addVar}
-                  className="w-6 h-6 rounded-lg border border-gray-200 flex items-center justify-center text-gray-500 hover:border-teal-400 hover:text-teal-600 hover:bg-teal-50 transition-all">
-                  <Plus size={12} />
-                </button>
-              </div>
-
-              {/* Field list */}
-              {vars.length > 0 && (
-                <div className="flex flex-col gap-2 mb-2">
-                  {vars.map((v, idx) => (
-                    <div key={v.id} className="border border-gray-200 rounded-xl px-3 pt-2.5 pb-2 bg-white relative">
-                      {/* Row 1: index + variable name */}
-                      <div className="flex items-center gap-2 mb-2">
-                        <span className="text-xs text-gray-400 w-4 shrink-0 tabular-nums">{idx + 1}</span>
-                        <input
-                          type="text"
-                          value={v.name}
-                          onChange={e => updateVar(v.id, "name", e.target.value)}
-                          placeholder="variable name"
-                          className="flex-1 text-xs border border-gray-200 rounded-lg px-2.5 py-1.5 focus:outline-none focus:border-orange-400 placeholder:text-gray-300 bg-white text-gray-700 font-mono"
-                        />
-                      </div>
-                      {/* Row 2: arrow + set variable dropdown + trash */}
-                      <div className="flex items-center gap-2 pl-6">
-                        <span className="text-gray-300 text-xs shrink-0">→</span>
-                        <div className="relative flex-1">
-                          <button
-                            onClick={() => { setOpenDropId(openDropId === v.id ? null : v.id); setSearch(""); }}
-                            className="w-full flex items-center gap-1.5 border border-gray-200 rounded-lg px-2.5 py-1.5 text-xs text-gray-500 hover:border-orange-300 hover:bg-orange-50/30 transition-all"
-                          >
-                            <span className="w-4 h-4 rounded shrink-0 flex items-center justify-center bg-orange-100">
-                              <span className="text-orange-500" style={{ fontSize: 9, fontWeight: 700 }}>{"{x}"}</span>
-                            </span>
-                            <span className={`flex-1 text-left ${v.boundVar ? "text-gray-700 font-mono" : "text-gray-400"}`}>
-                              {v.boundVar || "Set variable"}
-                            </span>
-                            <ChevronDown size={11} className="text-gray-400 shrink-0" />
-                          </button>
-
-                          {/* Dropdown */}
-                          {openDropId === v.id && (
-                            <div className="absolute left-0 right-0 top-full mt-1 bg-white border border-gray-200 rounded-xl shadow-xl z-50 overflow-hidden"
-                              style={{ minWidth: 220 }}>
-                              {/* Search */}
-                              <div className="flex items-center gap-2 px-3 py-2 border-b border-gray-100">
-                                <Search size={12} className="text-gray-400 shrink-0" />
-                                <input
-                                  type="text" value={search} onChange={e => setSearch(e.target.value)}
-                                  placeholder="Search variable"
-                                  className="flex-1 text-xs bg-transparent focus:outline-none placeholder:text-gray-300 text-gray-600"
-                                  autoFocus
-                                />
-                              </div>
-                              {/* System vars */}
-                              <div className="p-2">
-                                <div className="text-xs text-gray-400 px-2 py-1 tracking-widest" style={{ fontSize: 10, fontWeight: 700 }}>SYSTEM</div>
-                                {filteredSys.map(sv => (
-                                  <button key={sv.name}
-                                    onClick={() => { updateVar(v.id, "boundVar", sv.name); setOpenDropId(null); }}
-                                    className="w-full flex items-center gap-2.5 px-2 py-1.5 rounded-lg hover:bg-orange-50 transition-colors text-left">
-                                    <span className="w-5 h-5 rounded shrink-0 flex items-center justify-center bg-orange-100">
-                                      <span className="text-orange-500" style={{ fontSize: 8, fontWeight: 700 }}>{"{x}"}</span>
-                                    </span>
-                                    <span className="flex-1 text-xs text-gray-700 font-mono">{sv.name}</span>
-                                    <span className="text-xs text-gray-400">{sv.type}</span>
-                                  </button>
-                                ))}
-                                {filteredSys.length === 0 && (
-                                  <div className="px-2 py-3 text-center text-xs text-gray-400">No variables found</div>
-                                )}
-                              </div>
-                            </div>
-                          )}
-                        </div>
-                        <button onClick={() => removeVar(v.id)} className="p-1 text-gray-300 hover:text-red-400 transition-colors shrink-0">
-                          <Trash2 size={13} />
-                        </button>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              )}
-
-              {/* Empty state */}
-              {vars.length === 0 && (
-                <div className="border border-dashed border-gray-200 rounded-xl py-8 mb-2 text-center bg-gray-50/40">
-                  <Flag size={22} className="text-gray-200 mx-auto mb-2" />
-                  <div className="text-xs text-gray-400 mb-0.5">No output variables defined</div>
-                  <div className="text-xs text-gray-300">Click + to bind global variables</div>
-                </div>
-              )}
-
-              {/* Add Variable button */}
-              <button onClick={addVar}
-                className="w-full flex items-center justify-center gap-2 py-2.5 border border-dashed border-gray-200 rounded-xl text-sm text-gray-500 hover:border-orange-300 hover:text-orange-500 hover:bg-orange-50/30 transition-all">
-                <Plus size={14} /> Add Variable
-              </button>
-            </div>
-
-            {/* Info box */}
-            <div className="border border-gray-100 rounded-xl px-3.5 py-3 bg-gray-50/60 text-xs text-gray-400 leading-relaxed">
-              Output variables are published as{" "}
-              <code className="font-mono text-gray-600 bg-gray-100 px-1 py-0.5 rounded">global variables</code>{" "}
-              after the pipeline completes. Downstream workflows or systems can reference them by name.
-            </div>
-          </>
-        ) : (
-          /* Last Run tab */
-          <>
-            {isInstanceView && nodeStatus ? (
-              <>
-                <PanelSection title="EXECUTION STATUS">
-                  <span className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-xs w-fit ${STATUS_STYLES[nodeStatus].badge} ${STATUS_STYLES[nodeStatus].badgeText}`}>
-                    <span className={`w-1.5 h-1.5 rounded-full ${STATUS_STYLES[nodeStatus].dot}`} />{STATUS_STYLES[nodeStatus].label}
-                  </span>
-                </PanelSection>
-                {instance && (
-                  <PanelSection title="TIMELINE">
-                    <PanelRow label="Created"  value={instance.createTime || "—"} />
-                    <PanelRow label="Started"  value={instance.startTime  || "—"} />
-                    <PanelRow label="Finished" value={instance.finishTime || "—"} />
-                    <PanelRow label="Duration" value={instance.duration   || "—"} />
-                  </PanelSection>
-                )}
-                <PanelSection title="LOGS">
-                  <div className="bg-gray-900 rounded-lg px-2.5 py-2 flex flex-col gap-1">
-                    {logs.map((l, i) => (
-                      <span key={i} className="text-xs text-gray-300 font-mono leading-relaxed">{l}</span>
-                    ))}
-                  </div>
-                </PanelSection>
-              </>
-            ) : (
-              <div className="flex flex-col items-center justify-center py-10 text-center gap-2">
-                <Flag size={24} className="text-gray-200" />
-                <div className="text-xs text-gray-400">No run data available</div>
-                <div className="text-xs text-gray-300">Trigger an instance to see execution results</div>
-              </div>
-            )}
-          </>
-        )}
-      </div>
-    </div>
-  );
-}
-
 // ─── Feature Group Panel ───────────────────────────────────────────────────────
 interface FGDef {
   name: string; dataServer: string; schema: string;
@@ -1578,96 +1650,103 @@ function NodeConfigPanel({
   node: NodeDef; isInstanceView: boolean;
   nodeStatus?: NodeStatus; instance?: Instance; onClose: () => void;
 }) {
-  // B → Frame Table node gets its own dedicated panel
   if (node.id === "B") {
     return <FrameTablePanel isInstanceView={isInstanceView} nodeStatus={nodeStatus} instance={instance} onClose={onClose} />;
   }
-  // G → END node gets its own dedicated panel
-  if (node.id === "G") {
-    return <EndNodePanel isInstanceView={isInstanceView} nodeStatus={nodeStatus} instance={instance} onClose={onClose} />;
+  if (node.id === "F") {
+    return <DataIngestionPanel isInstanceView={isInstanceView} nodeStatus={nodeStatus} instance={instance} onClose={onClose} />;
   }
-  // C / D / E → Feature Group dedicated panel
+  if (node.id === "G") {
+    return <DataCleaningPanel isInstanceView={isInstanceView} nodeStatus={nodeStatus} instance={instance} onClose={onClose} />;
+  }
   if (node.type === "feature") {
     return <FeatureGroupPanel nodeId={node.id} isInstanceView={isInstanceView} nodeStatus={nodeStatus} instance={instance} onClose={onClose} />;
   }
+  return null;
+}
 
-  const cfg = NODE_CONFIGS[node.id];
-  const ts = TYPE_STYLES[node.type];
-  const isStartNode = node.id === "A";
-  const Icon = isStartNode ? Zap : node.type === "feature" ? Layers : node.type === "sink" ? Database : Play;
-  const logs = nodeStatus ? getMockLogs(node.id, nodeStatus) : [];
+function parseCronEnglish(expr: string): { valid: boolean; english: string } {
+  const t = expr.trim();
+  if (!t) return { valid: false, english: "Enter a cron expression" };
+  const parts = t.split(/\s+/);
+  const core = parts.length === 6 ? parts.slice(1) : parts;
+  if (core.length !== 5) return { valid: false, english: "Use 5 fields (or 6 with seconds)" };
+  const [min, hour, dom, month, dow] = core;
+  const fieldOk = (s: string) => /^[\d\*\-\/,\?]+$/.test(s);
+  if (![min, hour, dom, month, dow].every(fieldOk)) return { valid: false, english: "Invalid characters in field" };
+  if ((dom === "*" || dom === "?") && month === "*" && (dow === "*" || dow === "?") && /^\d+$/.test(min) && /^\d+$/.test(hour)) {
+    const h = parseInt(hour, 10); const m = parseInt(min, 10);
+    const hh = h % 12 || 12;
+    const ampm = h >= 12 ? "pm" : "am";
+    return { valid: true, english: `Run at ${hh}:${String(m).padStart(2, "0")} ${ampm} every day` };
+  }
+  return { valid: true, english: "Schedule active (English preview is simplified in prototype)" };
+}
 
+function ExecuteConfigModal({ open, onClose }: { open: boolean; onClose: () => void }) {
+  const [resource, setResource] = useState<"normal"|"high">("normal");
+  const [queue, setQueue] = useState<"low"|"medium"|"high">("low");
+  const [sched, setSched] = useState<"once"|"cron">("once");
+  const [cronExpr, setCronExpr] = useState("0 6 * * *");
+  const cron = parseCronEnglish(cronExpr);
+
+  if (!open) return null;
   return (
-    <div className="w-72 shrink-0 bg-white border-l border-gray-100 flex flex-col h-full overflow-hidden">
-      {/* Header */}
-      <div className={`px-4 py-3 border-b border-gray-100 flex items-start justify-between gap-2 ${isStartNode ? "bg-emerald-50/60" : ""}`}>
-        <div className="flex items-center gap-2.5 min-w-0">
-          <div className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0 ${isStartNode ? "bg-emerald-100" : ts.iconBg}`}>
-            <Icon size={15} className={isStartNode ? "text-emerald-600" : ts.iconColor} />
+    <div className="fixed inset-0 z-[140] flex items-center justify-center p-4 bg-black/45" onClick={onClose}>
+      <div className="bg-white rounded-2xl shadow-2xl border border-gray-100 w-full max-w-md overflow-hidden" onClick={e => e.stopPropagation()}>
+        <div className="px-5 py-4 border-b border-gray-100 flex items-center justify-between bg-gradient-to-r from-teal-50/60 to-white">
+          <div className="flex items-center gap-2">
+            <div className="w-9 h-9 rounded-xl bg-teal-100 flex items-center justify-center"><Settings size={16} className="text-teal-600" /></div>
+            <div>
+              <div className="text-sm font-medium text-gray-800">Execute Config</div>
+              <div className="text-xs text-gray-400">Resource · Queue Priority · Scheduler</div>
+            </div>
           </div>
-          <div className="min-w-0">
-            <div className="text-sm text-gray-800 truncate">{node.title}</div>
-            <div className="text-xs text-gray-400">{node.subtitle}</div>
-          </div>
+          <button type="button" onClick={onClose} className="p-1 text-gray-400 hover:bg-gray-100 rounded-lg"><X size={16} /></button>
         </div>
-        <button onClick={onClose} className="p-1 text-gray-300 hover:text-gray-500 shrink-0"><X size={13} /></button>
-      </div>
-
-      <div className="flex-1 overflow-y-auto px-4 py-4 flex flex-col gap-5">
-        {isInstanceView ? (
-          <>
-            {nodeStatus && (
-              <PanelSection title="EXECUTION STATUS">
-                <span className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-xs w-fit ${STATUS_STYLES[nodeStatus].badge} ${STATUS_STYLES[nodeStatus].badgeText}`}>
-                  <span className={`w-1.5 h-1.5 rounded-full ${STATUS_STYLES[nodeStatus].dot}`} />{STATUS_STYLES[nodeStatus].label}
-                </span>
-              </PanelSection>
-            )}
-            {instance && (
-              <PanelSection title="TIMELINE">
-                <PanelRow label="Created"  value={instance.createTime || "—"} />
-                <PanelRow label="Started"  value={instance.startTime  || "—"} />
-                <PanelRow label="Finished" value={instance.finishTime || "—"} />
-                <PanelRow label="Duration" value={instance.duration   || "—"} />
-              </PanelSection>
-            )}
-            <PanelSection title="LOGS">
-              <div className="bg-gray-900 rounded-lg px-2.5 py-2 flex flex-col gap-1">
-                {logs.map((l, i) => (
-                  <span key={i} className="text-xs text-gray-300 font-mono leading-relaxed">{l}</span>
-                ))}
-              </div>
-            </PanelSection>
-          </>
-        ) : (
-          <>
-            {/* A: START node — Input Field + Schedule */}
-            {isStartNode && <StartNodePanel defaultFreq={cfg.scheduleFreq ?? "ONCE"} />}
-
-            {/* Feature nodes are now handled by FeatureGroupPanel above */}
-
-            {/* F: Sink */}
-            {node.type === "sink" && (
-              <>
-                <PanelSection title="OUTPUT CONFIG">
-                  <PanelRow label="Target"     value={cfg.outputTable ?? "—"} />
-                  <PanelRow label="Write Mode" value={cfg.writeMode   ?? "OVERWRITE"} />
-                  <PanelRow label="Partition"  value="ds" />
-                </PanelSection>
-                <PanelSection title="QUALITY CHECKS">
-                  <PanelRow label="Min Rows"       value={cfg.minRows ?? "—"} />
-                  <PanelRow label="Null Threshold" value="< 5%" />
-                </PanelSection>
-              </>
-            )}
-          </>
-        )}
-      </div>
-
-      <div className="px-4 py-2 border-t border-gray-50">
-        <span className="text-xs text-gray-400">
-          {isInstanceView ? "Node · Execution result" : "Node · Click node to select"}
-        </span>
+        <div className="px-5 py-4 flex flex-col gap-4">
+          <div>
+            <label className="text-xs text-gray-500 mb-1.5 block">Resource</label>
+            <select value={resource} onChange={e => setResource(e.target.value as "normal"|"high")}
+              className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm bg-gray-50 focus:outline-none focus:border-teal-400">
+              <option value="normal">Normal</option>
+              <option value="high">High</option>
+            </select>
+          </div>
+          <div>
+            <label className="text-xs text-gray-500 mb-1.5 block">Queue Priority</label>
+            <select value={queue} onChange={e => setQueue(e.target.value as "low"|"medium"|"high")}
+              className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm bg-gray-50 focus:outline-none focus:border-teal-400">
+              <option value="low">Low</option>
+              <option value="medium">Medium</option>
+              <option value="high">High</option>
+            </select>
+          </div>
+          <div>
+            <label className="text-xs text-gray-500 mb-1.5 block">Scheduler</label>
+            <select value={sched} onChange={e => setSched(e.target.value as "once"|"cron")}
+              className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm bg-gray-50 focus:outline-none focus:border-teal-400">
+              <option value="once">ONCE</option>
+              <option value="cron">Cron</option>
+            </select>
+          </div>
+          {sched === "cron" && (
+            <div>
+              <label className="text-xs text-gray-500 mb-1.5 block">Cron expression</label>
+              <input value={cronExpr} onChange={e => setCronExpr(e.target.value)}
+                className={`w-full font-mono text-sm border rounded-xl px-3 py-2 bg-gray-50 focus:outline-none ${cron.valid ? "border-gray-200 focus:border-teal-400" : "border-red-300 focus:border-red-400"}`}
+                placeholder="0 6 * * *"
+              />
+              <p className={`text-xs mt-2 leading-relaxed ${cron.valid ? "text-teal-600" : "text-red-500"}`}>
+                {cron.english}
+              </p>
+            </div>
+          )}
+        </div>
+        <div className="px-5 py-3 border-t border-gray-100 flex justify-end gap-2 bg-gray-50/50">
+          <button type="button" onClick={onClose} className="px-4 py-2 text-sm rounded-xl border border-gray-200 text-gray-600 hover:bg-gray-50">Cancel</button>
+          <button type="button" onClick={onClose} className="px-4 py-2 text-sm rounded-xl bg-teal-500 text-white hover:bg-teal-600 shadow-sm">Save</button>
+        </div>
       </div>
     </div>
   );
@@ -1727,6 +1806,7 @@ export function CanvasPage({ mode, formValues, row, initialInstanceId, onBack }:
   // ── Modals / dropdowns ─────────────────────────────────────────────────────
   const [showMetaModal, setShowMetaModal] = useState(false);
   const [showTriggerModal, setShowTriggerModal] = useState(false);
+  const [showExecConfig, setShowExecConfig] = useState(false);
   const [activeDropdown, setActiveDropdown] = useState<"history" | "action" | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
 
@@ -1735,6 +1815,7 @@ export function CanvasPage({ mode, formValues, row, initialInstanceId, onBack }:
   const isPanning = useRef(false);
   const panStart = useRef({ mx: 0, my: 0, px: 0, py: 0 });
   const historyRef = useRef<HTMLDivElement>(null);
+  const execConfigRef = useRef<HTMLDivElement>(null);
   const actionRef = useRef<HTMLDivElement>(null);
   const [containerSize, setContainerSize] = useState({ w: 800, h: 500 });
 
@@ -1862,7 +1943,7 @@ export function CanvasPage({ mode, formValues, row, initialInstanceId, onBack }:
   useEffect(() => {
     const h = (e: MouseEvent) => {
       const t = e.target as Node;
-      if (historyRef.current?.contains(t) || actionRef.current?.contains(t)) return;
+      if (historyRef.current?.contains(t) || execConfigRef.current?.contains(t) || actionRef.current?.contains(t)) return;
       setActiveDropdown(null);
     };
     document.addEventListener("mousedown", h);
@@ -2025,6 +2106,18 @@ export function CanvasPage({ mode, formValues, row, initialInstanceId, onBack }:
               </div>
             )}
 
+            {viewMode === "current-config" && (
+              <div ref={execConfigRef} className="relative">
+                <button
+                  type="button"
+                  onClick={() => { setShowExecConfig(true); setActiveDropdown(null); }}
+                  className="flex items-center gap-1.5 px-3 py-1.5 text-xs text-gray-700 border border-gray-200 rounded-lg hover:border-teal-300 hover:bg-teal-50/40 transition-all"
+                >
+                  <Settings size={13} className="text-teal-600" /> Execute Config
+                </button>
+              </div>
+            )}
+
             {/* Action menu */}
             <div ref={actionRef} className="relative">
               <button
@@ -2184,6 +2277,7 @@ export function CanvasPage({ mode, formValues, row, initialInstanceId, onBack }:
       {showTriggerModal && (
         <TriggerInstanceModal onClose={() => setShowTriggerModal(false)} onTrigger={handleTrigger} />
       )}
+      <ExecuteConfigModal open={showExecConfig} onClose={() => setShowExecConfig(false)} />
     </div>
   );
 }
