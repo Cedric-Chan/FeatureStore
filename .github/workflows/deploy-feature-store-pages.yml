@@ -32,6 +32,11 @@ jobs:
     steps:
       - uses: actions/checkout@v6
 
+      # setup-node 的 pnpm cache 需先提供 pnpm 可执行文件
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9.15.9
+
       - uses: actions/setup-node@v6
         with:
           node-version: "22"
@@ -41,7 +46,7 @@ jobs:
       # 使用 pnpm 避免 GitHub Actions 上 npm 偶发 “Exit handler never called” 崩溃
       - name: Install dependencies
         working-directory: docs/references/feature-widetable-figma-export
-        run: corepack enable && pnpm install --frozen-lockfile
+        run: pnpm install --frozen-lockfile
 
       - name: Build
         working-directory: docs/references/feature-widetable-figma-export
