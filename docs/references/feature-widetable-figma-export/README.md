@@ -54,7 +54,7 @@ python3 -m http.server 8765
 |------|------|
 | 路由与壳 | `src/app/App.tsx`, `src/app/layout/AppShell.tsx` |
 | WideTable 列表 | `src/app/pages/WideTableListPage.tsx` |
-| 画布（实例/编辑/新建） | `src/app/pages/CanvasPageRoutes.tsx`, `src/app/components/CanvasPage.tsx` |
+| 画布（实例/编辑/新建） | `src/app/pages/CanvasPageRoutes.tsx`, `src/app/components/CanvasPage.tsx`（Data Ingestion / Data Cleaning、Execute Config、无 Start；见 `docs/design/widetable-canvas-nodes-revamp.md`） |
 | Mock 数据 | `src/data/mockWideTables.ts` |
 | 其他导航页（占位，待与 spec 对齐迁移） | `MigratedPlaceholderPage`, `FeatureGroupDetailPage` 等 |
 

@@ -51,7 +51,7 @@
 
 ## 4. 其他节点面板（CanvasPage 各 Panel）
 
-规格已演进为：**无 Start**；**Data Ingestion**（原 Data Sink）、**Data Cleaning**（原 End）、**Execute Config** 顶栏入口；连线 **FG → Data Ingestion → Data Cleaning**。对照字段与交互以 [`widetable-canvas-nodes-revamp.md`](widetable-canvas-nodes-revamp.md) 为准；当前导出仍可能含旧节点名，对齐前以规格为评审依据。
+**实现状态**：`CanvasPage.tsx` 已对齐规格——**无 Start**；**Data Ingestion**、**Data Cleaning**（Config / Last Instance、Report 弹窗）；顶栏 **Execute Config**；连线 **FG → Data Ingestion → Data Cleaning**。字段与交互以 [`widetable-canvas-nodes-revamp.md`](widetable-canvas-nodes-revamp.md) 为准；回归时对照 §4 与本节。
 
 ## 5. 回归 grep（每 PR）
 
