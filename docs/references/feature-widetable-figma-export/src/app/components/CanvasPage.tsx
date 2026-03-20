@@ -1,0 +1,2189 @@
+import React, { useState, useRef, useEffect, useCallback } from "react";
+import {
+  ArrowLeft, Pencil, ChevronDown, History, Zap, Square,
+  AlertCircle, X, Database, Play, Layers, Minus, Plus,
+  Maximize2, RotateCcw, GitBranch, Trash2, Flag, Search, Eye,
+} from "lucide-react";
+import { WideTableFormValues } from "./AddWideTableModal";
+import { WideTableRow, Instance, InstanceStatus } from "./WideTableList";
+import { WideTableMetaModal } from "./WideTableMetaModal";
+import { TriggerInstanceModal } from "./TriggerInstanceModal";
+
+// ─── Canvas constants ─────────────────────────────────────────────────────────
+const CANVAS_W = 1060;
+const CANVAS_H = 520;
+
+type NodeId = "A" | "B" | "C" | "D" | "E" | "F" | "G";
+type NodeStatus = "waiting" | "cache_skipped" | "running" | "failed" | "success";
+
+interface NodeDef {
+  id: NodeId;
+  type: "source" | "feature" | "sink" | "end";
+  x: number; y: number; w: number; h: number;
+  title: string; subtitle: string;
+}
+
+//  Layout (canvas 1060 × 520):
+//  Col-1 x=22   A  START (source)
+//  Col-2 x=168  B  Frame Table (source)
+//  Col-3 x=336  C/D/E  Feature Groups (feature)
+//  Col-4 x=548  F  Data Sink (sink)
+//  Col-5 x=790  G  End (end)
+const INITIAL_NODES: NodeDef[] = [
+  { id: "A", type: "source",  x: 22,  y: 224, w: 124, h: 72,  title: "START",                    subtitle: "Trigger"             },
+  { id: "B", type: "source",  x: 168, y: 224, w: 144, h: 72,  title: "Frame Table",              subtitle: "Source Table"        },
+  { id: "C", type: "feature", x: 336, y: 108, w: 185, h: 72,  title: "user_profile_features",    subtitle: "Feature Group"       },
+  { id: "D", type: "feature", x: 336, y: 224, w: 185, h: 72,  title: "order_history_features",   subtitle: "Feature Group"       },
+  { id: "E", type: "feature", x: 336, y: 340, w: 185, h: 72,  title: "credit_behavior_features", subtitle: "Feature Group"       },
+  { id: "F", type: "sink",    x: 548, y: 224, w: 188, h: 72,  title: "Data Sink",                subtitle: "Sink Table Result"   },
+  { id: "G", type: "end",     x: 790, y: 224, w: 140, h: 72,  title: "End",                      subtitle: "Output · Global Vars" },
+];
+
+const EDGES: [NodeId, NodeId][] = [
+  ["A", "B"],
+  ["B", "C"], ["B", "D"], ["B", "E"],
+  ["C", "F"], ["D", "F"], ["E", "F"],
+  ["F", "G"],
+];
+
+// ─── Style maps ───────────────────────────────────────────────────────────────
+const TYPE_STYLES: Record<NodeDef["type"], { accent: string; iconBg: string; iconColor: string }> = {
+  source:  { accent: "border-l-teal-400",  iconBg: "bg-teal-50",   iconColor: "text-teal-600"   },
+  feature: { accent: "border-l-blue-400",  iconBg: "bg-blue-50",   iconColor: "text-blue-600"   },
+  sink:    { accent: "border-l-amber-400", iconBg: "bg-amber-50",  iconColor: "text-amber-600"  },
+  end:     { accent: "border-l-gray-400",  iconBg: "bg-orange-50", iconColor: "text-orange-500" },
+};
+
+const STATUS_STYLES: Record<NodeStatus, { accent: string; iconBg: string; iconColor: string; label: string; badge: string; badgeText: string; dot: string }> = {
+  waiting:       { accent: "border-l-gray-300",    iconBg: "bg-gray-50",    iconColor: "text-gray-400",   label: "Waiting",  badge: "bg-gray-100",    badgeText: "text-gray-500",    dot: "bg-gray-400"    },
+  cache_skipped: { accent: "border-l-yellow-400",  iconBg: "bg-yellow-50",  iconColor: "text-yellow-600", label: "Cached",   badge: "bg-yellow-100",  badgeText: "text-yellow-700",  dot: "bg-yellow-400"  },
+  running:       { accent: "border-l-blue-500",    iconBg: "bg-blue-50",    iconColor: "text-blue-600",   label: "Running",  badge: "bg-blue-100",    badgeText: "text-blue-700",    dot: "bg-blue-500"    },
+  failed:        { accent: "border-l-red-400",     iconBg: "bg-red-50",     iconColor: "text-red-500",    label: "Failed",   badge: "bg-red-100",     badgeText: "text-red-600",     dot: "bg-red-500"     },
+  success:       { accent: "border-l-emerald-400", iconBg: "bg-emerald-50", iconColor: "text-emerald-600",label: "Success",  badge: "bg-emerald-100", badgeText: "text-emerald-700", dot: "bg-emerald-500" },
+};
+
+const EDGE_COLORS: Record<NodeStatus, string> = {
+  success: "#22c55e", running: "#3b82f6", cache_skipped: "#f59e0b",
+  failed: "#ef4444",  waiting: "#9ca3af",
+};
+
+function getMockNodeStatuses(s: InstanceStatus): Record<NodeId, NodeStatus> {
+  switch (s) {
+    case "SUCCESS": return { A: "success",      B: "success",      C: "success",      D: "success", E: "success", F: "success", G: "success" };
+    case "FAILED":  return { A: "success",      B: "success",      C: "success",      D: "failed",  E: "waiting", F: "waiting", G: "waiting" };
+    case "RUNNING": return { A: "success",      B: "success",      C: "cache_skipped",D: "running", E: "waiting", F: "waiting", G: "waiting" };
+    case "PENDING": return { A: "waiting",      B: "waiting",      C: "waiting",      D: "waiting", E: "waiting", F: "waiting", G: "waiting" };
+    case "KILLED":  return { A: "success",      B: "cache_skipped",C: "failed",       D: "waiting", E: "waiting", F: "waiting", G: "waiting" };
+  }
+}
+
+function getMockLogs(id: NodeId, st: NodeStatus): string[] {
+  const t = { A: "14:05", B: "14:07", C: "14:14", D: "14:22", E: "14:35", F: "15:01", G: "15:04" }[id];
+  if (st === "waiting")       return [`[--:--] ◷ Waiting for upstream nodes...`];
+  if (st === "cache_skipped") return [`[${t}:00] ⚡ Cache hit detected.`, `[${t}:01] ⚡ Skipping recompute, using cached output.`];
+  if (st === "running")       return [`[${t}:00] → Starting computation...`, `[${t}:??] ⟳ Processing… (67%)`];
+  if (st === "failed")        return [`[${t}:00] → Starting...`, `[${t}:09] ✗ OOM during aggregation step.`];
+  return [`[${t}:00] → Starting...`, `[${t}:12] → Processing batch data...`, `[${t}:58] ✓ Completed.`];
+}
+
+const NODE_CONFIGS: Record<NodeId, {
+  scheduleFreq?: string;
+  frameTable?: string; partitionKey?: string;
+  featureSource?: string; featureKey?: string; featureCount?: number;
+  outputTable?: string; writeMode?: string; minRows?: string;
+}> = {
+  A: { scheduleFreq: "ONCE" },
+  B: { frameTable: "ods_entity_frame", partitionKey: "ds" },
+  C: { featureSource: "ods_user_profile",  featureKey: "ds", featureCount: 24 },
+  D: { featureSource: "ods_order_history", featureKey: "ds", featureCount: 31 },
+  E: { featureSource: "ods_credit_events", featureKey: "ds", featureCount: 18 },
+  F: { outputTable: "dwd_wide_feat_sink",  writeMode: "OVERWRITE", minRows: "1,000,000" },
+  G: {},
+};
+
+// ─── InstanceStatusBadge ──────────────────────────────────────────────────────
+function InstanceStatusBadge({ status, small }: { status: InstanceStatus; small?: boolean }) {
+  const cfg: Record<InstanceStatus, { bg: string; text: string; dot: string }> = {
+    SUCCESS: { bg: "bg-emerald-50",  text: "text-emerald-700", dot: "bg-emerald-500" },
+    FAILED:  { bg: "bg-red-50",      text: "text-red-600",     dot: "bg-red-500"     },
+    RUNNING: { bg: "bg-blue-50",     text: "text-blue-600",    dot: "bg-blue-500"    },
+    PENDING: { bg: "bg-amber-50",    text: "text-amber-600",   dot: "bg-amber-500"   },
+    KILLED:  { bg: "bg-gray-100",    text: "text-gray-500",    dot: "bg-gray-400"    },
+  };
+  const c = cfg[status];
+  return (
+    <span className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full ${small ? "gap-1" : "gap-1.5 px-2"} ${c.bg} ${c.text}`}
+      style={{ fontSize: small ? 10 : undefined }}>
+      <span className={`rounded-full shrink-0 ${small ? "w-1 h-1" : "w-1.5 h-1.5"} ${c.dot}`} />{status}
+    </span>
+  );
+}
+
+// ─── Draggable pipeline node card ─────────────────────────────────────────────
+function PipelineNodeCard({
+  node, selected, instanceView, nodeStatus,
+  onDragStart, onClick,
+}: {
+  node: NodeDef; selected: boolean; instanceView: boolean;
+  nodeStatus?: NodeStatus;
+  onDragStart: (e: React.MouseEvent) => void;
+  onClick: () => void;
+}) {
+  const ts = TYPE_STYLES[node.type];
+  const ss = nodeStatus ? STATUS_STYLES[nodeStatus] : null;
+  const accent  = instanceView && ss ? ss.accent  : ts.accent;
+  const iconBg  = instanceView && ss ? ss.iconBg  : ts.iconBg;
+  const iconCol = instanceView && ss ? ss.iconColor : ts.iconColor;
+  const Icon = node.type === "source" ? Play : node.type === "feature" ? Layers : node.type === "end" ? Flag : Database;
+
+  return (
+    <div
+      className={`absolute bg-white rounded-xl border border-gray-200 border-l-4
+        ${accent}
+        ${selected ? "ring-2 ring-teal-400 ring-offset-2 shadow-xl z-10" : "shadow-sm hover:shadow-md z-0"}
+        ${instanceView ? "" : "cursor-grab active:cursor-grabbing"}`}
+      style={{ left: node.x, top: node.y, width: node.w, height: node.h, userSelect: "none" }}
+      onMouseDown={onDragStart}
+      onClick={onClick}
+    >
+      <div className="flex items-center h-full px-3 gap-2.5">
+        <div className={`w-8 h-8 rounded-lg flex items-center justify-center shrink-0 ${iconBg}`}>
+          <Icon size={14} className={iconCol} />
+        </div>
+        <div className="min-w-0 flex-1">
+          <div className="text-xs text-gray-800 truncate leading-snug">{node.title}</div>
+          <div className="text-xs text-gray-400 mt-0.5 truncate">{node.subtitle}</div>
+          {instanceView && ss && (
+            <span className={`inline-flex items-center gap-1 mt-1 text-xs px-1.5 py-px rounded ${ss.badge} ${ss.badgeText}`}>
+              <span className={`w-1.5 h-1.5 rounded-full ${ss.dot}`} />{ss.label}
+            </span>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─── SVG Edges ────────────────────────────────────────────────────────────────
+function CanvasEdges({
+  nodes, instanceView, nodeStatuses,
+}: {
+  nodes: NodeDef[]; instanceView: boolean; nodeStatuses?: Record<NodeId, NodeStatus>;
+}) {
+  const nodeMap = Object.fromEntries(nodes.map(n => [n.id, n]));
+  const edgeColor = (fromId: NodeId) => {
+    if (instanceView && nodeStatuses) return EDGE_COLORS[nodeStatuses[fromId]] ?? "#9ca3af";
+    return "#9ca3af";
+  };
+  const markerKey = (col: string) =>
+    col === "#22c55e" ? "green" : col === "#3b82f6" ? "blue" : col === "#f59e0b" ? "amber" : col === "#ef4444" ? "red" : "gray";
+
+  return (
+    <svg width={CANVAS_W} height={CANVAS_H}
+      style={{ position: "absolute", inset: 0, pointerEvents: "none", overflow: "visible" }}>
+      <defs>
+        {(["gray","green","blue","amber","red"] as const).map(k => {
+          const c = { gray:"#9ca3af", green:"#22c55e", blue:"#3b82f6", amber:"#f59e0b", red:"#ef4444" }[k];
+          return (
+            <marker key={k} id={`arr-${k}`} viewBox="0 0 10 10" refX="8" refY="5" markerWidth="5" markerHeight="5" orient="auto">
+              <path d="M0,1.5 L8,5 L0,8.5 L2.5,5 Z" fill={c} />
+            </marker>
+          );
+        })}
+      </defs>
+      {EDGES.map(([fId, tId]) => {
+        const f = nodeMap[fId]; const t = nodeMap[tId];
+        if (!f || !t) return null;
+        const x1 = f.x + f.w, y1 = f.y + f.h / 2;
+        const x2 = t.x,        y2 = t.y + t.h / 2;
+        const mx = (x1 + x2) / 2;
+        const col = edgeColor(fId);
+        return (
+          <path key={`${fId}-${tId}`}
+            d={`M${x1},${y1} C${mx},${y1} ${mx},${y2} ${x2},${y2}`}
+            fill="none" stroke={col} strokeWidth="1.5"
+            markerEnd={`url(#arr-${markerKey(col)})`}
+          />
+        );
+      })}
+    </svg>
+  );
+}
+
+// ─── Minimap ──────────────────────────────────────────────────────────────────
+const MM_W = 118; const MM_H = 72;
+const mmSX = MM_W / CANVAS_W; const mmSY = MM_H / CANVAS_H;
+
+function Minimap({ nodes, pan, zoom, cw, ch }: { nodes: NodeDef[]; pan: { x: number; y: number }; zoom: number; cw: number; ch: number }) {
+  const vpX = -pan.x / zoom; const vpY = -pan.y / zoom;
+  const vpW = cw / zoom;     const vpH = ch / zoom;
+  const rx = vpX * mmSX;     const ry = vpY * mmSY;
+  const rw = Math.max(8, vpW * mmSX); const rh = Math.max(8, vpH * mmSY);
+  const tc: Record<NodeDef["type"], string> = { source: "#2dd4bf", feature: "#60a5fa", sink: "#fbbf24", end: "#9ca3af" };
+  return (
+    <div className="bg-white border border-gray-200 rounded-lg overflow-hidden shadow-sm" style={{ padding: 8 }}>
+      <div className="text-xs text-gray-400 mb-1.5 tracking-wide" style={{ fontSize: 10 }}>OVERVIEW</div>
+      <svg width={MM_W} height={MM_H} style={{ display: "block" }}>
+        <rect width={MM_W} height={MM_H} fill="#f8fafc" rx="4" />
+        {EDGES.map(([fId, tId]) => {
+          const f = nodes.find(n => n.id === fId); const t = nodes.find(n => n.id === tId);
+          if (!f || !t) return null;
+          const x1 = (f.x + f.w) * mmSX, y1 = (f.y + f.h / 2) * mmSY;
+          const x2 = t.x * mmSX, y2 = (t.y + t.h / 2) * mmSY;
+          return <path key={`${fId}-${tId}`} d={`M${x1},${y1} C${(x1+x2)/2},${y1} ${(x1+x2)/2},${y2} ${x2},${y2}`} fill="none" stroke="#d1d5db" strokeWidth="0.8" />;
+        })}
+        {nodes.map(n => <rect key={n.id} x={n.x * mmSX} y={n.y * mmSY} width={n.w * mmSX} height={n.h * mmSY} rx="2" fill={tc[n.type]} opacity="0.7" />)}
+        <rect x={rx} y={ry} width={rw} height={rh} fill="rgba(99,102,241,0.08)" stroke="#6366f1" strokeWidth="1" rx="2" />
+      </svg>
+    </div>
+  );
+}
+
+// ─── Zoom Controls ────────────────────────────────────────────────────────────
+function ZoomControls({ zoom, onZoom, onFit }: { zoom: number; onZoom: (d: number) => void; onFit: () => void }) {
+  return (
+    <div className="flex items-center gap-1 bg-white border border-gray-200 rounded-lg shadow-sm px-1.5 py-1">
+      <button onClick={() => onZoom(-0.1)} className="p-1 text-gray-500 hover:text-gray-800 hover:bg-gray-100 rounded transition-all"><Minus size={12} /></button>
+      <span className="text-xs text-gray-600 w-9 text-center tabular-nums">{Math.round(zoom * 100)}%</span>
+      <button onClick={() => onZoom(+0.1)} className="p-1 text-gray-500 hover:text-gray-800 hover:bg-gray-100 rounded transition-all"><Plus size={12} /></button>
+      <div className="w-px h-3.5 bg-gray-200 mx-0.5" />
+      <button onClick={onFit} title="Fit to screen" className="p-1 text-gray-500 hover:text-gray-800 hover:bg-gray-100 rounded transition-all"><Maximize2 size={12} /></button>
+    </div>
+  );
+}
+
+// ─── Data types ───────────────────────────────────────────────────────────────
+const DATA_TYPES = ["string", "int", "long", "float", "double", "boolean", "date", "timestamp", "array", "map"];
+
+// ─── Right Config Panel ────────────────────────────────────���──────────────────
+function PanelSection({ title, children }: { title: string; children: React.ReactNode }) {
+  return (
+    <div>
+      <div className="text-xs text-gray-400 tracking-widest mb-2">{title}</div>
+      <div className="flex flex-col gap-0">{children}</div>
+    </div>
+  );
+}
+function PanelRow({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="flex items-center justify-between py-1.5 border-b border-gray-50 last:border-0">
+      <span className="text-xs text-gray-500">{label}</span>
+      <span className="text-xs text-gray-700 font-mono">{value}</span>
+    </div>
+  );
+}
+
+// ─── Start Node Panel (stateful sub-component) ────────────────────────────────
+interface InputField { id: string; name: string; type: string; }
+
+function StartNodePanel({ defaultFreq }: { defaultFreq: string }) {
+  const [fields, setFields] = useState<InputField[]>([]);
+  const [frequency, setFrequency] = useState(defaultFreq);
+
+  const addField = () =>
+    setFields(prev => [...prev, { id: `f-${Date.now()}`, name: "", type: "string" }]);
+  const removeField = (id: string) =>
+    setFields(prev => prev.filter(f => f.id !== id));
+  const updateField = (id: string, key: "name" | "type", val: string) =>
+    setFields(prev => prev.map(f => f.id === id ? { ...f, [key]: val } : f));
+
+  const FREQ_OPTIONS = ["ONCE", "HOURLY", "DAILY", "WEEKLY", "MONTHLY"];
+  const FREQ_HINTS: Record<string, string> = {
+    ONCE:    "Manual trigger only — no automatic schedule",
+    HOURLY:  "Runs every hour automatically",
+    DAILY:   "Runs once per day at configured time",
+    WEEKLY:  "Runs once per week on configured day",
+    MONTHLY: "Runs once per month on configured date",
+  };
+
+  return (
+    <>
+      {/* INPUT FIELD */}
+      <div>
+        <div className="text-xs mb-3" style={{ color: "#334155", fontWeight: 700, letterSpacing: "0.07em" }}>
+          INPUT FIELD
+        </div>
+
+        {/* Field list */}
+        {fields.length > 0 && (
+          <div className="flex flex-col gap-2 mb-2">
+            {fields.map((f, idx) => (
+              <div key={f.id} className="border border-gray-200 rounded-xl px-3 pt-2.5 pb-2 bg-white">
+                {/* Row 1: index + name input */}
+                <div className="flex items-center gap-2 mb-2">
+                  <span className="text-xs text-gray-400 w-4 shrink-0 tabular-nums">{idx + 1}</span>
+                  <input
+                    type="text"
+                    value={f.name}
+                    onChange={e => updateField(f.id, "name", e.target.value)}
+                    placeholder="field name"
+                    className="flex-1 text-xs border border-gray-200 rounded-lg px-2.5 py-1.5 focus:outline-none focus:border-teal-400 placeholder:text-gray-300 bg-white text-gray-700"
+                  />
+                </div>
+                {/* Row 2: type label + select + delete */}
+                <div className="flex items-center gap-2 pl-6">
+                  <span className="text-xs text-gray-400 shrink-0">type</span>
+                  <div className="relative flex-1">
+                    <select
+                      value={f.type}
+                      onChange={e => updateField(f.id, "type", e.target.value)}
+                      className="w-full appearance-none text-xs border border-gray-200 rounded-lg px-2.5 py-1.5 pr-6 focus:outline-none focus:border-teal-400 bg-white text-gray-700 cursor-pointer"
+                    >
+                      {DATA_TYPES.map(dt => (
+                        <option key={dt} value={dt}>{dt}</option>
+                      ))}
+                    </select>
+                    <ChevronDown size={11} className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
+                  </div>
+                  <button
+                    onClick={() => removeField(f.id)}
+                    className="p-1 text-gray-300 hover:text-red-400 transition-colors shrink-0"
+                  >
+                    <Trash2 size={13} />
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+
+        {/* Empty state */}
+        {fields.length === 0 && (
+          <div className="border border-dashed border-gray-200 rounded-xl px-3 py-5 mb-2 text-center bg-gray-50/40">
+            <div className="text-xs text-gray-400 mb-0.5">No input parameters</div>
+            <div className="text-xs text-gray-300">Click + Add to define input fields</div>
+          </div>
+        )}
+
+        {/* Add button */}
+        <button
+          onClick={addField}
+          className="w-full flex items-center justify-center gap-1.5 text-xs text-gray-500 border border-dashed border-gray-200 rounded-xl py-2 hover:border-teal-400 hover:text-teal-600 hover:bg-teal-50/30 transition-all"
+        >
+          <Plus size={12} /> Add
+        </button>
+      </div>
+
+      {/* SCHEDULE */}
+      <div>
+        <div className="text-xs mb-3" style={{ color: "#334155", fontWeight: 700, letterSpacing: "0.07em" }}>
+          SCHEDULE
+        </div>
+        <div className="text-xs text-gray-500 mb-1.5">Frequency</div>
+        <div className="relative mb-3">
+          <select
+            value={frequency}
+            onChange={e => setFrequency(e.target.value)}
+            className="w-full appearance-none border border-gray-200 rounded-xl px-3 py-2 text-sm text-gray-700 bg-white focus:outline-none focus:border-teal-400 cursor-pointer pr-8"
+          >
+            {FREQ_OPTIONS.map(opt => (
+              <option key={opt} value={opt}>{opt}</option>
+            ))}
+          </select>
+          <ChevronDown size={13} className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
+        </div>
+        {/* Hint box */}
+        <div className="flex items-start gap-2 bg-slate-50 border border-slate-100 rounded-xl px-3 py-2.5">
+          <Zap size={12} className="text-slate-400 mt-0.5 shrink-0" />
+          <span className="text-xs text-slate-400 leading-relaxed">{FREQ_HINTS[frequency] ?? ""}</span>
+        </div>
+      </div>
+    </>
+  );
+}
+
+// ─── Frame Table Panel helpers ────────────────────────────────────────────────
+const FT_COLUMNS = [
+  { name: "user_id",    type: "BIGINT"    },
+  { name: "event_time", type: "TIMESTAMP" },
+  { name: "order_id",   type: "BIGINT"    },
+  { name: "product_id", type: "STRING"    },
+  { name: "amount",     type: "DOUBLE"    },
+  { name: "category",   type: "STRING"    },
+  { name: "country",    type: "STRING"    },
+  { name: "ds",         type: "STRING"    },
+];
+const COL_TYPE_BADGE: Record<string, string> = {
+  BIGINT:    "bg-gray-100 text-gray-500",
+  TIMESTAMP: "bg-gray-100 text-gray-500",
+  STRING:    "bg-gray-100 text-gray-500",
+  DOUBLE:    "bg-gray-100 text-gray-500",
+};
+type ParseState = "idle" | "parsing" | "ready" | "error";
+interface ParsedCol { name: string; type: string; }
+
+function mockHiveColumns(schema: string, table: string): ParsedCol[] {
+  const key = `${schema}.${table}`.toLowerCase();
+  if (key.includes("order") || key.includes("frame") || key.includes("event")) {
+    return [
+      { name: "user_id",    type: "BIGINT"    },
+      { name: "event_time", type: "TIMESTAMP" },
+      { name: "order_id",   type: "BIGINT"    },
+      { name: "product_id", type: "STRING"    },
+      { name: "amount",     type: "DOUBLE"    },
+      { name: "category",   type: "STRING"    },
+      { name: "country",    type: "STRING"    },
+      { name: "ds",         type: "STRING"    },
+    ];
+  }
+  return [
+    { name: "id",         type: "BIGINT"    },
+    { name: "created_at", type: "TIMESTAMP" },
+    { name: "value",      type: "DOUBLE"    },
+    { name: "label",      type: "STRING"    },
+    { name: "ds",         type: "STRING"    },
+  ];
+}
+
+function parseSQLColumns(sql: string): { cols: ParsedCol[]; error: string | null } {
+  const s = sql.trim();
+  if (!s) return { cols: [], error: null };
+  if (/SELECT\s+\*/i.test(s))
+    return { cols: [], error: "SELECT * is not allowed. Please specify column names explicitly." };
+  if (!/^\s*SELECT\s/i.test(s))
+    return { cols: [], error: "SQL must start with SELECT." };
+  if (!/\bFROM\b/i.test(s))
+    return { cols: [], error: "Missing FROM clause." };
+  const m = s.match(/SELECT\s+([\s\S]+?)\s+FROM[\s\n(]/i);
+  if (!m) return { cols: [], error: "Cannot parse SELECT clause." };
+  const FT_LOOKUP: Record<string, string> = {
+    user_id: "BIGINT", event_time: "TIMESTAMP", order_id: "BIGINT",
+    product_id: "STRING", amount: "DOUBLE", category: "STRING", country: "STRING", ds: "STRING",
+    id: "BIGINT", created_at: "TIMESTAMP", value: "DOUBLE", label: "STRING",
+  };
+  const cols: ParsedCol[] = m[1].split(",").flatMap(raw => {
+    const p = raw.trim();
+    const asM = p.match(/\bAS\s+`?(\w+)`?\s*$/i);
+    let name: string;
+    if (asM) { name = asM[1].toLowerCase(); }
+    else { const dotM = p.match(/\.(\w+)\s*$/); name = dotM ? dotM[1].toLowerCase() : p.replace(/[^a-zA-Z0-9_]/g, "").toLowerCase(); }
+    return name ? [{ name, type: FT_LOOKUP[name] ?? "STRING" }] : [];
+  });
+  if (cols.length === 0) return { cols: [], error: "No valid columns found in SELECT clause." };
+  return { cols, error: null };
+}
+
+function highlightSQL(raw: string): string {
+  const esc = raw.replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");
+  const kw = "SELECT|FROM|WHERE|JOIN|LEFT|RIGHT|INNER|OUTER|FULL|CROSS|ON|AND|OR|NOT|IN|AS|GROUP\\s+BY|ORDER\\s+BY|LIMIT|HAVING|INSERT|UPDATE|DELETE|CREATE|DROP|ALTER|UNION|ALL|DISTINCT|WITH|BY|SET|INTO|VALUES|TABLE|NULL|TRUE|FALSE|CASE|WHEN|THEN|ELSE|END|IS|BETWEEN|LIKE|EXISTS|COUNT|SUM|AVG|MAX|MIN|CAST|COALESCE";
+  return esc
+    .replace(/'([^']*)'/g, `<span style="color:#b45309">'$1'</span>`)
+    .replace(new RegExp(`\\b(${kw})\\b`,"gi"), `<span style="color:#3b82f6;font-weight:600">$1</span>`)
+    .replace(/\b(\d+\.?\d*)\b/g, `<span style="color:#059669">$1</span>`)
+    .replace(/--.*/g, `<span style="color:#9ca3af;font-style:italic">$&</span>`);
+}
+function FieldLabel({ children, required }: { children: React.ReactNode; required?: boolean }) {
+  return (
+    <div className="text-xs text-gray-600 mb-1.5 flex items-center gap-1">
+      {children}{required && <span className="text-red-400">*</span>}
+    </div>
+  );
+}
+
+// ─── System variables for END node ────────────────────────────────────────────
+const SYSTEM_VARS = [
+  { name: "sys.user_id",         type: "String" },
+  { name: "sys.app_id",          type: "String" },
+  { name: "sys.workflow_id",     type: "String" },
+  { name: "sys.workflow_run_id", type: "String" },
+  { name: "sys.timestamp",       type: "Number" },
+];
+
+// ─── Frame Table Panel ────────────────────────────────────────────────────────
+function FrameTablePanel({ isInstanceView, nodeStatus, instance, onClose }: {
+  isInstanceView: boolean; nodeStatus?: NodeStatus; instance?: Instance; onClose: () => void;
+}) {
+  const [sourceType,   setSourceType]   = useState<"hive"|"sql">("hive");
+  const [dataServer,   setDataServer]   = useState("reg_sg");
+  const [tableSchema,  setTableSchema]  = useState("");
+  const [tableName,    setTableName]    = useState("");
+  const [sql,          setSql]          = useState("");
+  const [colSearch,    setColSearch]    = useState("");
+  const [parsedCols,   setParsedCols]   = useState<ParsedCol[]>([]);
+  const [parseState,   setParseState]   = useState<ParseState>("idle");
+  const [parseError,   setParseError]   = useState<string|null>(null);
+  const [selectedCols, setSelectedCols] = useState<Set<string>>(new Set());
+  const [entityCols,   setEntityCols]   = useState<string[]>([]);
+  const [eventTimeCol, setEventTimeCol] = useState("");
+  const [customFilter, setCustomFilter] = useState("");
+  const [fullscreen,   setFullscreen]   = useState(false);
+  const [entityOpen,   setEntityOpen]   = useState(false);
+  const [activeTab,    setActiveTab]    = useState<"config"|"lastInstance">("config");
+  const logs = nodeStatus ? getMockLogs("B", nodeStatus) : [];
+
+  const isHive = sourceType === "hive";
+  const serverOpts = ["reg_sg", "reg_us"];
+  const filteredCols = parsedCols.filter(c => c.name.toLowerCase().includes(colSearch.toLowerCase()));
+  const allSel  = parsedCols.length > 0 && parsedCols.every(c => selectedCols.has(c.name));
+  const someSel = parsedCols.some(c => selectedCols.has(c.name));
+  const sqlLines = Math.max((sql||"").split("\n").length, 1);
+
+  // Hive: trigger parse when dataServer + tableSchema + tableName all filled
+  useEffect(() => {
+    if (!isHive) return;
+    if (!dataServer || !tableSchema.trim() || !tableName.trim()) {
+      setParseState("idle"); setParsedCols([]); setSelectedCols(new Set());
+      setEntityCols([]); setEventTimeCol(""); return;
+    }
+    setParseState("parsing");
+    const t = setTimeout(() => {
+      const cols = mockHiveColumns(tableSchema.trim(), tableName.trim());
+      setParsedCols(cols);
+      setSelectedCols(new Set(cols.map(c => c.name)));
+      setEntityCols([]); setEventTimeCol("");
+      setParseState("ready");
+    }, 700);
+    return () => clearTimeout(t);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isHive, dataServer, tableSchema, tableName]);
+
+  // SQL: trigger parse when dataServer set + sql non-empty
+  useEffect(() => {
+    if (isHive) return;
+    if (!dataServer || !sql.trim()) {
+      setParseState("idle"); setParsedCols([]); setSelectedCols(new Set());
+      setParseError(null); setEntityCols([]); setEventTimeCol(""); return;
+    }
+    setParseState("parsing"); setParseError(null);
+    const t = setTimeout(() => {
+      const { cols, error } = parseSQLColumns(sql);
+      if (error) {
+        setParseState("error"); setParseError(error);
+        setParsedCols([]); setSelectedCols(new Set());
+      } else {
+        setParsedCols(cols);
+        setSelectedCols(new Set(cols.map(c => c.name)));
+        setEntityCols([]); setEventTimeCol("");
+        setParseState("ready");
+      }
+    }, 500);
+    return () => clearTimeout(t);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isHive, dataServer, sql]);
+
+  const toggleAll = () => setSelectedCols(allSel ? new Set() : new Set(parsedCols.map(c => c.name)));
+  const toggleCol = (name: string) => { const n = new Set(selectedCols); n.has(name) ? n.delete(name) : n.add(name); setSelectedCols(n); };
+  const onSrcChange = (t: "hive"|"sql") => {
+    setSourceType(t);
+    setParseState("idle"); setParsedCols([]); setSelectedCols(new Set());
+    setParseError(null); setEntityCols([]); setEventTimeCol("");
+  };
+  const Chk = ({ on }: { on: boolean }) => (
+    <span className={`w-4 h-4 rounded border flex items-center justify-center shrink-0 transition-all ${on ? "bg-teal-500 border-teal-500" : "border-gray-300 bg-white"}`}>
+      {on && <span className="text-white" style={{fontSize:9,fontWeight:900,lineHeight:1}}>✓</span>}
+    </span>
+  );
+
+  // ── Mock last-instance data ──────────────────────────────────────────────────
+  const LAST_INST = {
+    instanceId:       "inst_20240315_083012",
+    status:           "success" as NodeStatus,
+    sourceType:       "Hive",
+    dataServer:       "reg_sg",
+    tableRef:         "feature_store.frame_order_events",
+    sqlSnippet:       "SELECT user_id, event_time, amount FROM feature_store.frame_order_events WHERE ds = '2024-03-14'",
+    rowsLoaded:       2_847_392,
+    colsLoaded:       8,
+    datePartitionCnt: 31,
+    createdAt:        "2024-03-15 08:30:00",
+    startedAt:        "2024-03-15 08:30:12",
+    finishedAt:       "2024-03-15 08:34:37",
+    duration:         "4m 25s",
+    triggerBy:        "cedric.chencan@seamoney.com",
+  };
+
+  return (
+    <>
+      <div className="w-80 shrink-0 bg-white border-l border-gray-100 flex flex-col h-full overflow-hidden">
+        {/* Header */}
+        <div className="px-4 pt-3 pb-0 border-b border-gray-100 bg-teal-50/40">
+          <div className="flex items-start justify-between gap-2 pb-3">
+            <div className="flex items-center gap-2.5 min-w-0">
+              <div className="w-9 h-9 rounded-xl flex items-center justify-center shrink-0 bg-teal-100">
+                <Database size={15} className="text-teal-600" />
+              </div>
+              <div className="min-w-0">
+                <div className="text-sm text-gray-800">Frame Table</div>
+                <div className="text-xs text-gray-400">Source Table Config</div>
+              </div>
+            </div>
+            <button onClick={onClose} className="p-1 text-gray-300 hover:text-gray-500 shrink-0 mt-0.5"><X size={13}/></button>
+          </div>
+          {/* Tab bar */}
+          <div className="flex gap-0 -mb-px">
+            {(["config","lastInstance"] as const).map(tab => (
+              <button key={tab} onClick={()=>setActiveTab(tab)}
+                className={`px-4 py-2 text-xs border-b-2 transition-colors ${
+                  activeTab===tab
+                    ? "border-teal-500 text-teal-600"
+                    : "border-transparent text-gray-400 hover:text-gray-600"
+                }`}>
+                {tab === "config" ? "Config" : "Last Instance"}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        <div className="flex-1 overflow-y-auto px-4 py-4 flex flex-col gap-4">
+          {activeTab === "lastInstance" ? (
+            <>
+              {/* Status */}
+              <div className="flex items-center justify-between">
+                <span className="text-xs text-gray-500">Status</span>
+                <span className={`inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs ${STATUS_STYLES[LAST_INST.status].badge} ${STATUS_STYLES[LAST_INST.status].badgeText}`}>
+                  <span className={`w-1.5 h-1.5 rounded-full ${STATUS_STYLES[LAST_INST.status].dot}`}/>
+                  {STATUS_STYLES[LAST_INST.status].label}
+                </span>
+              </div>
+
+              {/* Instance ID */}
+              <div className="flex items-center justify-between">
+                <span className="text-xs text-gray-500">Instance ID</span>
+                <span className="text-xs text-gray-700 font-mono bg-gray-100 px-2 py-0.5 rounded-lg">{LAST_INST.instanceId}</span>
+              </div>
+
+              {/* Divider */}
+              <div className="border-t border-gray-100"/>
+
+              {/* Data Source section */}
+              <div className="flex flex-col gap-1">
+                <span className="text-xs text-gray-400 uppercase tracking-wide" style={{fontSize:10}}>Data Source</span>
+                <div className="mt-1.5 rounded-xl border border-gray-100 overflow-hidden">
+                  {[
+                    { label: "Source Type", value: LAST_INST.sourceType },
+                    { label: "Data Server", value: LAST_INST.dataServer },
+                    { label: "Table",       value: LAST_INST.tableRef   },
+                  ].map(({ label, value }) => (
+                    <div key={label} className="flex items-start justify-between gap-3 px-3 py-2 border-b border-gray-50 last:border-0 hover:bg-gray-50/60">
+                      <span className="text-xs text-gray-400 shrink-0">{label}</span>
+                      <span className="text-xs text-gray-700 font-mono text-right break-all">{value}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              {/* Statistics */}
+              <div className="flex flex-col gap-1">
+                <span className="text-xs text-gray-400 uppercase tracking-wide" style={{fontSize:10}}>Statistics</span>
+                <div className="mt-1.5 grid grid-cols-3 gap-2">
+                  {[
+                    { label: "Rows Loaded",    value: LAST_INST.rowsLoaded.toLocaleString(), color: "text-teal-600",  bg: "bg-teal-50"  },
+                    { label: "Cols Loaded",    value: String(LAST_INST.colsLoaded),          color: "text-sky-600",   bg: "bg-sky-50"   },
+                    { label: "Date Partitions",value: String(LAST_INST.datePartitionCnt),    color: "text-violet-600",bg: "bg-violet-50"},
+                  ].map(({ label, value, color, bg }) => (
+                    <div key={label} className="flex flex-col items-center gap-1 bg-gray-50 rounded-xl px-2 py-3 border border-gray-100">
+                      <span className={`text-sm ${color} ${bg} rounded-lg px-2 py-0.5`}>{value}</span>
+                      <span className="text-gray-400 text-center leading-tight mt-0.5" style={{fontSize:10}}>{label}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              {/* Timeline */}
+              
+
+              {/* Execution Logs */}
+              
+            </>
+          ) : (
+            <>
+              {/* 1. Source Type */}
+              <div>
+                <FieldLabel required>Source Type</FieldLabel>
+                <div className="flex gap-2">
+                  {(["hive","sql"] as const).map(t => (
+                    <button key={t} onClick={() => onSrcChange(t)}
+                      className={`flex-1 flex items-center gap-2 px-3 py-2 rounded-xl border text-xs transition-all ${
+                        sourceType===t ? "border-teal-400 bg-teal-50 text-teal-700" : "border-gray-200 bg-white text-gray-500 hover:border-gray-300"
+                      }`}>
+                      <span className={`w-3.5 h-3.5 rounded-full border-2 flex items-center justify-center shrink-0 ${sourceType===t?"border-teal-500":"border-gray-300"}`}>
+                        {sourceType===t && <span className="w-1.5 h-1.5 rounded-full bg-teal-500"/>}
+                      </span>
+                      {t==="hive"?"Hive":"SQL"}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* 2. Data Server */}
+              <div>
+                <FieldLabel required>Data Server</FieldLabel>
+                <div className="relative">
+                  <select value={dataServer} onChange={e=>setDataServer(e.target.value)}
+                    className="w-full appearance-none border border-gray-200 rounded-xl px-3 py-2 text-sm text-gray-700 bg-gray-50 focus:outline-none focus:border-teal-400 pr-8">
+                    {serverOpts.map(o => <option key={o} value={o}>{o}</option>)}
+                  </select>
+                  <ChevronDown size={13} className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none"/>
+                </div>
+              </div>
+
+              {/* 3. Table Schema (Hive only) */}
+              {isHive && (
+                <div>
+                  <FieldLabel required>Table Schema</FieldLabel>
+                  <input type="text" value={tableSchema} onChange={e=>setTableSchema(e.target.value)}
+                    placeholder="Enter Hive database name"
+                    className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm text-gray-700 bg-gray-50 focus:outline-none focus:border-teal-400 placeholder:text-gray-300"/>
+                </div>
+              )}
+
+              {/* 4. Table Name (Hive only) */}
+              {isHive && (
+                <div>
+                  <FieldLabel required>Table Name</FieldLabel>
+                  <input type="text" value={tableName} onChange={e=>setTableName(e.target.value)}
+                    placeholder="Enter Hive table name"
+                    className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm text-gray-700 bg-gray-50 focus:outline-none focus:border-teal-400 placeholder:text-gray-300"/>
+                </div>
+              )}
+
+              {/* 5. SQL editor (SQL only) */}
+              {!isHive && (
+                <div>
+                  <FieldLabel required>SQL</FieldLabel>
+                  <div className="border border-gray-200 rounded-xl overflow-hidden bg-gray-50 relative">
+                    <div className="flex">
+                      <div className="flex flex-col items-end px-2 py-2.5 bg-gray-100/80 text-gray-400 select-none font-mono border-r border-gray-200 min-w-[28px]" style={{fontSize:10,lineHeight:"20px"}}>
+                        {Array.from({length:sqlLines},(_,i)=><span key={i} style={{height:20,display:"block"}}>{i+1}</span>)}
+                      </div>
+                      <textarea value={sql} onChange={e=>setSql(e.target.value)} rows={6}
+                        placeholder={"SELECT user_id, event_time, amount\nFROM schema.table\nWHERE ds = '2024-01-01'"}
+                        className="flex-1 py-2.5 px-2.5 text-xs font-mono bg-transparent resize-none focus:outline-none text-gray-700 placeholder:text-gray-300"
+                        style={{lineHeight:"20px"}} spellCheck={false}/>
+                    </div>
+                    <button onClick={()=>setFullscreen(true)}
+                      className="absolute top-1.5 right-1.5 p-1 rounded-lg bg-white hover:bg-teal-50 text-gray-400 hover:text-teal-600 border border-gray-200 transition-all"
+                      title="Fullscreen Editor"><Maximize2 size={11}/></button>
+                  </div>
+                </div>
+              )}
+
+              {/* 6. Columns */}
+              <div>
+                <FieldLabel required>Columns</FieldLabel>
+                <div className="border border-gray-200 rounded-xl overflow-hidden">
+                  {/* Toolbar: only shown when columns are ready */}
+                  {parseState === "ready" && (
+                    <div className="flex items-center gap-2 px-3 py-2 border-b border-gray-100 bg-gray-50/60">
+                      <button onClick={toggleAll} className="flex items-center gap-1.5 shrink-0">
+                        <span className={`w-4 h-4 rounded border flex items-center justify-center transition-all ${
+                          allSel?"bg-teal-500 border-teal-500":someSel?"bg-teal-100 border-teal-300":"border-gray-300 bg-white"
+                        }`}>
+                          {allSel && <span className="text-white" style={{fontSize:9,fontWeight:900,lineHeight:1}}>✓</span>}
+                          {!allSel && someSel && <span className="w-2 h-0.5 bg-teal-500 block"/>}
+                        </span>
+                        <span className="text-xs text-gray-600">Select All</span>
+                        <span className="text-xs text-gray-400">({selectedCols.size}/{parsedCols.length})</span>
+                      </button>
+                      <div className="flex-1 relative">
+                        <Search size={11} className="absolute left-2 top-1/2 -translate-y-1/2 text-gray-300 pointer-events-none"/>
+                        <input type="text" value={colSearch} onChange={e=>setColSearch(e.target.value)}
+                          placeholder="Search columns..."
+                          className="w-full text-xs border border-gray-200 rounded-lg pl-6 pr-2 py-1 bg-white focus:outline-none focus:border-teal-400 placeholder:text-gray-300"/>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Idle state */}
+                  {parseState === "idle" && (
+                    <div className="py-6 px-4 flex flex-col items-center gap-2 text-center">
+                      <div className="w-8 h-8 rounded-full bg-gray-100 flex items-center justify-center">
+                        <Database size={14} className="text-gray-300"/>
+                      </div>
+                      <p className="text-xs text-gray-400 leading-relaxed">
+                        {isHive
+                          ? "Fill in Data Server, Table Schema and Table Name to load columns"
+                          : "Select a Data Server and write SQL to parse columns"}
+                      </p>
+                    </div>
+                  )}
+
+                  {/* Parsing spinner */}
+                  {parseState === "parsing" && (
+                    <div className="py-6 flex items-center justify-center gap-2">
+                      <svg className="animate-spin w-4 h-4 text-teal-400" viewBox="0 0 24 24" fill="none">
+                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="3"/>
+                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z"/>
+                      </svg>
+                      <span className="text-xs text-gray-400">Parsing schema…</span>
+                    </div>
+                  )}
+
+                  {/* Parse error */}
+                  {parseState === "error" && parseError && (
+                    <div className="py-4 px-3 flex items-start gap-2">
+                      <span className="w-4 h-4 rounded-full bg-red-100 text-red-500 flex items-center justify-center shrink-0 mt-0.5" style={{fontSize:10,fontWeight:700}}>!</span>
+                      <span className="text-xs text-red-500 leading-relaxed">{parseError}</span>
+                    </div>
+                  )}
+
+                  {/* Column rows */}
+                  {parseState === "ready" && (
+                    <div className="overflow-y-auto" style={{maxHeight:178}}>
+                      {filteredCols.map(col => (
+                        <div key={col.name} onClick={()=>toggleCol(col.name)}
+                          className={`flex items-center gap-2.5 px-3 py-2 border-b border-gray-50 last:border-0 cursor-pointer hover:bg-gray-50 transition-colors ${!selectedCols.has(col.name)?"opacity-40":""}`}>
+                          <Chk on={selectedCols.has(col.name)}/>
+                          <span className="flex-1 text-xs text-gray-700 font-mono">{col.name}</span>
+                          <span className={`text-xs px-1.5 py-0.5 rounded-md font-mono ${COL_TYPE_BADGE[col.type]??"bg-gray-100 text-gray-500"}`} style={{fontSize:10}}>{col.type}</span>
+                        </div>
+                      ))}
+                      {filteredCols.length===0 && parsedCols.length>0 && (
+                        <div className="py-4 text-center text-xs text-gray-400">No columns matched</div>
+                      )}
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* 7. Entity Column (multi-select) */}
+              <div className="relative">
+                <FieldLabel required>Entity Column</FieldLabel>
+                <button onClick={()=>setEntityOpen(!entityOpen)}
+                  className="w-full flex items-center gap-1.5 flex-wrap border border-gray-200 rounded-xl px-2.5 py-1.5 bg-gray-50 hover:border-teal-400 transition-colors text-left min-h-[38px]">
+                  {entityCols.length>0
+                    ? entityCols.map(c => (
+                        <span key={c} className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg bg-teal-100 text-teal-700 text-xs font-mono">
+                          {c}
+                          <button className="hover:text-red-500 ml-0.5 leading-none" onClick={e=>{e.stopPropagation();setEntityCols(p=>p.filter(x=>x!==c));}}>
+                            <X size={10}/>
+                          </button>
+                        </span>
+                      ))
+                    : <span className="text-xs text-gray-400 px-1">Select entity columns…</span>
+                  }
+                  <ChevronDown size={13} className="ml-auto text-gray-400 shrink-0"/>
+                </button>
+                {entityOpen && (
+                  <div className="absolute left-0 right-0 top-full mt-1 bg-white border border-gray-200 rounded-xl shadow-xl z-50 overflow-hidden">
+                    <div className="p-1.5 max-h-44 overflow-y-auto">
+                      {parsedCols.length === 0
+                        ? <div className="py-3 text-center text-xs text-gray-400">No columns loaded yet</div>
+                        : parsedCols.map(col => (
+                          <button key={col.name}
+                            onClick={()=>setEntityCols(p=>p.includes(col.name)?p.filter(x=>x!==col.name):[...p,col.name])}
+                            className="w-full flex items-center gap-2.5 px-2.5 py-1.5 rounded-lg hover:bg-teal-50 text-left transition-colors">
+                            <Chk on={entityCols.includes(col.name)}/>
+                            <span className="flex-1 text-xs text-gray-700 font-mono">{col.name}</span>
+                            <span className={`text-xs px-1.5 py-0.5 rounded-md font-mono ${COL_TYPE_BADGE[col.type]??"bg-gray-100 text-gray-500"}`} style={{fontSize:10}}>{col.type}</span>
+                          </button>
+                        ))
+                      }
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* 8. EventTime Column (single-select) */}
+              <div>
+                <FieldLabel required>EventTime Column</FieldLabel>
+                <div className="relative">
+                  <select value={eventTimeCol} onChange={e=>setEventTimeCol(e.target.value)}
+                    className="w-full appearance-none border border-gray-200 rounded-xl px-3 py-2 text-sm text-gray-700 bg-gray-50 focus:outline-none focus:border-teal-400 pr-8 font-mono">
+                    <option value="">Select event time column…</option>
+                    {parsedCols.map(c=><option key={c.name} value={c.name}>{c.name}</option>)}
+                  </select>
+                  <ChevronDown size={13} className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none"/>
+                </div>
+              </div>
+
+              {/* 9. Custom Filter (Hive only) */}
+              {isHive && (
+                <div>
+                  <FieldLabel>Custom Filter <span className="text-gray-400 font-normal ml-0.5">(Optional)</span></FieldLabel>
+                  <textarea value={customFilter} onChange={e=>setCustomFilter(e.target.value)} rows={3}
+                    placeholder="Please Input SQL After 'WHERE'"
+                    className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-xs font-mono bg-gray-50 resize-y focus:outline-none focus:border-teal-400 placeholder:text-gray-300 text-gray-700"/>
+                </div>
+              )}
+            </>
+          )}
+        </div>
+
+        <div className="px-4 py-2 border-t border-gray-50">
+          <span className="text-xs text-gray-400">{activeTab==="lastInstance" ? "Node · Last execution result" : "Node · Click node to select"}</span>
+        </div>
+      </div>
+
+      {/* SQL Fullscreen Modal */}
+      {fullscreen && (
+        <div className="fixed inset-0 z-[100] bg-black/60 flex items-center justify-center p-8" onClick={()=>setFullscreen(false)}>
+          <div className="bg-white rounded-2xl w-full max-w-4xl h-[80vh] flex flex-col overflow-hidden shadow-2xl" onClick={e=>e.stopPropagation()}>
+            <div className="flex items-center justify-between px-5 py-3.5 border-b border-gray-100 shrink-0">
+              <div className="flex items-center gap-2.5">
+                <div className="w-7 h-7 rounded-lg flex items-center justify-center bg-teal-100">
+                  <Database size={13} className="text-teal-600"/>
+                </div>
+                <span className="text-sm text-gray-800">SQL Editor</span>
+                <span className="text-xs text-gray-400 bg-gray-100 px-2 py-0.5 rounded-full">Frame Table</span>
+              </div>
+              <button onClick={()=>setFullscreen(false)} className="p-1.5 rounded-lg text-gray-400 hover:text-gray-600 hover:bg-gray-100 transition-colors"><X size={15}/></button>
+            </div>
+            <div className="flex-1 flex overflow-hidden" style={{fontFamily:"ui-monospace,SFMono-Regular,Menlo,monospace",fontSize:13,lineHeight:"22px"}}>
+              <div className="shrink-0 bg-gray-50 border-r border-gray-100 px-3 py-4 text-gray-400 select-none text-right overflow-y-auto" style={{minWidth:48}}>
+                {(sql||" ").split("\n").map((_,i)=><div key={i} style={{height:22}}>{i+1}</div>)}
+              </div>
+              <div className="flex-1 relative overflow-auto">
+                <pre className="absolute inset-0 p-4 m-0 pointer-events-none whitespace-pre-wrap break-words text-gray-700"
+                  style={{fontFamily:"inherit",fontSize:"inherit",lineHeight:"inherit"}}
+                  dangerouslySetInnerHTML={{__html:highlightSQL(sql||"")+"\u200B"}}/>
+                <textarea value={sql} onChange={e=>setSql(e.target.value)}
+                  className="absolute inset-0 w-full h-full p-4 bg-transparent resize-none focus:outline-none text-transparent z-10"
+                  style={{fontFamily:"inherit",fontSize:"inherit",lineHeight:"inherit",caretColor:"#1e293b"}}
+                  spellCheck={false} placeholder=" "/>
+              </div>
+            </div>
+            <div className="flex items-center justify-between px-5 py-2.5 border-t border-gray-100 shrink-0 bg-gray-50/50">
+              <span className="text-xs text-gray-400 font-mono">
+                {(sql||"").split("\n").length} line{(sql||"").split("\n").length!==1?"s":""} · {(sql||"").length} chars
+              </span>
+              <button onClick={()=>setFullscreen(false)} className="px-4 py-1.5 text-xs text-white bg-teal-500 hover:bg-teal-600 rounded-lg transition-colors">Done</button>
+            </div>
+          </div>
+        </div>
+      )}
+    </>
+  );
+}
+
+// ─── End Node Panel ────────────────────────────────────────────────────────────
+interface OutputVar { id: string; name: string; boundVar: string; }
+
+function EndNodePanel({ isInstanceView, nodeStatus, instance, onClose }: {
+  isInstanceView: boolean; nodeStatus?: NodeStatus; instance?: Instance; onClose: () => void;
+}) {
+  const [activeTab, setActiveTab] = useState<"settings" | "lastrun">("settings");
+  const [vars, setVars] = useState<OutputVar[]>([]);
+  const [openDropId, setOpenDropId] = useState<string | null>(null);
+  const [search, setSearch] = useState("");
+
+  const addVar = () => setVars(p => [...p, { id: `v-${Date.now()}`, name: "", boundVar: "" }]);
+  const removeVar = (id: string) => setVars(p => p.filter(v => v.id !== id));
+  const updateVar = (id: string, key: "name" | "boundVar", val: string) =>
+    setVars(p => p.map(v => v.id === id ? { ...v, [key]: val } : v));
+
+  const filteredSys = SYSTEM_VARS.filter(s => s.name.toLowerCase().includes(search.toLowerCase()));
+
+  const logs = nodeStatus ? (() => {
+    const t = "15:04";
+    if (nodeStatus === "waiting")       return [`[--:--] ◷ Waiting for upstream nodes...`];
+    if (nodeStatus === "success")       return [`[${t}:00] → Publishing output variables...`, `[${t}:02] ✓ All variables bound and published.`];
+    if (nodeStatus === "failed")        return [`[${t}:00] → Publishing...`, `[${t}:01] ✗ Variable binding failed.`];
+    return [`[${t}:00] → Processing...`];
+  })() : [];
+
+  return (
+    <div className="w-80 shrink-0 bg-white border-l border-gray-100 flex flex-col h-full overflow-hidden">
+      {/* Header */}
+      <div className="px-4 py-3 border-b border-gray-100 flex items-start justify-between gap-2 bg-orange-50/50">
+        <div className="flex items-center gap-2.5 min-w-0">
+          <div className="w-10 h-10 rounded-xl flex items-center justify-center shrink-0 bg-orange-100">
+            <Flag size={16} className="text-orange-500" />
+          </div>
+          <div className="min-w-0">
+            <div className="text-sm text-gray-900">End</div>
+            <div className="text-xs text-gray-400">Output node · Global Variables</div>
+          </div>
+        </div>
+        <button onClick={onClose} className="p-1 text-gray-300 hover:text-gray-500 shrink-0"><X size={13} /></button>
+      </div>
+
+      {/* Tabs */}
+      <div className="flex border-b border-gray-100 shrink-0">
+        {(["settings", "lastrun"] as const).map(tab => (
+          <button key={tab} onClick={() => setActiveTab(tab)}
+            className={`flex-1 py-2.5 text-xs font-medium transition-colors relative ${
+              activeTab === tab
+                ? "text-orange-500 after:absolute after:bottom-0 after:left-0 after:right-0 after:h-0.5 after:bg-orange-500"
+                : "text-gray-400 hover:text-gray-600"
+            }`}>
+            {tab === "settings" ? "Settings" : "Last Run"}
+          </button>
+        ))}
+      </div>
+
+      {/* Content */}
+      <div className="flex-1 overflow-y-auto px-4 py-4 flex flex-col gap-4">
+        {activeTab === "settings" ? (
+          <>
+            {/* OUTPUT VARIABLE section */}
+            <div>
+              <div className="flex items-center justify-between mb-3">
+                <span className="text-xs tracking-widest" style={{ color: "#1e293b", fontWeight: 700, letterSpacing: "0.08em" }}>
+                  OUTPUT VARIABLE <span className="text-orange-500">*</span>
+                </span>
+                <button onClick={addVar}
+                  className="w-6 h-6 rounded-lg border border-gray-200 flex items-center justify-center text-gray-500 hover:border-teal-400 hover:text-teal-600 hover:bg-teal-50 transition-all">
+                  <Plus size={12} />
+                </button>
+              </div>
+
+              {/* Field list */}
+              {vars.length > 0 && (
+                <div className="flex flex-col gap-2 mb-2">
+                  {vars.map((v, idx) => (
+                    <div key={v.id} className="border border-gray-200 rounded-xl px-3 pt-2.5 pb-2 bg-white relative">
+                      {/* Row 1: index + variable name */}
+                      <div className="flex items-center gap-2 mb-2">
+                        <span className="text-xs text-gray-400 w-4 shrink-0 tabular-nums">{idx + 1}</span>
+                        <input
+                          type="text"
+                          value={v.name}
+                          onChange={e => updateVar(v.id, "name", e.target.value)}
+                          placeholder="variable name"
+                          className="flex-1 text-xs border border-gray-200 rounded-lg px-2.5 py-1.5 focus:outline-none focus:border-orange-400 placeholder:text-gray-300 bg-white text-gray-700 font-mono"
+                        />
+                      </div>
+                      {/* Row 2: arrow + set variable dropdown + trash */}
+                      <div className="flex items-center gap-2 pl-6">
+                        <span className="text-gray-300 text-xs shrink-0">→</span>
+                        <div className="relative flex-1">
+                          <button
+                            onClick={() => { setOpenDropId(openDropId === v.id ? null : v.id); setSearch(""); }}
+                            className="w-full flex items-center gap-1.5 border border-gray-200 rounded-lg px-2.5 py-1.5 text-xs text-gray-500 hover:border-orange-300 hover:bg-orange-50/30 transition-all"
+                          >
+                            <span className="w-4 h-4 rounded shrink-0 flex items-center justify-center bg-orange-100">
+                              <span className="text-orange-500" style={{ fontSize: 9, fontWeight: 700 }}>{"{x}"}</span>
+                            </span>
+                            <span className={`flex-1 text-left ${v.boundVar ? "text-gray-700 font-mono" : "text-gray-400"}`}>
+                              {v.boundVar || "Set variable"}
+                            </span>
+                            <ChevronDown size={11} className="text-gray-400 shrink-0" />
+                          </button>
+
+                          {/* Dropdown */}
+                          {openDropId === v.id && (
+                            <div className="absolute left-0 right-0 top-full mt-1 bg-white border border-gray-200 rounded-xl shadow-xl z-50 overflow-hidden"
+                              style={{ minWidth: 220 }}>
+                              {/* Search */}
+                              <div className="flex items-center gap-2 px-3 py-2 border-b border-gray-100">
+                                <Search size={12} className="text-gray-400 shrink-0" />
+                                <input
+                                  type="text" value={search} onChange={e => setSearch(e.target.value)}
+                                  placeholder="Search variable"
+                                  className="flex-1 text-xs bg-transparent focus:outline-none placeholder:text-gray-300 text-gray-600"
+                                  autoFocus
+                                />
+                              </div>
+                              {/* System vars */}
+                              <div className="p-2">
+                                <div className="text-xs text-gray-400 px-2 py-1 tracking-widest" style={{ fontSize: 10, fontWeight: 700 }}>SYSTEM</div>
+                                {filteredSys.map(sv => (
+                                  <button key={sv.name}
+                                    onClick={() => { updateVar(v.id, "boundVar", sv.name); setOpenDropId(null); }}
+                                    className="w-full flex items-center gap-2.5 px-2 py-1.5 rounded-lg hover:bg-orange-50 transition-colors text-left">
+                                    <span className="w-5 h-5 rounded shrink-0 flex items-center justify-center bg-orange-100">
+                                      <span className="text-orange-500" style={{ fontSize: 8, fontWeight: 700 }}>{"{x}"}</span>
+                                    </span>
+                                    <span className="flex-1 text-xs text-gray-700 font-mono">{sv.name}</span>
+                                    <span className="text-xs text-gray-400">{sv.type}</span>
+                                  </button>
+                                ))}
+                                {filteredSys.length === 0 && (
+                                  <div className="px-2 py-3 text-center text-xs text-gray-400">No variables found</div>
+                                )}
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                        <button onClick={() => removeVar(v.id)} className="p-1 text-gray-300 hover:text-red-400 transition-colors shrink-0">
+                          <Trash2 size={13} />
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {/* Empty state */}
+              {vars.length === 0 && (
+                <div className="border border-dashed border-gray-200 rounded-xl py-8 mb-2 text-center bg-gray-50/40">
+                  <Flag size={22} className="text-gray-200 mx-auto mb-2" />
+                  <div className="text-xs text-gray-400 mb-0.5">No output variables defined</div>
+                  <div className="text-xs text-gray-300">Click + to bind global variables</div>
+                </div>
+              )}
+
+              {/* Add Variable button */}
+              <button onClick={addVar}
+                className="w-full flex items-center justify-center gap-2 py-2.5 border border-dashed border-gray-200 rounded-xl text-sm text-gray-500 hover:border-orange-300 hover:text-orange-500 hover:bg-orange-50/30 transition-all">
+                <Plus size={14} /> Add Variable
+              </button>
+            </div>
+
+            {/* Info box */}
+            <div className="border border-gray-100 rounded-xl px-3.5 py-3 bg-gray-50/60 text-xs text-gray-400 leading-relaxed">
+              Output variables are published as{" "}
+              <code className="font-mono text-gray-600 bg-gray-100 px-1 py-0.5 rounded">global variables</code>{" "}
+              after the pipeline completes. Downstream workflows or systems can reference them by name.
+            </div>
+          </>
+        ) : (
+          /* Last Run tab */
+          <>
+            {isInstanceView && nodeStatus ? (
+              <>
+                <PanelSection title="EXECUTION STATUS">
+                  <span className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-xs w-fit ${STATUS_STYLES[nodeStatus].badge} ${STATUS_STYLES[nodeStatus].badgeText}`}>
+                    <span className={`w-1.5 h-1.5 rounded-full ${STATUS_STYLES[nodeStatus].dot}`} />{STATUS_STYLES[nodeStatus].label}
+                  </span>
+                </PanelSection>
+                {instance && (
+                  <PanelSection title="TIMELINE">
+                    <PanelRow label="Created"  value={instance.createTime || "—"} />
+                    <PanelRow label="Started"  value={instance.startTime  || "—"} />
+                    <PanelRow label="Finished" value={instance.finishTime || "—"} />
+                    <PanelRow label="Duration" value={instance.duration   || "—"} />
+                  </PanelSection>
+                )}
+                <PanelSection title="LOGS">
+                  <div className="bg-gray-900 rounded-lg px-2.5 py-2 flex flex-col gap-1">
+                    {logs.map((l, i) => (
+                      <span key={i} className="text-xs text-gray-300 font-mono leading-relaxed">{l}</span>
+                    ))}
+                  </div>
+                </PanelSection>
+              </>
+            ) : (
+              <div className="flex flex-col items-center justify-center py-10 text-center gap-2">
+                <Flag size={24} className="text-gray-200" />
+                <div className="text-xs text-gray-400">No run data available</div>
+                <div className="text-xs text-gray-300">Trigger an instance to see execution results</div>
+              </div>
+            )}
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ─── Feature Group Panel ───────────────────────────────────────────────────────
+interface FGDef {
+  name: string; dataServer: string; schema: string;
+  table: string; marker: string; filter: string;
+  entityCols: string[]; eventTimeCols: string[]; cols: ParsedCol[];
+}
+const FG_CATALOG: FGDef[] = [
+  {
+    name: "user_profile_features",
+    dataServer: "reg_sg_hive", schema: "feature_store", table: "user_profile_v3",
+    marker: "user_profile_v3", filter: "—",
+    entityCols: ["user_id"],
+    eventTimeCols: ["last_login_days"],
+    cols: [
+      { name: "age",               type: "INT"     },
+      { name: "gender",            type: "STRING"  },
+      { name: "country",           type: "STRING"  },
+      { name: "registration_days", type: "INT"     },
+      { name: "is_verified",       type: "BOOLEAN" },
+      { name: "last_login_days",   type: "INT"     },
+      { name: "account_level",     type: "INT"     },
+    ],
+  },
+  {
+    name: "order_history_features",
+    dataServer: "reg_sg_hive", schema: "feature_store", table: "order_history_v2",
+    marker: "order_history_v2", filter: "ds >= '2024-01-01'",
+    entityCols: ["user_id", "order_id"],
+    eventTimeCols: ["order_time", "ds"],
+    cols: [
+      { name: "total_orders",    type: "INT"       },
+      { name: "total_amount",    type: "DOUBLE"    },
+      { name: "avg_order_value", type: "DOUBLE"    },
+      { name: "last_order_time", type: "TIMESTAMP" },
+      { name: "order_time",      type: "TIMESTAMP" },
+      { name: "category_pref",   type: "STRING"    },
+      { name: "return_rate",     type: "DOUBLE"    },
+      { name: "ds",              type: "STRING"    },
+    ],
+  },
+  {
+    name: "credit_behavior_features",
+    dataServer: "reg_us_hive", schema: "risk_store", table: "credit_behavior_v1",
+    marker: "credit_behavior_v1", filter: "—",
+    entityCols: ["user_id"],
+    eventTimeCols: ["event_time"],
+    cols: [
+      { name: "credit_score",     type: "INT"       },
+      { name: "overdue_cnt",      type: "INT"       },
+      { name: "loan_amount",      type: "DOUBLE"    },
+      { name: "repay_ratio",      type: "DOUBLE"    },
+      { name: "event_time",       type: "TIMESTAMP" },
+      { name: "risk_label",       type: "STRING"    },
+      { name: "delinquency_days", type: "INT"       },
+    ],
+  },
+];
+const DEFAULT_FG_BY_NODE: Partial<Record<NodeId, string>> = {
+  C: "user_profile_features",
+  D: "order_history_features",
+  E: "credit_behavior_features",
+};
+const JOIN_TYPES = ["Left Latest Join", "Inner Latest Join"];
+const FG_LAST_INST: Partial<Record<NodeId, {
+  instanceId: string; status: NodeStatus; featureGroup: string;
+  selectedCnt: number; datePartitionCnt: number;
+  startedAt: string; finishedAt: string; duration: string;
+}>> = {
+  C: { instanceId: "inst_20240315_083012", status: "success", featureGroup: "user_profile_features",    selectedCnt: 7, datePartitionCnt: 31, startedAt: "2024-03-15 08:30:12", finishedAt: "2024-03-15 08:34:37", duration: "4m 25s" },
+  D: { instanceId: "inst_20240315_083522", status: "success", featureGroup: "order_history_features",   selectedCnt: 6, datePartitionCnt: 31, startedAt: "2024-03-15 08:35:22", finishedAt: "2024-03-15 08:42:11", duration: "6m 49s" },
+  E: { instanceId: "inst_20240315_084318", status: "success", featureGroup: "credit_behavior_features", selectedCnt: 7, datePartitionCnt: 14, startedAt: "2024-03-15 08:43:18", finishedAt: "2024-03-15 08:47:05", duration: "3m 47s" },
+};
+
+function FeatureGroupPanel({ nodeId, isInstanceView: _iv, nodeStatus, onClose }: {
+  nodeId: NodeId; isInstanceView: boolean; nodeStatus?: NodeStatus; instance?: Instance; onClose: () => void;
+}) {
+  const [activeTab,       setActiveTab]       = useState<"config"|"lastInstance">("config");
+  const [fgSearch,        setFgSearch]        = useState(DEFAULT_FG_BY_NODE[nodeId] ?? "");
+  const [fgOpen,          setFgOpen]          = useState(false);
+  const [selectedFg,      setSelectedFg]      = useState<string>(DEFAULT_FG_BY_NODE[nodeId] ?? "");
+  const [showInfo,        setShowInfo]        = useState(false);
+  const [colSearch,       setColSearch]       = useState("");
+  const [colParseState,   setColParseState]   = useState<ParseState>(DEFAULT_FG_BY_NODE[nodeId] ? "ready" : "idle");
+  const [selectedCols,    setSelectedCols]    = useState<Set<string>>(
+    new Set((FG_CATALOG.find(f => f.name === (DEFAULT_FG_BY_NODE[nodeId] ?? "")) ?? { cols: [] }).cols.map(c => c.name))
+  );
+  const [joinType,        setJoinType]        = useState(JOIN_TYPES[0]);
+  const [entityJoinCol,   setEntityJoinCol]   = useState("");
+  const [eventTimeJoinCol,setEventTimeJoinCol] = useState("");
+
+  const fg            = FG_CATALOG.find(f => f.name === selectedFg) ?? null;
+  const filteredFgList = FG_CATALOG.filter(f => f.name.toLowerCase().includes((fgOpen ? fgSearch : "").toLowerCase()));
+  const filteredCols  = (fg?.cols ?? []).filter(c => c.name.toLowerCase().includes(colSearch.toLowerCase()));
+  const allSel        = fg ? fg.cols.length > 0 && fg.cols.every(c => selectedCols.has(c.name)) : false;
+  const someSel       = fg ? fg.cols.some(c => selectedCols.has(c.name)) : false;
+  const lastInst      = FG_LAST_INST[nodeId];
+
+  // Auto-parse columns when FG selection changes
+  useEffect(() => {
+    if (!selectedFg) { setColParseState("idle"); setSelectedCols(new Set()); return; }
+    setColParseState("parsing");
+    const t = setTimeout(() => {
+      const f = FG_CATALOG.find(x => x.name === selectedFg);
+      if (f) { setSelectedCols(new Set(f.cols.map(c => c.name))); }
+      setEntityJoinCol(""); setEventTimeJoinCol("");
+      setColParseState("ready");
+    }, 550);
+    return () => clearTimeout(t);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedFg]);
+
+  const toggleAll = () => setSelectedCols(allSel ? new Set() : new Set(fg?.cols.map(c => c.name) ?? []));
+  const toggleCol = (name: string) => {
+    const n = new Set(selectedCols); n.has(name) ? n.delete(name) : n.add(name); setSelectedCols(n);
+  };
+  const Chk = ({ on }: { on: boolean }) => (
+    <span className={`w-4 h-4 rounded border flex items-center justify-center shrink-0 transition-all ${on ? "bg-teal-500 border-teal-500" : "border-gray-300 bg-white"}`}>
+      {on && <span className="text-white" style={{fontSize:9,fontWeight:900,lineHeight:1}}>✓</span>}
+    </span>
+  );
+
+  return (
+    <div className="w-80 shrink-0 bg-white border-l border-gray-100 flex flex-col h-full overflow-hidden">
+      {/* Header */}
+      <div className="px-4 pt-3 pb-0 border-b border-gray-100 bg-blue-50/40">
+        <div className="flex items-start justify-between gap-2 pb-3">
+          <div className="flex items-center gap-2.5 min-w-0">
+            <div className="w-9 h-9 rounded-xl flex items-center justify-center shrink-0 bg-blue-100">
+              <Layers size={15} className="text-blue-600" />
+            </div>
+            <div className="min-w-0">
+              <div className="text-sm text-gray-800 truncate max-w-[170px]">{selectedFg || "Feature Group"}</div>
+              <div className="text-xs text-gray-400">Feature Group Config</div>
+            </div>
+          </div>
+          <button onClick={onClose} className="p-1 text-gray-300 hover:text-gray-500 shrink-0 mt-0.5"><X size={13}/></button>
+        </div>
+        {/* Tab bar */}
+        <div className="flex gap-0 -mb-px">
+          {(["config","lastInstance"] as const).map(tab => (
+            <button key={tab} onClick={() => setActiveTab(tab)}
+              className={`px-4 py-2 text-xs border-b-2 transition-colors ${activeTab===tab ? "border-teal-500 text-teal-600" : "border-transparent text-gray-400 hover:text-gray-600"}`}>
+              {tab === "config" ? "Config" : "Last Instance"}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      <div className="flex-1 overflow-y-auto px-4 py-4 flex flex-col gap-4">
+
+        {/* ── Last Instance tab ── */}
+        {activeTab === "lastInstance" ? (
+          <>
+            {lastInst ? (
+              <>
+                {/* Status + Instance ID */}
+                <div className="flex items-center justify-between">
+                  <span className="text-xs text-gray-500">Status</span>
+                  <span className={`inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs ${STATUS_STYLES[lastInst.status].badge} ${STATUS_STYLES[lastInst.status].badgeText}`}>
+                    <span className={`w-1.5 h-1.5 rounded-full ${STATUS_STYLES[lastInst.status].dot}`}/>
+                    {STATUS_STYLES[lastInst.status].label}
+                  </span>
+                </div>
+                <div className="flex items-center justify-between">
+                  <span className="text-xs text-gray-500">Instance ID</span>
+                  <span className="text-xs text-gray-700 font-mono bg-gray-100 px-2 py-0.5 rounded-lg">{lastInst.instanceId}</span>
+                </div>
+
+                <div className="border-t border-gray-100"/>
+
+                {/* FG summary rows */}
+                <div className="flex flex-col gap-1">
+                  <span className="text-xs text-gray-400 uppercase tracking-wide" style={{fontSize:10}}>Feature Group</span>
+                  <div className="mt-1.5 rounded-xl border border-gray-100 overflow-hidden">
+                    {[
+                      { label: "FG Name",          value: lastInst.featureGroup          },
+                      { label: "Features Selected", value: String(lastInst.selectedCnt)   },
+                      { label: "Date Partitions",   value: String(lastInst.datePartitionCnt) },
+                    ].map(({label,value}) => (
+                      <div key={label} className="flex items-start justify-between gap-3 px-3 py-2 border-b border-gray-50 last:border-0 hover:bg-gray-50/60">
+                        <span className="text-xs text-gray-400 shrink-0">{label}</span>
+                        <span className="text-xs text-gray-700 font-mono text-right break-all">{value}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Stat tiles */}
+                
+
+                {/* Timeline */}
+                
+
+                {/* Execution log */}
+                
+              </>
+            ) : (
+              <div className="flex flex-col items-center justify-center py-12 gap-3 text-center">
+                <Layers size={24} className="text-gray-200"/>
+                <span className="text-xs text-gray-400">No execution data available</span>
+              </div>
+            )}
+          </>
+
+        ) : (
+          /* ── Config tab ── */
+          <>
+            {/* 1. FG Name selector */}
+            <div>
+              <FieldLabel required>Feature Group</FieldLabel>
+              <div className="relative">
+                <div className="flex items-center gap-1.5">
+                  {/* Combobox input */}
+                  <div className="flex-1 relative">
+                    <input
+                      type="text"
+                      value={fgOpen ? fgSearch : selectedFg}
+                      onChange={e => { setFgSearch(e.target.value); setFgOpen(true); }}
+                      onFocus={() => { setFgOpen(true); setFgSearch(""); }}
+                      onBlur={() => setTimeout(() => setFgOpen(false), 160)}
+                      placeholder="Search feature group…"
+                      className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm text-gray-700 bg-gray-50 focus:outline-none focus:border-teal-400 placeholder:text-gray-300 font-mono pr-7"
+                    />
+                    <ChevronDown size={13} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none"/>
+                  </div>
+                  {/* Eye info button */}
+                  {fg && (
+                    <div className="relative shrink-0">
+                      <button
+                        onMouseEnter={() => setShowInfo(true)}
+                        onMouseLeave={() => setShowInfo(false)}
+                        className="w-8 h-8 flex items-center justify-center rounded-xl border border-gray-200 bg-gray-50 hover:border-teal-400 hover:bg-teal-50 transition-colors text-gray-400 hover:text-teal-600"
+                      >
+                        <Eye size={14}/>
+                      </button>
+                      {showInfo && (
+                        <div className="absolute right-0 top-full mt-1.5 z-50 bg-white border border-gray-200 rounded-xl shadow-2xl p-3 w-60">
+                          <div className="flex flex-col gap-2">
+                            {[
+                              { label: "Data Server", value: fg.dataServer },
+                              { label: "Schema",      value: fg.schema     },
+                              { label: "Table",       value: fg.table      },
+                              { label: "Marker",      value: fg.marker     },
+                              { label: "Filter",      value: fg.filter     },
+                            ].map(({label,value}) => (
+                              <div key={label} className="flex items-start gap-2">
+                                <span className="text-xs text-gray-400 w-20 shrink-0">{label}</span>
+                                <span className="text-xs text-gray-800 font-mono break-all">{value}</span>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+
+                {/* FG dropdown list */}
+                {fgOpen && (
+                  <div className="absolute left-0 z-50 mt-1 bg-white border border-gray-200 rounded-xl shadow-xl overflow-hidden"
+                    style={{width:"calc(100% - 40px)"}}>
+                    <div className="max-h-44 overflow-y-auto">
+                      {filteredFgList.length === 0 ? (
+                        <div className="py-4 text-center text-xs text-gray-400">No feature groups matched</div>
+                      ) : filteredFgList.map(f => (
+                        <button key={f.name}
+                          onMouseDown={() => { setSelectedFg(f.name); setFgSearch(f.name); setFgOpen(false); }}
+                          className={`w-full text-left px-3 py-2.5 text-xs font-mono border-b border-gray-50 last:border-0 hover:bg-teal-50 transition-colors ${selectedFg === f.name ? "bg-teal-50 text-teal-700" : "text-gray-700"}`}>
+                          {f.name}
+                          {selectedFg === f.name && <span className="ml-2 text-teal-400">✓</span>}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* 2. Columns */}
+            <div>
+              <FieldLabel required>Columns</FieldLabel>
+              <div className="border border-gray-200 rounded-xl overflow-hidden">
+                {/* Toolbar: ready */}
+                {colParseState === "ready" && fg && (
+                  <div className="flex items-center gap-2 px-3 py-2 border-b border-gray-100 bg-gray-50/60">
+                    <button onClick={toggleAll} className="flex items-center gap-1.5 shrink-0">
+                      <span className={`w-4 h-4 rounded border flex items-center justify-center transition-all ${allSel ? "bg-teal-500 border-teal-500" : someSel ? "bg-teal-100 border-teal-300" : "border-gray-300 bg-white"}`}>
+                        {allSel  && <span className="text-white" style={{fontSize:9,fontWeight:900,lineHeight:1}}>✓</span>}
+                        {!allSel && someSel && <span className="w-2 h-0.5 bg-teal-500 block"/>}
+                      </span>
+                      <span className="text-xs text-gray-600">Select All</span>
+                      <span className="text-xs text-gray-400">({selectedCols.size}/{fg.cols.length})</span>
+                    </button>
+                    <div className="flex-1 relative">
+                      <Search size={11} className="absolute left-2 top-1/2 -translate-y-1/2 text-gray-300 pointer-events-none"/>
+                      <input type="text" value={colSearch} onChange={e => setColSearch(e.target.value)}
+                        placeholder="Search columns…"
+                        className="w-full text-xs border border-gray-200 rounded-lg pl-6 pr-2 py-1 bg-white focus:outline-none focus:border-teal-400 placeholder:text-gray-300"/>
+                    </div>
+                  </div>
+                )}
+
+                {/* idle */}
+                {colParseState === "idle" && (
+                  <div className="py-6 px-4 flex flex-col items-center gap-2 text-center">
+                    <div className="w-8 h-8 rounded-full bg-gray-100 flex items-center justify-center">
+                      <Layers size={14} className="text-gray-300"/>
+                    </div>
+                    <p className="text-xs text-gray-400 leading-relaxed">Select a Feature Group to load columns</p>
+                  </div>
+                )}
+
+                {/* parsing spinner */}
+                {colParseState === "parsing" && (
+                  <div className="py-6 flex items-center justify-center gap-2">
+                    <svg className="animate-spin w-4 h-4 text-teal-400" viewBox="0 0 24 24" fill="none">
+                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="3"/>
+                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z"/>
+                    </svg>
+                    <span className="text-xs text-gray-400">Parsing schema…</span>
+                  </div>
+                )}
+
+                {/* column rows */}
+                {colParseState === "ready" && fg && (
+                  <div className="overflow-y-auto" style={{maxHeight:178}}>
+                    {filteredCols.map(col => (
+                      <div key={col.name} onClick={() => toggleCol(col.name)}
+                        className={`flex items-center gap-2.5 px-3 py-2 border-b border-gray-50 last:border-0 cursor-pointer hover:bg-gray-50 transition-colors ${!selectedCols.has(col.name) ? "opacity-40" : ""}`}>
+                        <Chk on={selectedCols.has(col.name)}/>
+                        <span className="flex-1 text-xs text-gray-700 font-mono">{col.name}</span>
+                        <span className={`text-xs px-1.5 py-0.5 rounded-md font-mono ${COL_TYPE_BADGE[col.type] ?? "bg-gray-100 text-gray-500"}`} style={{fontSize:10}}>{col.type}</span>
+                      </div>
+                    ))}
+                    {filteredCols.length === 0 && fg.cols.length > 0 && (
+                      <div className="py-4 text-center text-xs text-gray-400">No columns matched</div>
+                    )}
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* ── Smart Join Config ─────────────────────────────────────── */}
+            <div className="border-t border-gray-200 pt-4">
+              <div className="text-sm text-gray-800 mb-3">Smart Join Config</div>
+
+              {/* Join Type */}
+              <div className="mb-4">
+                <FieldLabel>Join Type</FieldLabel>
+                <div className="relative">
+                  <select value={joinType} onChange={e => setJoinType(e.target.value)}
+                    className="w-full appearance-none border border-gray-200 rounded-xl px-3 py-2 text-sm text-gray-700 bg-gray-50 focus:outline-none focus:border-teal-400 pr-8">
+                    {JOIN_TYPES.map(j => <option key={j} value={j}>{j}</option>)}
+                  </select>
+                  <ChevronDown size={13} className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none"/>
+                </div>
+              </div>
+
+              {/* Column headers */}
+              <div className="grid grid-cols-[1fr_36px_1fr] gap-2 mb-1.5 px-0.5">
+                <span className="text-xs text-gray-400">Frame Table</span>
+                <span className="text-xs text-gray-400 text-center">Op</span>
+                <span className="text-xs text-gray-400">Feature Group</span>
+              </div>
+
+              {/* Entity join row */}
+              <div className="grid grid-cols-[1fr_36px_1fr] gap-2 items-center mb-2">
+                <div className="flex items-center gap-1 px-2.5 py-1.5 bg-gray-50 border border-gray-200 rounded-xl min-w-0">
+                  <span className="text-xs text-gray-700 font-mono truncate">user_id</span>
+                  <span className="text-xs px-1.5 py-0.5 rounded-md bg-teal-100 text-teal-700 shrink-0 leading-none" style={{fontSize:10}}>PK</span>
+                </div>
+                <div className="flex items-center justify-center">
+                  <span className="text-xs text-gray-500 font-mono">=</span>
+                </div>
+                <div className="relative">
+                  <select value={entityJoinCol} onChange={e => setEntityJoinCol(e.target.value)}
+                    className="w-full appearance-none border border-gray-200 rounded-xl px-2.5 py-1.5 text-xs text-gray-700 bg-gray-50 focus:outline-none focus:border-teal-400 pr-6 font-mono">
+                    <option value="">Select</option>
+                    {(fg?.entityCols ?? []).map(c => <option key={c} value={c}>{c}</option>)}
+                  </select>
+                  <ChevronDown size={11} className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none"/>
+                </div>
+              </div>
+
+              {/* EventTime join row */}
+              <div className="grid grid-cols-[1fr_36px_1fr] gap-2 items-center">
+                <div className="flex items-center gap-1 px-2.5 py-1.5 bg-gray-50 border border-gray-200 rounded-xl min-w-0">
+                  <span className="text-xs text-gray-700 font-mono truncate">event_time</span>
+                  <span className="text-xs px-1.5 py-0.5 rounded-md bg-amber-100 text-amber-700 shrink-0 leading-none" style={{fontSize:10}}>ET</span>
+                </div>
+                <div className="flex items-center justify-center">
+                  <span className="text-xs text-gray-500 font-mono">&gt;=</span>
+                </div>
+                <div className="relative">
+                  <select value={eventTimeJoinCol} onChange={e => setEventTimeJoinCol(e.target.value)}
+                    className="w-full appearance-none border border-gray-200 rounded-xl px-2.5 py-1.5 text-xs text-gray-700 bg-gray-50 focus:outline-none focus:border-teal-400 pr-6 font-mono">
+                    <option value="">Select</option>
+                    {(fg?.eventTimeCols ?? []).map(c => <option key={c} value={c}>{c}</option>)}
+                  </select>
+                  <ChevronDown size={11} className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none"/>
+                </div>
+              </div>
+            </div>
+          </>
+        )}
+      </div>
+
+      <div className="px-4 py-2 border-t border-gray-50">
+        <span className="text-xs text-gray-400">{activeTab === "lastInstance" ? "Node · Last execution result" : "Node · Feature Group config"}</span>
+      </div>
+    </div>
+  );
+}
+
+function NodeConfigPanel({
+  node, isInstanceView, nodeStatus, instance, onClose,
+}: {
+  node: NodeDef; isInstanceView: boolean;
+  nodeStatus?: NodeStatus; instance?: Instance; onClose: () => void;
+}) {
+  // B → Frame Table node gets its own dedicated panel
+  if (node.id === "B") {
+    return <FrameTablePanel isInstanceView={isInstanceView} nodeStatus={nodeStatus} instance={instance} onClose={onClose} />;
+  }
+  // G → END node gets its own dedicated panel
+  if (node.id === "G") {
+    return <EndNodePanel isInstanceView={isInstanceView} nodeStatus={nodeStatus} instance={instance} onClose={onClose} />;
+  }
+  // C / D / E → Feature Group dedicated panel
+  if (node.type === "feature") {
+    return <FeatureGroupPanel nodeId={node.id} isInstanceView={isInstanceView} nodeStatus={nodeStatus} instance={instance} onClose={onClose} />;
+  }
+
+  const cfg = NODE_CONFIGS[node.id];
+  const ts = TYPE_STYLES[node.type];
+  const isStartNode = node.id === "A";
+  const Icon = isStartNode ? Zap : node.type === "feature" ? Layers : node.type === "sink" ? Database : Play;
+  const logs = nodeStatus ? getMockLogs(node.id, nodeStatus) : [];
+
+  return (
+    <div className="w-72 shrink-0 bg-white border-l border-gray-100 flex flex-col h-full overflow-hidden">
+      {/* Header */}
+      <div className={`px-4 py-3 border-b border-gray-100 flex items-start justify-between gap-2 ${isStartNode ? "bg-emerald-50/60" : ""}`}>
+        <div className="flex items-center gap-2.5 min-w-0">
+          <div className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0 ${isStartNode ? "bg-emerald-100" : ts.iconBg}`}>
+            <Icon size={15} className={isStartNode ? "text-emerald-600" : ts.iconColor} />
+          </div>
+          <div className="min-w-0">
+            <div className="text-sm text-gray-800 truncate">{node.title}</div>
+            <div className="text-xs text-gray-400">{node.subtitle}</div>
+          </div>
+        </div>
+        <button onClick={onClose} className="p-1 text-gray-300 hover:text-gray-500 shrink-0"><X size={13} /></button>
+      </div>
+
+      <div className="flex-1 overflow-y-auto px-4 py-4 flex flex-col gap-5">
+        {isInstanceView ? (
+          <>
+            {nodeStatus && (
+              <PanelSection title="EXECUTION STATUS">
+                <span className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-xs w-fit ${STATUS_STYLES[nodeStatus].badge} ${STATUS_STYLES[nodeStatus].badgeText}`}>
+                  <span className={`w-1.5 h-1.5 rounded-full ${STATUS_STYLES[nodeStatus].dot}`} />{STATUS_STYLES[nodeStatus].label}
+                </span>
+              </PanelSection>
+            )}
+            {instance && (
+              <PanelSection title="TIMELINE">
+                <PanelRow label="Created"  value={instance.createTime || "—"} />
+                <PanelRow label="Started"  value={instance.startTime  || "—"} />
+                <PanelRow label="Finished" value={instance.finishTime || "—"} />
+                <PanelRow label="Duration" value={instance.duration   || "—"} />
+              </PanelSection>
+            )}
+            <PanelSection title="LOGS">
+              <div className="bg-gray-900 rounded-lg px-2.5 py-2 flex flex-col gap-1">
+                {logs.map((l, i) => (
+                  <span key={i} className="text-xs text-gray-300 font-mono leading-relaxed">{l}</span>
+                ))}
+              </div>
+            </PanelSection>
+          </>
+        ) : (
+          <>
+            {/* A: START node — Input Field + Schedule */}
+            {isStartNode && <StartNodePanel defaultFreq={cfg.scheduleFreq ?? "ONCE"} />}
+
+            {/* Feature nodes are now handled by FeatureGroupPanel above */}
+
+            {/* F: Sink */}
+            {node.type === "sink" && (
+              <>
+                <PanelSection title="OUTPUT CONFIG">
+                  <PanelRow label="Target"     value={cfg.outputTable ?? "—"} />
+                  <PanelRow label="Write Mode" value={cfg.writeMode   ?? "OVERWRITE"} />
+                  <PanelRow label="Partition"  value="ds" />
+                </PanelSection>
+                <PanelSection title="QUALITY CHECKS">
+                  <PanelRow label="Min Rows"       value={cfg.minRows ?? "—"} />
+                  <PanelRow label="Null Threshold" value="< 5%" />
+                </PanelSection>
+              </>
+            )}
+          </>
+        )}
+      </div>
+
+      <div className="px-4 py-2 border-t border-gray-50">
+        <span className="text-xs text-gray-400">
+          {isInstanceView ? "Node · Execution result" : "Node · Click node to select"}
+        </span>
+      </div>
+    </div>
+  );
+}
+
+// ─── Empty canvas hint ────────────────────────────────────────────────────────
+function CanvasEmptyHint() {
+  return (
+    <div className="absolute bottom-16 right-16 text-center pointer-events-none select-none">
+      <div className="w-12 h-12 rounded-full border-2 border-dashed border-gray-200 flex items-center justify-center mx-auto mb-2">
+        <GitBranch size={18} className="text-gray-300" />
+      </div>
+      <p className="text-sm text-gray-400">Click a node to view</p>
+      <p className="text-sm text-gray-400">and configure its properties</p>
+    </div>
+  );
+}
+
+// ─── Main Canvas Page ─────────────────────────────────────────────────────────
+export interface CanvasPageProps {
+  mode: "new" | "edit" | "instance";
+  formValues?: WideTableFormValues;
+  row?: WideTableRow;
+  initialInstanceId?: string;
+  onBack: () => void;
+}
+
+export function CanvasPage({ mode, formValues, row, initialInstanceId, onBack }: CanvasPageProps) {
+  // ── Meta ───────────────────────────────────────────────────────────────────
+  const [meta, setMeta] = useState<WideTableFormValues>(() => {
+    if (formValues) return formValues;
+    return { name: row!.name, region: row!.region[0] ?? "", owners: row!.owners, bizTeam: row!.bizTeam, description: row!.description };
+  });
+  const [instances, setInstances] = useState<Instance[]>(row?.instances ?? []);
+
+  // ── View mode ──────────────────────────────────────────────────────────────
+  // "current-config" or "instance-view" — no longer a toggle, driven by user action
+  const [viewMode, setViewMode] = useState<"current-config" | "instance-view">(
+    mode === "instance" ? "instance-view" : "current-config"
+  );
+  const [selectedInstId, setSelectedInstId] = useState<string | null>(initialInstanceId ?? null);
+  const selectedInst = instances.find(i => i.id === selectedInstId) ?? null;
+  const nodeStatuses = selectedInst ? getMockNodeStatuses(selectedInst.status) : undefined;
+
+  // ── Node positions (mutable for drag) ─────────────────────────────────────
+  const [nodes, setNodes] = useState<NodeDef[]>(INITIAL_NODES);
+
+  // ── Selected node ──────────────────────────────────────────────────────────
+  const [selectedNodeId, setSelectedNodeId] = useState<NodeId | null>(null);
+
+  // ── Canvas transform ──────────────────────────────────────────────────────
+  const [zoom, setZoomState] = useState(0.88);
+  const [pan, setPan] = useState({ x: 80, y: 40 });
+  const zoomRef = useRef(zoom);
+  useEffect(() => { zoomRef.current = zoom; }, [zoom]);
+
+  // ── Modals / dropdowns ─────────────────────────────────────────────────────
+  const [showMetaModal, setShowMetaModal] = useState(false);
+  const [showTriggerModal, setShowTriggerModal] = useState(false);
+  const [activeDropdown, setActiveDropdown] = useState<"history" | "action" | null>(null);
+  const [actionError, setActionError] = useState<string | null>(null);
+
+  // ── Refs ───────────────────────────────────────────────────────────────────
+  const containerRef = useRef<HTMLDivElement>(null);
+  const isPanning = useRef(false);
+  const panStart = useRef({ mx: 0, my: 0, px: 0, py: 0 });
+  const historyRef = useRef<HTMLDivElement>(null);
+  const actionRef = useRef<HTMLDivElement>(null);
+  const [containerSize, setContainerSize] = useState({ w: 800, h: 500 });
+
+  // Drag state (ref to avoid re-renders mid-drag)
+  const dragState = useRef<{ nodeId: NodeId; startMx: number; startMy: number; startNx: number; startNy: number } | null>(null);
+  const dragMoved = useRef(false);
+
+  // ── Resize observer ────────────────────────────────────────────────────────
+  useEffect(() => {
+    const el = containerRef.current; if (!el) return;
+    const ro = new ResizeObserver(e => {
+      const { width, height } = e[0].contentRect;
+      setContainerSize({ w: width, h: height });
+    });
+    ro.observe(el); return () => ro.disconnect();
+  }, []);
+
+  // ── Center on mount ────────────────────────────────────────────────────────
+  useEffect(() => {
+    const el = containerRef.current; if (!el) return;
+    const { width, height } = el.getBoundingClientRect();
+    const iz = 0.88;
+    setPan({ x: width / 2 - 530 * iz, y: height / 2 - 256 * iz });
+  }, []);
+
+  // ── Wheel zoom ──────────────────────────────────────────────────────────��──
+  const handleWheel = useCallback((e: WheelEvent) => {
+    e.preventDefault();
+    const rect = containerRef.current!.getBoundingClientRect();
+    const mx = e.clientX - rect.left; const my = e.clientY - rect.top;
+    const pz = zoomRef.current;
+    const nz = Math.min(Math.max(pz * (e.deltaY < 0 ? 1.12 : 0.9), 0.15), 3);
+    zoomRef.current = nz; setZoomState(nz);
+    setPan(p => ({ x: mx - (mx - p.x) * (nz / pz), y: my - (my - p.y) * (nz / pz) }));
+  }, []);
+  useEffect(() => {
+    const el = containerRef.current; if (!el) return;
+    el.addEventListener("wheel", handleWheel, { passive: false });
+    return () => el.removeEventListener("wheel", handleWheel);
+  }, [handleWheel]);
+
+  // ── Node drag start ────────────────────────────────────────────────────────
+  const handleNodeDragStart = (nodeId: NodeId, e: React.MouseEvent) => {
+    if (e.button !== 0) return;
+    e.stopPropagation();
+    dragMoved.current = false;
+    const n = nodes.find(x => x.id === nodeId)!;
+    dragState.current = { nodeId, startMx: e.clientX, startMy: e.clientY, startNx: n.x, startNy: n.y };
+  };
+
+  // ── Mouse handlers on canvas ───────────────────────────────────────────────
+  const onCanvasMouseDown = (e: React.MouseEvent) => {
+    if (e.button === 2) { // right-drag to pan
+      isPanning.current = true;
+      panStart.current = { mx: e.clientX, my: e.clientY, px: pan.x, py: pan.y };
+    }
+  };
+  const onCanvasMouseMove = (e: React.MouseEvent) => {
+    if (dragState.current) {
+      const dx = (e.clientX - dragState.current.startMx) / zoomRef.current;
+      const dy = (e.clientY - dragState.current.startMy) / zoomRef.current;
+      if (Math.abs(dx) > 2 || Math.abs(dy) > 2) {
+        dragMoved.current = true;
+        const { nodeId, startNx, startNy } = dragState.current;
+        setNodes(prev => prev.map(n => n.id === nodeId ? { ...n, x: startNx + dx, y: startNy + dy } : n));
+      }
+    } else if (isPanning.current) {
+      setPan({ x: panStart.current.px + e.clientX - panStart.current.mx, y: panStart.current.py + e.clientY - panStart.current.my });
+    }
+  };
+  const onCanvasMouseUp = () => { dragState.current = null; isPanning.current = false; };
+
+  // ── Touch (pinch + two-finger pan) ────────────────────────────────────────
+  const lastTouch = useRef<{ dist: number; mx: number; my: number } | null>(null);
+  const onTouchStart = (e: React.TouchEvent) => {
+    if (e.touches.length === 2) {
+      const [a, b] = [e.touches[0], e.touches[1]];
+      lastTouch.current = { dist: Math.hypot(b.clientX-a.clientX, b.clientY-a.clientY), mx: (a.clientX+b.clientX)/2, my: (a.clientY+b.clientY)/2 };
+    }
+  };
+  const onTouchMove = (e: React.TouchEvent) => {
+    e.preventDefault();
+    if (e.touches.length !== 2 || !lastTouch.current) return;
+    const [a, b] = [e.touches[0], e.touches[1]];
+    const dist = Math.hypot(b.clientX-a.clientX, b.clientY-a.clientY);
+    const mx = (a.clientX+b.clientX)/2; const my = (a.clientY+b.clientY)/2;
+    const rect = containerRef.current!.getBoundingClientRect();
+    const cx = mx-rect.left; const cy = my-rect.top;
+    const pz = zoomRef.current; const nz = Math.min(Math.max(pz*(dist/lastTouch.current.dist), 0.15), 3);
+    zoomRef.current = nz; setZoomState(nz);
+    setPan(p => ({
+      x: cx-(cx-p.x)*(nz/pz)+(mx-lastTouch.current!.mx),
+      y: cy-(cy-p.y)*(nz/pz)+(my-lastTouch.current!.my),
+    }));
+    lastTouch.current = { dist, mx, my };
+  };
+  const onTouchEnd = () => { lastTouch.current = null; };
+
+  // ── Fit to screen ──────────────────────────────────────────────────────────
+  const fitToScreen = () => {
+    if (!containerRef.current) return;
+    const { width, height } = containerRef.current.getBoundingClientRect();
+    const pad = 80;
+    // current node extents
+    const xs = nodes.flatMap(n => [n.x, n.x + n.w]);
+    const ys = nodes.flatMap(n => [n.y, n.y + n.h]);
+    const minX = Math.min(...xs)-20; const maxX = Math.max(...xs)+20;
+    const minY = Math.min(...ys)-20; const maxY = Math.max(...ys)+20;
+    const cw = maxX-minX; const ch = maxY-minY;
+    const nz = Math.min((width-pad)/cw, (height-pad)/ch, 1.5);
+    zoomRef.current = nz; setZoomState(nz);
+    setPan({ x: (width-cw*nz)/2-minX*nz, y: (height-ch*nz)/2-minY*nz });
+  };
+
+  const handleZoomBtn = (delta: number) => {
+    if (!containerRef.current) return;
+    const { width, height } = containerRef.current.getBoundingClientRect();
+    const cx = width/2; const cy = height/2;
+    const pz = zoomRef.current; const nz = Math.min(Math.max(pz+delta, 0.15), 3);
+    zoomRef.current = nz; setZoomState(nz);
+    setPan(p => ({ x: cx-(cx-p.x)*(nz/pz), y: cy-(cy-p.y)*(nz/pz) }));
+  };
+
+  // ── Close dropdowns outside ────────────────────────────────────────────────
+  useEffect(() => {
+    const h = (e: MouseEvent) => {
+      const t = e.target as Node;
+      if (historyRef.current?.contains(t) || actionRef.current?.contains(t)) return;
+      setActiveDropdown(null);
+    };
+    document.addEventListener("mousedown", h);
+    return () => document.removeEventListener("mousedown", h);
+  }, []);
+
+  // ── Trigger Instance ───────────────────────────────────────────────────────
+  const handleTriggerClick = () => {
+    setActiveDropdown(null); setActionError(null);
+    if (instances.some(i => i.status === "RUNNING" || i.status === "PENDING")) {
+      setActionError("Cannot trigger: a RUNNING or PENDING instance exists. Kill it first.");
+      return;
+    }
+    setShowTriggerModal(true);
+  };
+  const handleTrigger = (notes: string, useCache: boolean) => {
+    setShowTriggerModal(false);
+    const ts = new Date().toLocaleString("sv-SE").slice(0,16).replace("T"," ");
+    const inst: Instance = {
+      id: `inst-trigger-${Date.now()}`, status: "RUNNING",
+      notes: notes || (useCache ? "Cache mode." : "Force full rerun."),
+      createTime: ts, startTime: ts, finishTime: "", duration: "", rowsCnt: "", columnsCnt: "",
+    };
+    setInstances(prev => [inst, ...prev]);
+    setSelectedInstId(inst.id);
+    setViewMode("instance-view");
+  };
+
+  // ── Kill ──────────────────────────────────────────────────────────────────
+  const canKill = viewMode === "instance-view" && selectedInst !== null &&
+    (selectedInst.status === "RUNNING" || selectedInst.status === "PENDING");
+  const handleKill = () => {
+    setActiveDropdown(null);
+    if (!canKill || !selectedInst) return;
+    setInstances(prev => prev.map(i => i.id === selectedInst.id ? { ...i, status: "KILLED" as InstanceStatus } : i));
+  };
+
+  const selectInstance = (id: string) => {
+    setSelectedInstId(id); setViewMode("instance-view"); setActiveDropdown(null); setSelectedNodeId(null);
+  };
+  const backToConfig = () => {
+    setViewMode("current-config"); setSelectedInstId(null); setSelectedNodeId(null);
+  };
+
+  // version helper
+  const versionOf = (idx: number) => instances.length - idx;
+
+  // ── Render ─────────────────────────────────────────────────────────────────
+  return (
+    <div className="h-screen flex flex-col bg-white overflow-hidden">
+
+      {/* ── Toolbar ──────────────────────────────────────────────────────── */}
+      <div className="shrink-0 bg-white border-b border-gray-100 shadow-xs">
+        <div className="px-5 h-12 flex items-center gap-3">
+
+          {/* Left: Back + Name + Region + Edit */}
+          <div className="flex items-center gap-2 flex-1 min-w-0">
+            <button onClick={onBack}
+              className="flex items-center gap-1 text-xs text-gray-500 hover:text-gray-800 transition-colors group shrink-0">
+              <ArrowLeft size={14} className="group-hover:-translate-x-0.5 transition-transform" />
+              <span>Back</span>
+            </button>
+            <div className="w-px h-4 bg-gray-200 shrink-0" />
+            <div className="flex items-center gap-1.5 min-w-0">
+              <GitBranch size={13} className="text-teal-500 shrink-0" />
+              <span className="text-sm text-gray-700 truncate max-w-[200px]">{meta.name}</span>
+              {meta.region && (
+                <span className="px-1.5 py-0.5 text-xs bg-gray-100 text-gray-600 rounded shrink-0">{meta.region}</span>
+              )}
+              <button
+                onClick={() => viewMode !== "instance-view" && setShowMetaModal(true)}
+                disabled={viewMode === "instance-view"}
+                title={viewMode === "instance-view" ? "Only available in Config Canvas" : "Edit metadata"}
+                className={`flex items-center gap-1 px-1.5 py-0.5 text-xs rounded transition-all shrink-0 ${
+                  viewMode === "instance-view"
+                    ? "text-gray-300 cursor-not-allowed"
+                    : "text-gray-400 hover:text-gray-700 hover:bg-gray-100 cursor-pointer"
+                }`}>
+                <Pencil size={10} /> Edit
+              </button>
+            </div>
+          </div>
+
+          {/* Center: static mode indicator */}
+          <div className="shrink-0">
+            {viewMode === "current-config" ? (
+              <div className="flex items-center gap-2 px-3 py-1.5 border border-gray-200 rounded-lg bg-white text-xs text-gray-600">
+                <span className="w-2 h-2 rounded-full bg-teal-400 shrink-0" />
+                Current Config
+              </div>
+            ) : (
+              <div className="flex items-center gap-2 px-3 py-1.5 border border-gray-200 rounded-lg bg-white text-xs text-gray-600">
+                <span className="w-2 h-2 rounded-full bg-blue-400 shrink-0" />
+                <span className="px-1.5 py-0.5 text-xs bg-blue-50 text-blue-600 rounded font-medium">Instance View</span>
+                {selectedInst && (
+                  <>
+                    <div className="w-px h-3 bg-gray-200" />
+                    <span className="text-blue-600 font-mono text-xs">{selectedInst.id}</span>
+                    <InstanceStatusBadge status={selectedInst.status} />
+                  </>
+                )}
+              </div>
+            )}
+          </div>
+
+          {/* Right: contextual buttons */}
+          <div className="flex items-center gap-2 flex-1 justify-end">
+            {/* Run History (only in current-config) */}
+            {viewMode === "current-config" && (
+              <div ref={historyRef} className="relative">
+                <button
+                  onClick={() => setActiveDropdown(p => p === "history" ? null : "history")}
+                  className="flex items-center gap-1.5 px-3 py-1.5 text-xs text-gray-600 border border-gray-200 rounded-lg hover:border-gray-300 hover:bg-gray-50 transition-all">
+                  <History size={13} className="text-gray-500" /> Instance History
+                  <ChevronDown size={11} className={`text-gray-400 transition-transform ${activeDropdown === "history" ? "rotate-180" : ""}`} />
+                </button>
+
+                {activeDropdown === "history" && (
+                  <div className="absolute right-0 top-full mt-1.5 w-[580px] bg-white border border-gray-200 rounded-xl shadow-xl z-30 overflow-hidden">
+                    {/* Dropdown header */}
+                    <div className="flex items-center justify-between px-4 py-3 border-b border-gray-100">
+                      <div className="flex items-center gap-2">
+                        <History size={14} className="text-gray-500" />
+                        <span className="text-sm text-gray-700">Instance History</span>
+                      </div>
+                      <span className="text-xs text-gray-400">{instances.length} instances total</span>
+                    </div>
+                    {/* Column headers */}
+                    {instances.length > 0 && (
+                      <div className="grid px-4 py-1.5 border-b border-gray-50 text-xs text-gray-400 gap-2"
+                        style={{ gridTemplateColumns: "1fr 72px 130px 130px" }}>
+                        <span>INSTANCE ID</span><span>STATUS</span><span>START</span><span>END</span>
+                      </div>
+                    )}
+                    {/* Rows */}
+                    <div className="max-h-52 overflow-y-auto">
+                      {instances.length === 0 ? (
+                        <div className="px-4 py-6 text-center text-xs text-gray-400">No runs yet.</div>
+                      ) : instances.map((inst, idx) => (
+                        <button key={inst.id} onClick={() => selectInstance(inst.id)}
+                          className={`w-full grid px-4 py-2.5 items-center gap-2 hover:bg-gray-50 border-b border-gray-50 last:border-0 transition-colors
+                            ${selectedInstId === inst.id ? "bg-teal-50/60" : ""}`}
+                          style={{ gridTemplateColumns: "1fr 72px 130px 130px" }}>
+                          <div className="flex flex-col gap-0.5 min-w-0 text-left">
+                            <span className="text-xs text-blue-600 font-mono truncate">{inst.id.slice(0, 20)}{inst.id.length > 20 ? "…" : ""}</span>
+                            <div className="flex items-center gap-1.5">
+                              {idx === 0 && <span className="text-xs text-teal-600 bg-teal-50 px-1.5 py-px rounded">Latest</span>}
+                            </div>
+                          </div>
+                          <InstanceStatusBadge status={inst.status} small />
+                          <span className="text-xs text-gray-500 text-left">{inst.startTime || "—"}</span>
+                          <span className="text-xs text-gray-500 text-left">{inst.finishTime || "—"}</span>
+                        </button>
+                      ))}
+                    </div>
+                    {/* Footer hint */}
+                    <div className="px-4 py-2 border-t border-gray-100 text-center text-xs text-gray-400">Click an instance&nbsp;&nbsp;to view its pipeline execution — read only</div>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* Action menu */}
+            <div ref={actionRef} className="relative">
+              <button
+                onClick={() => setActiveDropdown(p => p === "action" ? null : "action")}
+                className="flex items-center gap-1.5 px-3 py-1.5 text-xs text-white bg-teal-500 rounded-lg hover:bg-teal-600 transition-all shadow-sm shadow-teal-200">
+                <Zap size={12} /> Action
+                <ChevronDown size={11} className={`transition-transform ${activeDropdown === "action" ? "rotate-180" : ""}`} />
+              </button>
+              {activeDropdown === "action" && (
+                <div className="absolute right-0 top-full mt-1.5 w-44 bg-white border border-gray-200 rounded-xl shadow-xl z-30 py-1 overflow-hidden">
+                  <button onClick={handleTriggerClick} disabled={viewMode === "instance-view"}
+                    className={`w-full flex items-center gap-2.5 px-3 py-2 text-xs transition-colors ${viewMode === "instance-view" ? "text-gray-300 cursor-not-allowed" : "text-gray-700 hover:bg-gray-50"}`}>
+                    <Zap size={13} className={viewMode === "instance-view" ? "text-gray-300" : "text-teal-500"} /> Trigger Instance
+                  </button>
+                  <div className="h-px bg-gray-100 my-0.5" />
+                  <button onClick={handleKill} disabled={!canKill}
+                    className={`w-full flex items-center gap-2.5 px-3 py-2 text-xs transition-colors ${canKill ? "text-red-500 hover:bg-red-50" : "text-gray-300 cursor-not-allowed"}`}>
+                    <Square size={13} className={canKill ? "text-red-400" : "text-gray-300"} />
+                    Kill
+                    {!canKill && <span className="ml-auto text-gray-300" style={{ fontSize: 10 }}>{viewMode !== "instance-view" ? "run view only" : "not active"}</span>}
+                  </button>
+                </div>
+              )}
+            </div>
+
+            {/* Back to Config (only in instance-view) */}
+            {viewMode === "instance-view" && (
+              <button onClick={backToConfig}
+                className="flex items-center gap-1.5 px-3 py-1.5 text-xs text-gray-600 border border-gray-200 rounded-lg hover:bg-gray-50 transition-all">
+                <RotateCcw size={13} /> Back to Config
+              </button>
+            )}
+          </div>
+        </div>
+      </div>
+
+      {/* ── Error banner ─────────────────────────────────────────────────── */}
+      {actionError && (
+        <div className="shrink-0 bg-red-50 border-b border-red-100 px-5 py-2 flex items-start gap-2">
+          <AlertCircle size={13} className="text-red-500 mt-0.5 shrink-0" />
+          <span className="text-xs text-red-600 flex-1">{actionError}</span>
+          <button onClick={() => setActionError(null)} className="text-red-400 hover:text-red-600"><X size={13} /></button>
+        </div>
+      )}
+
+      {/* ── Instance info strip ───────────────────────────────────────────── */}
+      {viewMode === "instance-view" && selectedInst && (
+        <div className="shrink-0 border-b border-gray-100 px-5 py-2 flex items-center justify-between gap-4 bg-[#eff6ff]">
+          <div className="flex items-center gap-1 text-xs text-gray-500 min-w-0">
+            <span className="text-gray-400 shrink-0">⊙</span>
+            <span className="shrink-0">Instance</span>
+            <span className="text-blue-600 font-mono shrink-0">{selectedInst.id}</span>
+            {selectedInst.createTime && <><span className="text-gray-300 shrink-0">·</span></>}
+            {selectedInst.startTime   && <><span className="text-gray-300 shrink-0">·</span></>}
+            {selectedInst.finishTime  && <><span className="text-gray-300 shrink-0">·</span></>}
+            {selectedInst.duration    && <><span className="text-gray-300 shrink-0">·</span><span className="shrink-0">Duration: {selectedInst.duration}</span></>}
+          </div>
+          {/* Legend */}
+          <div className="flex items-center gap-3 shrink-0">
+            {([
+              { dot: "bg-emerald-400", label: "Success"      },
+              { dot: "bg-blue-400",    label: "Running"      },
+              { dot: "bg-red-400",     label: "Failed"       },
+              { dot: "bg-yellow-400",  label: "Cache Skipped"},
+              { dot: "bg-gray-300",    label: "Pending"      },
+            ]).map(({ dot, label }) => (
+              <div key={label} className="flex items-center gap-1">
+                <span className={`w-2 h-2 rounded-full ${dot}`} />
+                <span className="text-xs text-gray-500">{label}</span>
+              </div>
+            ))}
+            <div className="w-px h-3 bg-gray-300" />
+            <span className="text-xs bg-gray-200 px-2 py-0.5 rounded font-mono text-[#004ed6]">READ-ONLY</span>
+          </div>
+        </div>
+      )}
+
+      {/* ── Main area ────────────────────────────────────────────────────── */}
+      <div className="flex-1 flex overflow-hidden">
+        {/* Canvas */}
+        <div
+          ref={containerRef}
+          className="flex-1 relative overflow-hidden select-none"
+          style={{
+            background: "#eef2f7",
+            backgroundImage: "radial-gradient(#c8d3de 1px, transparent 0)",
+            backgroundSize: "22px 22px",
+          }}
+          onMouseDown={onCanvasMouseDown}
+          onMouseMove={onCanvasMouseMove}
+          onMouseUp={onCanvasMouseUp}
+          onMouseLeave={onCanvasMouseUp}
+          onContextMenu={e => e.preventDefault()}
+          onTouchStart={onTouchStart}
+          onTouchMove={onTouchMove}
+          onTouchEnd={onTouchEnd}
+        >
+          {/* Transform wrapper */}
+          <div style={{
+            position: "absolute", inset: 0,
+            transform: `translate(${pan.x}px, ${pan.y}px) scale(${zoom})`,
+            transformOrigin: "0 0",
+            width: CANVAS_W, height: CANVAS_H,
+          }}>
+            <CanvasEdges nodes={nodes} instanceView={viewMode === "instance-view"} nodeStatuses={nodeStatuses} />
+            {nodes.map(node => (
+              <PipelineNodeCard
+                key={node.id}
+                node={node}
+                selected={selectedNodeId === node.id}
+                instanceView={viewMode === "instance-view"}
+                nodeStatus={nodeStatuses?.[node.id]}
+                onDragStart={(e) => handleNodeDragStart(node.id, e)}
+                onClick={() => {
+                  if (dragMoved.current) { dragMoved.current = false; return; }
+                  setSelectedNodeId(n => n === node.id ? null : node.id);
+                }}
+              />
+            ))}
+          </div>
+
+          {/* No-selection hint */}
+          {!selectedNodeId && <CanvasEmptyHint />}
+
+          {/* Bottom-left controls */}
+          <div className="absolute bottom-4 left-4 flex flex-col gap-2 z-10">
+            <ZoomControls zoom={zoom} onZoom={handleZoomBtn} onFit={fitToScreen} />
+            <Minimap nodes={nodes} pan={pan} zoom={zoom} cw={containerSize.w} ch={containerSize.h} />
+          </div>
+
+          {/* Bottom hint */}
+          <div className="absolute bottom-4 left-1/2 -translate-x-1/2 text-xs text-gray-400 whitespace-nowrap pointer-events-none">
+            Right-drag to pan · Scroll to zoom · Drag node to reposition
+          </div>
+        </div>
+
+        {/* Right panel */}
+        {selectedNodeId && (() => {
+          const node = nodes.find(n => n.id === selectedNodeId)!;
+          return (
+            <NodeConfigPanel
+              node={node}
+              isInstanceView={viewMode === "instance-view"}
+              nodeStatus={nodeStatuses?.[selectedNodeId]}
+              instance={selectedInst ?? undefined}
+              onClose={() => setSelectedNodeId(null)}
+            />
+          );
+        })()}
+      </div>
+
+      {/* Modals */}
+      {showMetaModal && (
+        <WideTableMetaModal values={meta} onClose={() => setShowMetaModal(false)}
+          onSave={u => { setMeta(u); setShowMetaModal(false); }} />
+      )}
+      {showTriggerModal && (
+        <TriggerInstanceModal onClose={() => setShowTriggerModal(false)} onTrigger={handleTrigger} />
+      )}
+    </div>
+  );
+}
