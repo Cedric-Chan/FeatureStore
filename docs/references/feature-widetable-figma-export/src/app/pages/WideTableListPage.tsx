@@ -6,7 +6,7 @@ import { WideTableList, WideTableRow, Instance } from "@/app/components/WideTabl
 import { DataReportModal, parseColumnCount } from "@/app/components/DataReportModal";
 import { Pagination } from "@/app/components/Pagination";
 import { AddWideTableModal, WideTableFormValues } from "@/app/components/AddWideTableModal";
-import { MOCK_WIDE_TABLES } from "@/data/mockWideTables";
+import { getCanvasSnapshotByRow, MOCK_WIDE_TABLES } from "@/data/mockWideTables";
 
 const CURRENT_USER = "cedric.chencan@seamoney.com";
 
@@ -22,6 +22,8 @@ export function WideTableListPage() {
   const [currentPage, setCurrentPage] = useState(1);
   const [pageSize, setPageSize] = useState(5);
   const [showAddModal, setShowAddModal] = useState(false);
+  /** When set, Add modal is in Copy-from mode and canvas is seeded from this row's snapshot */
+  const [copySourceRow, setCopySourceRow] = useState<WideTableRow | null>(null);
   const [reportInst, setReportInst] = useState<Instance | null>(null);
 
   const filtered = useMemo(() => {
@@ -54,7 +56,24 @@ export function WideTableListPage() {
 
   const goCanvasNew = (values: WideTableFormValues) => {
     setShowAddModal(false);
-    navigate("/wt/canvas/new", { state: { formValues: values } });
+    const fromCopy = copySourceRow;
+    setCopySourceRow(null);
+    if (fromCopy) {
+      navigate("/wt/canvas/new", {
+        state: {
+          formValues: values,
+          canvasSnapshot: getCanvasSnapshotByRow(fromCopy),
+          emptyNodeLastInstance: true,
+        },
+      });
+    } else {
+      navigate("/wt/canvas/new", { state: { formValues: values } });
+    }
+  };
+
+  const closeAddModal = () => {
+    setShowAddModal(false);
+    setCopySourceRow(null);
   };
 
   const goCanvasEdit = (row: WideTableRow) => {
@@ -100,8 +119,15 @@ export function WideTableListPage() {
 
         <WideTableList
           data={paginated}
-          onAdd={() => setShowAddModal(true)}
+          onAdd={() => {
+            setCopySourceRow(null);
+            setShowAddModal(true);
+          }}
           onEdit={goCanvasEdit}
+          onCopy={(row) => {
+            setCopySourceRow(row);
+            setShowAddModal(true);
+          }}
           onView={goCanvasInstance}
           onReport={(_, inst) => setReportInst(inst)}
           onTask={(_, inst) =>
@@ -128,7 +154,10 @@ export function WideTableListPage() {
 
       {showAddModal && (
         <AddWideTableModal
-          onClose={() => setShowAddModal(false)}
+          key={copySourceRow ? `copy-${copySourceRow.id}` : "create"}
+          mode={copySourceRow ? "copy" : "create"}
+          copySourceName={copySourceRow?.name}
+          onClose={closeAddModal}
           onConfirm={goCanvasNew}
         />
       )}

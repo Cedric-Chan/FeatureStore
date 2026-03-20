@@ -42,6 +42,9 @@ export interface WideTableFormValues {
 interface Props {
   onClose: () => void;
   onConfirm: (values: WideTableFormValues) => void;
+  /** Quick new task from list Copy */
+  mode?: "create" | "copy";
+  copySourceName?: string;
 }
 
 // ─── Field Wrapper ────────────────────────────────────────────────────────────
@@ -67,13 +70,21 @@ function Field({
 }
 
 // ─── Modal ────────────────────────────────────────────────────────────────────
-export function AddWideTableModal({ onClose, onConfirm }: Props) {
+export function AddWideTableModal({
+  onClose,
+  onConfirm,
+  mode = "create",
+  copySourceName,
+}: Props) {
   const [form, setForm] = useState<WideTableFormValues>({
     name: "",
     region: "",
     owners: [],
     bizTeam: "",
-    description: "",
+    description:
+      mode === "copy" && copySourceName
+        ? `Copy from ${copySourceName}`
+        : "",
   });
   const [errors, setErrors] = useState<Partial<Record<keyof WideTableFormValues, string>>>({});
   const [ownerOpen, setOwnerOpen] = useState(false);
@@ -143,6 +154,11 @@ export function AddWideTableModal({ onClose, onConfirm }: Props) {
             <p className="text-xs text-gray-400 mt-1 ml-3">
               Fill in metadata — all fields are required.
             </p>
+            {mode === "copy" && copySourceName && (
+              <p className="text-xs text-teal-700 mt-2 ml-3 font-medium">
+                Copy from {copySourceName}
+              </p>
+            )}
           </div>
           <button
             onClick={onClose}

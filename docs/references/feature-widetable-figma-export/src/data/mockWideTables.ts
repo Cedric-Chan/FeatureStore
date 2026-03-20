@@ -1,4 +1,30 @@
 import type { WideTableRow } from "@/app/components/WideTableList";
+import {
+  createDefaultCanvasSnapshot,
+  snapshotAcardMx,
+  snapshotRecommendSg,
+  snapshotRiskWideTable,
+  type WideTableCanvasSnapshot,
+} from "@/data/widetableCanvasModel";
+
+function cloneCanvasSnapshot(s: WideTableCanvasSnapshot): WideTableCanvasSnapshot {
+  return JSON.parse(JSON.stringify(s)) as WideTableCanvasSnapshot;
+}
+
+/** Latest config snapshot for Copy → New Canvas (mock). */
+export function getCanvasSnapshotByRow(row: WideTableRow): WideTableCanvasSnapshot {
+  if (row.canvasSnapshot) return cloneCanvasSnapshot(row.canvasSnapshot);
+  switch (row.id) {
+    case "1":
+      return cloneCanvasSnapshot(snapshotRiskWideTable());
+    case "2":
+      return cloneCanvasSnapshot(snapshotAcardMx());
+    case "3":
+      return cloneCanvasSnapshot(snapshotRecommendSg());
+    default:
+      return cloneCanvasSnapshot(createDefaultCanvasSnapshot());
+  }
+}
 
 export const MOCK_WIDE_TABLES: WideTableRow[] = [
   {

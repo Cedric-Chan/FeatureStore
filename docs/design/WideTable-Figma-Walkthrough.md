@@ -36,6 +36,16 @@
 | 工具栏 Add WideTable、Owned by me | 同左 | 已对齐 |
 | 行操作 Edit / Copy / Delete | 同左 | 已对齐 |
 
+### 2.1 Copy → 快速新建（New WideTable）
+
+| 行为 | 说明 |
+|------|------|
+| **Copy** | 一级 Action **Copy** 打开与「Add WideTable」相同的 **New WideTable** 弹窗，作为快速新建入口。 |
+| 提示文案 | 副标题下展示 **`Copy from {源表 WideTable Name}`**（英文）。 |
+| Description 默认值 | **`Copy from {源表名}`** 预填，可改。 |
+| **To Canvas** | 按源表 **最新配置 snapshot**（mock：`getCanvasSnapshotByRow`）预填 **DAG 节点位置/标题**、Frame Table / Feature Group / Data Ingestion / Data Cleaning 等与 snapshot 一致的配置；**Instance History 为空**（新画布无实例）。 |
+| 节点 **Last Instance** | 在 **Current Config** 下，各节点 Drawer 的 **Last Instance** 页签为 **空态**（无 mock 运行记录）；进入 **Instance View** 后仍可按实例展示（与列表 View 进画布一致）。 |
+
 ## 3. Canvas — Frame Table（FrameTablePanel）
 
 | 区块 | 导出稿 | 状态 |

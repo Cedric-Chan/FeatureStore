@@ -2,12 +2,17 @@ import { Navigate, useLocation, useNavigate, useParams } from "react-router";
 import { CanvasPage } from "@/app/components/CanvasPage";
 import type { WideTableFormValues } from "@/app/components/AddWideTableModal";
 import { getWideTableById } from "@/data/mockWideTables";
+import type { WideTableCanvasSnapshot } from "@/data/widetableCanvasModel";
 
 export function CanvasNewRoute() {
   const navigate = useNavigate();
   const location = useLocation();
-  const formValues = (location.state as { formValues?: WideTableFormValues } | null)
-    ?.formValues;
+  const st = location.state as {
+    formValues?: WideTableFormValues;
+    canvasSnapshot?: WideTableCanvasSnapshot;
+    emptyNodeLastInstance?: boolean;
+  } | null;
+  const formValues = st?.formValues;
   if (!formValues) {
     return <Navigate to="/wt" replace />;
   }
@@ -15,6 +20,8 @@ export function CanvasNewRoute() {
     <CanvasPage
       mode="new"
       formValues={formValues}
+      canvasSnapshot={st?.canvasSnapshot}
+      emptyNodeLastInstance={st?.emptyNodeLastInstance}
       onBack={() => navigate("/wt")}
     />
   );

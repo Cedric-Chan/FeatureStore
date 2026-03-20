@@ -5,6 +5,12 @@
 
 **关联**：[产品原型图 §3.5.2](front-design/产品原型图.md)。
 
+### 从列表 Copy 新建画布
+
+- **入口**：WideTable 列表一级 Action **Copy** → **New WideTable** 弹窗（展示 **Copy from {源表名}**，Description 默认 **`Copy from {源表名}`**）→ **To Canvas**。
+- **配置**：以源表的 **最新配置 snapshot**（原型中为 `getCanvasSnapshotByRow` mock）预填 **DAG** 与各节点 **Config**；新任务 **尚无实例**，顶栏 **Instance History** 为空。
+- **Last Instance**：在 **Current Config** 下，各节点 Drawer 的 **Last Instance** 页签为 **空态**（无运行记录）；与从列表 **View** 进入某实例的只读 Instance View 区分。
+
 ---
 
 ## 1. 术语与全局规则

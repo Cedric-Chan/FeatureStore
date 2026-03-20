@@ -6,6 +6,7 @@ import {
   RefreshCw,
   Settings2,
 } from "lucide-react";
+import type { WideTableCanvasSnapshot } from "@/data/widetableCanvasModel";
 
 // ─── Tooltip Cell ─────────────────────────────────────────────────────────────
 function TooltipCell({
@@ -63,6 +64,8 @@ export interface WideTableRow {
   description: string;
   updateTime: string;
   instances: Instance[];
+  /** Optional embedded canvas snapshot (else resolved by id in mock helpers) */
+  canvasSnapshot?: WideTableCanvasSnapshot;
 }
 
 // ─── Status Badge ─────────────────────────────────────────────────────────────
@@ -220,6 +223,7 @@ function WideTableRowComponent({
   isExpanded,
   onToggle,
   onEdit,
+  onCopy,
   onView,
   onReport,
   onTask,
@@ -228,6 +232,7 @@ function WideTableRowComponent({
   isExpanded: boolean;
   onToggle: () => void;
   onEdit?: () => void;
+  onCopy?: () => void;
   onView?: (instanceId: string) => void;
   onReport?: (inst: Instance) => void;
   onTask?: (inst: Instance) => void;
@@ -304,7 +309,7 @@ function WideTableRowComponent({
         >
           <div className="flex items-center gap-0.5">
             <ActionBtn label="Edit" onClick={onEdit} />
-            <ActionBtn label="Copy" />
+            <ActionBtn label="Copy" onClick={onCopy} />
             <ActionBtn label="Delete" variant="danger" />
           </div>
         </td>
@@ -387,6 +392,7 @@ interface WideTableListProps {
   data: WideTableRow[];
   onAdd: () => void;
   onEdit?: (row: WideTableRow) => void;
+  onCopy?: (row: WideTableRow) => void;
   onView?: (row: WideTableRow, instanceId: string) => void;
   onReport?: (row: WideTableRow, inst: Instance) => void;
   onTask?: (row: WideTableRow, inst: Instance) => void;
@@ -398,6 +404,7 @@ export function WideTableList({
   data,
   onAdd,
   onEdit,
+  onCopy,
   onView,
   onReport,
   onTask,
@@ -509,6 +516,7 @@ export function WideTableList({
                 isExpanded={expandedIds.has(row.id)}
                 onToggle={() => toggle(row.id)}
                 onEdit={onEdit ? () => onEdit(row) : undefined}
+                onCopy={onCopy ? () => onCopy(row) : undefined}
                 onView={onView ? (instId) => onView(row, instId) : undefined}
                 onReport={onReport ? (inst) => onReport(row, inst) : undefined}
                 onTask={onTask ? (inst) => onTask(row, inst) : undefined}

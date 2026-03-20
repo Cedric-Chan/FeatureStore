@@ -10,37 +10,20 @@ import { WideTableRow, Instance, InstanceStatus } from "./WideTableList";
 import { WideTableMetaModal } from "./WideTableMetaModal";
 import { TriggerInstanceModal } from "./TriggerInstanceModal";
 import { DataReportModal, parseColumnCount } from "./DataReportModal";
+import type { NodeDef, NodeId } from "@/data/widetableCanvasModel";
+import {
+  CANVAS_H,
+  CANVAS_W,
+  EDGES,
+  INITIAL_NODES,
+  type DataIngestionConfigSnapshot,
+  type DataCleaningSnapshot,
+  type FeatureGroupNodeSnapshot,
+  type FrameTableSnapshot,
+  type WideTableCanvasSnapshot,
+} from "@/data/widetableCanvasModel";
 
-// ─── Canvas constants ─────────────────────────────────────────────────────────
-const CANVAS_W = 1060;
-const CANVAS_H = 520;
-
-type NodeId = "B" | "C" | "D" | "E" | "F" | "G";
 type NodeStatus = "waiting" | "cache_skipped" | "running" | "failed" | "success";
-
-interface NodeDef {
-  id: NodeId;
-  type: "source" | "feature" | "sink" | "end";
-  x: number; y: number; w: number; h: number;
-  title: string; subtitle: string;
-}
-
-//  Layout (canvas 1060 × 520) — no Start node; FG → Data Ingestion → Data Cleaning
-//  B Frame Table | C/D/E Feature Groups | F Data Ingestion | G Data Cleaning
-const INITIAL_NODES: NodeDef[] = [
-  { id: "B", type: "source",  x: 96,  y: 224, w: 144, h: 72,  title: "Frame Table",              subtitle: "Source Table"         },
-  { id: "C", type: "feature", x: 300, y: 108, w: 185, h: 72,  title: "user_profile_features",    subtitle: "Feature Group"        },
-  { id: "D", type: "feature", x: 300, y: 224, w: 185, h: 72,  title: "order_history_features",   subtitle: "Feature Group"        },
-  { id: "E", type: "feature", x: 300, y: 340, w: 185, h: 72,  title: "credit_behavior_features", subtitle: "Feature Group"        },
-  { id: "F", type: "sink",    x: 536, y: 224, w: 200, h: 72,  title: "Data Ingestion",           subtitle: "Raw wide table · S3"  },
-  { id: "G", type: "end",     x: 788, y: 224, w: 168, h: 72,  title: "Data Cleaning",            subtitle: "Optional clean step"  },
-];
-
-const EDGES: [NodeId, NodeId][] = [
-  ["B", "C"], ["B", "D"], ["B", "E"],
-  ["C", "F"], ["D", "F"], ["E", "F"],
-  ["F", "G"],
-];
 
 // ─── Style maps ───────────────────────────────────────────────────────────────
 const TYPE_STYLES: Record<NodeDef["type"], { accent: string; iconBg: string; iconColor: string }> = {
@@ -283,15 +266,25 @@ function ReadonlyCopyRow({ label, value }: { label: string; value: string }) {
 
 // ─── Data Ingestion panel ─────────────────────────────────────────────────────
 function DataIngestionPanel({
-  isInstanceView: _isInstanceView, nodeStatus, instance, onClose,
+  isInstanceView: _isInstanceView,
+  nodeStatus,
+  instance,
+  onClose,
+  ingestionConfig,
+  emptyLastInstancePlaceholder,
 }: {
-  isInstanceView: boolean; nodeStatus?: NodeStatus; instance?: Instance; onClose: () => void;
+  isInstanceView: boolean;
+  nodeStatus?: NodeStatus;
+  instance?: Instance;
+  onClose: () => void;
+  ingestionConfig?: DataIngestionConfigSnapshot;
+  emptyLastInstancePlaceholder?: boolean;
 }) {
   const [tab, setTab] = useState<"config"|"lastInstance">("config");
   const [reportOpen, setReportOpen] = useState(false);
-  const rawTable = "feature_store.dwd_wide_raw_feat_v1";
-  const datePart = "ds";
-  const rawS3 = "s3://data-lake-prod/widetable/reports/ts_demo/20240315/raw_stats.json";
+  const rawTable = ingestionConfig?.rawTable ?? "feature_store.dwd_wide_raw_feat_v1";
+  const datePart = ingestionConfig?.datePart ?? "ds";
+  const rawS3 = ingestionConfig?.rawS3 ?? "s3://data-lake-prod/widetable/reports/ts_demo/20240315/raw_stats.json";
 
   const last = {
     instanceId: instance?.id ?? "inst_20240315_083012",
@@ -341,6 +334,10 @@ function DataIngestionPanel({
               </div>
               <ReadonlyCopyRow label="Raw Data Report" value={rawS3} />
             </>
+          ) : emptyLastInstancePlaceholder && !_isInstanceView ? (
+            <div className="py-12 px-2 text-center text-xs text-gray-400 leading-relaxed">
+              No run history for this WideTable yet. Trigger an instance to see execution results here.
+            </div>
           ) : (
             <>
               <div className="flex items-center justify-between">
@@ -394,14 +391,28 @@ function DataIngestionPanel({
 const FILLNA_METHODS = ["mean", "median", "constant", "forward_fill"] as const;
 
 function DataCleaningPanel({
-  isInstanceView: _isInstanceView, nodeStatus, instance, onClose,
+  isInstanceView: _isInstanceView,
+  nodeStatus,
+  instance,
+  onClose,
+  initialCleaning,
+  emptyLastInstancePlaceholder,
 }: {
-  isInstanceView: boolean; nodeStatus?: NodeStatus; instance?: Instance; onClose: () => void;
+  isInstanceView: boolean;
+  nodeStatus?: NodeStatus;
+  instance?: Instance;
+  onClose: () => void;
+  initialCleaning?: DataCleaningSnapshot;
+  emptyLastInstancePlaceholder?: boolean;
 }) {
   const [tab, setTab] = useState<"config"|"lastInstance">("config");
-  const [enabled, setEnabled] = useState(false);
-  const [fillnaRows, setFillnaRows] = useState<{ id: string; method: string; features: string }[]>([]);
-  const [vmRows, setVmRows] = useState<{ id: string; feature: string; sql: string }[]>([]);
+  const [enabled, setEnabled] = useState(() => initialCleaning?.enabled ?? false);
+  const [fillnaRows, setFillnaRows] = useState<{ id: string; method: string; features: string }[]>(
+    () => (initialCleaning?.fillnaRows?.length ? initialCleaning.fillnaRows.map((r) => ({ ...r })) : [])
+  );
+  const [vmRows, setVmRows] = useState<{ id: string; feature: string; sql: string }[]>(
+    () => (initialCleaning?.vmRows?.length ? initialCleaning.vmRows.map((r) => ({ ...r })) : [])
+  );
   const [vmFullscreen, setVmFullscreen] = useState<string | null>(null);
   const [reportOpen, setReportOpen] = useState(false);
 
@@ -538,6 +549,10 @@ function DataCleaningPanel({
               <ReadonlyCopyRow label="Clean Data Result" value={cleanTable} />
               <ReadonlyCopyRow label="Clean Data Report" value={cleanS3} />
             </>
+          ) : emptyLastInstancePlaceholder && !_isInstanceView ? (
+            <div className="py-12 px-2 text-center text-xs text-gray-400 leading-relaxed">
+              No run history for this WideTable yet. Trigger an instance to see execution results here.
+            </div>
           ) : (
             <>
               <div className="flex items-center justify-between">
@@ -694,25 +709,39 @@ function FieldLabel({ children, required }: { children: React.ReactNode; require
 }
 
 // ─── Frame Table Panel ────────────────────────────────────────────────────────
-function FrameTablePanel({ isInstanceView, nodeStatus, instance, onClose }: {
-  isInstanceView: boolean; nodeStatus?: NodeStatus; instance?: Instance; onClose: () => void;
+function FrameTablePanel({
+  isInstanceView,
+  nodeStatus,
+  instance,
+  onClose,
+  initialFrame,
+  emptyLastInstancePlaceholder,
+}: {
+  isInstanceView: boolean;
+  nodeStatus?: NodeStatus;
+  instance?: Instance;
+  onClose: () => void;
+  initialFrame?: FrameTableSnapshot;
+  emptyLastInstancePlaceholder?: boolean;
 }) {
-  const [sourceType,   setSourceType]   = useState<"hive"|"sql">("hive");
-  const [dataServer,   setDataServer]   = useState("reg_sg");
-  const [tableSchema,  setTableSchema]  = useState("");
-  const [tableName,    setTableName]    = useState("");
-  const [sql,          setSql]          = useState("");
-  const [colSearch,    setColSearch]    = useState("");
-  const [parsedCols,   setParsedCols]   = useState<ParsedCol[]>([]);
-  const [parseState,   setParseState]   = useState<ParseState>("idle");
-  const [parseError,   setParseError]   = useState<string|null>(null);
+  const [sourceType, setSourceType] = useState<"hive" | "sql">(
+    () => initialFrame?.sourceType ?? "hive"
+  );
+  const [dataServer, setDataServer] = useState(() => initialFrame?.dataServer ?? "reg_sg");
+  const [tableSchema, setTableSchema] = useState(() => initialFrame?.tableSchema ?? "");
+  const [tableName, setTableName] = useState(() => initialFrame?.tableName ?? "");
+  const [sql, setSql] = useState(() => initialFrame?.sql ?? "");
+  const [colSearch, setColSearch] = useState("");
+  const [parsedCols, setParsedCols] = useState<ParsedCol[]>([]);
+  const [parseState, setParseState] = useState<ParseState>("idle");
+  const [parseError, setParseError] = useState<string | null>(null);
   const [selectedCols, setSelectedCols] = useState<Set<string>>(new Set());
-  const [entityCols,   setEntityCols]   = useState<string[]>([]);
-  const [eventTimeCol, setEventTimeCol] = useState("");
-  const [customFilter, setCustomFilter] = useState("");
-  const [fullscreen,   setFullscreen]   = useState(false);
-  const [entityOpen,   setEntityOpen]   = useState(false);
-  const [activeTab,    setActiveTab]    = useState<"config"|"lastInstance">("config");
+  const [entityCols, setEntityCols] = useState<string[]>(() => initialFrame?.entityCols ?? []);
+  const [eventTimeCol, setEventTimeCol] = useState(() => initialFrame?.eventTimeCol ?? "");
+  const [customFilter, setCustomFilter] = useState(() => initialFrame?.customFilter ?? "");
+  const [fullscreen, setFullscreen] = useState(false);
+  const [entityOpen, setEntityOpen] = useState(false);
+  const [activeTab, setActiveTab] = useState<"config" | "lastInstance">("config");
   const logs = nodeStatus ? getMockLogs("B", nodeStatus) : [];
 
   const isHive = sourceType === "hive";
@@ -830,6 +859,11 @@ function FrameTablePanel({ isInstanceView, nodeStatus, instance, onClose }: {
 
         <div className="flex-1 overflow-y-auto px-4 py-4 flex flex-col gap-4">
           {activeTab === "lastInstance" ? (
+            emptyLastInstancePlaceholder && !isInstanceView ? (
+              <div className="py-12 px-2 text-center text-xs text-gray-400 leading-relaxed">
+                No run history for this WideTable yet. Trigger an instance to see execution results here.
+              </div>
+            ) : (
             <>
               {/* Status */}
               <div className="flex items-center justify-between">
@@ -889,6 +923,7 @@ function FrameTablePanel({ isInstanceView, nodeStatus, instance, onClose }: {
               {/* Execution Logs */}
               
             </>
+            )
           ) : (
             <>
               {/* 1. Source Type */}
@@ -1223,42 +1258,73 @@ const FG_LAST_INST: Partial<Record<NodeId, {
   E: { instanceId: "inst_20240315_084318", status: "success", featureGroup: "credit_behavior_features", selectedCnt: 7, datePartitionCnt: 14, startedAt: "2024-03-15 08:43:18", finishedAt: "2024-03-15 08:47:05", duration: "3m 47s" },
 };
 
-function FeatureGroupPanel({ nodeId, isInstanceView: _iv, nodeStatus, onClose }: {
-  nodeId: NodeId; isInstanceView: boolean; nodeStatus?: NodeStatus; instance?: Instance; onClose: () => void;
+function FeatureGroupPanel({
+  nodeId,
+  isInstanceView: _iv,
+  nodeStatus,
+  onClose,
+  initialFg,
+  emptyLastInstancePlaceholder,
+}: {
+  nodeId: NodeId;
+  isInstanceView: boolean;
+  nodeStatus?: NodeStatus;
+  instance?: Instance;
+  onClose: () => void;
+  initialFg?: FeatureGroupNodeSnapshot;
+  emptyLastInstancePlaceholder?: boolean;
 }) {
-  const [activeTab,       setActiveTab]       = useState<"config"|"lastInstance">("config");
-  const [fgSearch,        setFgSearch]        = useState(DEFAULT_FG_BY_NODE[nodeId] ?? "");
-  const [fgOpen,          setFgOpen]          = useState(false);
-  const [selectedFg,      setSelectedFg]      = useState<string>(DEFAULT_FG_BY_NODE[nodeId] ?? "");
-  const [showInfo,        setShowInfo]        = useState(false);
-  const [colSearch,       setColSearch]       = useState("");
-  const [colParseState,   setColParseState]   = useState<ParseState>(DEFAULT_FG_BY_NODE[nodeId] ? "ready" : "idle");
-  const [selectedCols,    setSelectedCols]    = useState<Set<string>>(
-    new Set((FG_CATALOG.find(f => f.name === (DEFAULT_FG_BY_NODE[nodeId] ?? "")) ?? { cols: [] }).cols.map(c => c.name))
+  const defaultFgName = initialFg?.selectedFg ?? DEFAULT_FG_BY_NODE[nodeId] ?? "";
+  const [activeTab, setActiveTab] = useState<"config" | "lastInstance">("config");
+  const [fgSearch, setFgSearch] = useState(defaultFgName);
+  const [fgOpen, setFgOpen] = useState(false);
+  const [selectedFg, setSelectedFg] = useState(defaultFgName);
+  const [showInfo, setShowInfo] = useState(false);
+  const [colSearch, setColSearch] = useState("");
+  const [colParseState, setColParseState] = useState<ParseState>(defaultFgName ? "ready" : "idle");
+  const [selectedCols, setSelectedCols] = useState<Set<string>>(
+    () =>
+      new Set(
+        (FG_CATALOG.find((f) => f.name === defaultFgName) ?? { cols: [] }).cols.map((c) => c.name)
+      )
   );
-  const [joinType,        setJoinType]        = useState(JOIN_TYPES[0]);
-  const [entityJoinCol,   setEntityJoinCol]   = useState("");
-  const [eventTimeJoinCol,setEventTimeJoinCol] = useState("");
+  const [joinType, setJoinType] = useState(() => initialFg?.joinType ?? JOIN_TYPES[0]);
+  const [entityJoinCol, setEntityJoinCol] = useState(() => initialFg?.entityJoinCol ?? "");
+  const [eventTimeJoinCol, setEventTimeJoinCol] = useState(() => initialFg?.eventTimeJoinCol ?? "");
+  const prevFgRef = useRef<string | null>(null);
 
-  const fg            = FG_CATALOG.find(f => f.name === selectedFg) ?? null;
-  const filteredFgList = FG_CATALOG.filter(f => f.name.toLowerCase().includes((fgOpen ? fgSearch : "").toLowerCase()));
-  const filteredCols  = (fg?.cols ?? []).filter(c => c.name.toLowerCase().includes(colSearch.toLowerCase()));
-  const allSel        = fg ? fg.cols.length > 0 && fg.cols.every(c => selectedCols.has(c.name)) : false;
-  const someSel       = fg ? fg.cols.some(c => selectedCols.has(c.name)) : false;
-  const lastInst      = FG_LAST_INST[nodeId];
+  const fg = FG_CATALOG.find((f) => f.name === selectedFg) ?? null;
+  const filteredFgList = FG_CATALOG.filter((f) =>
+    f.name.toLowerCase().includes((fgOpen ? fgSearch : "").toLowerCase())
+  );
+  const filteredCols = (fg?.cols ?? []).filter((c) => c.name.toLowerCase().includes(colSearch.toLowerCase()));
+  const allSel = fg ? fg.cols.length > 0 && fg.cols.every((c) => selectedCols.has(c.name)) : false;
+  const someSel = fg ? fg.cols.some((c) => selectedCols.has(c.name)) : false;
+  const lastInst = FG_LAST_INST[nodeId];
 
-  // Auto-parse columns when FG selection changes
+  // Auto-parse columns when FG selection changes (clear join mapping only when FG actually changes)
   useEffect(() => {
-    if (!selectedFg) { setColParseState("idle"); setSelectedCols(new Set()); return; }
+    if (!selectedFg) {
+      setColParseState("idle");
+      setSelectedCols(new Set());
+      return;
+    }
+    const userChangedFg =
+      prevFgRef.current !== null && prevFgRef.current !== selectedFg;
+    prevFgRef.current = selectedFg;
     setColParseState("parsing");
     const t = setTimeout(() => {
-      const f = FG_CATALOG.find(x => x.name === selectedFg);
-      if (f) { setSelectedCols(new Set(f.cols.map(c => c.name))); }
-      setEntityJoinCol(""); setEventTimeJoinCol("");
+      const f = FG_CATALOG.find((x) => x.name === selectedFg);
+      if (f) {
+        setSelectedCols(new Set(f.cols.map((c) => c.name)));
+      }
+      if (userChangedFg) {
+        setEntityJoinCol("");
+        setEventTimeJoinCol("");
+      }
       setColParseState("ready");
     }, 550);
     return () => clearTimeout(t);
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedFg]);
 
   const toggleAll = () => setSelectedCols(allSel ? new Set() : new Set(fg?.cols.map(c => c.name) ?? []));
@@ -1302,6 +1368,11 @@ function FeatureGroupPanel({ nodeId, isInstanceView: _iv, nodeStatus, onClose }:
 
         {/* ── Last Instance tab ── */}
         {activeTab === "lastInstance" ? (
+          emptyLastInstancePlaceholder && !_iv ? (
+            <div className="py-12 px-2 text-center text-xs text-gray-400 leading-relaxed">
+              No run history for this WideTable yet. Trigger an instance to see execution results here.
+            </div>
+          ) : (
           <>
             {lastInst ? (
               <>
@@ -1353,6 +1424,7 @@ function FeatureGroupPanel({ nodeId, isInstanceView: _iv, nodeStatus, onClose }:
               </div>
             )}
           </>
+          )
 
         ) : (
           /* ── Config tab ── */
@@ -1565,22 +1637,76 @@ function FeatureGroupPanel({ nodeId, isInstanceView: _iv, nodeStatus, onClose }:
 }
 
 function NodeConfigPanel({
-  node, isInstanceView, nodeStatus, instance, onClose,
+  node,
+  isInstanceView,
+  nodeStatus,
+  instance,
+  onClose,
+  frameTableInitial,
+  ingestionConfig,
+  dataCleaningInitial,
+  featureGroupInitial,
+  emptyLastInstancePlaceholder,
 }: {
-  node: NodeDef; isInstanceView: boolean;
-  nodeStatus?: NodeStatus; instance?: Instance; onClose: () => void;
+  node: NodeDef;
+  isInstanceView: boolean;
+  nodeStatus?: NodeStatus;
+  instance?: Instance;
+  onClose: () => void;
+  frameTableInitial?: FrameTableSnapshot;
+  ingestionConfig?: DataIngestionConfigSnapshot;
+  dataCleaningInitial?: DataCleaningSnapshot;
+  featureGroupInitial?: FeatureGroupNodeSnapshot;
+  emptyLastInstancePlaceholder?: boolean;
 }) {
   if (node.id === "B") {
-    return <FrameTablePanel isInstanceView={isInstanceView} nodeStatus={nodeStatus} instance={instance} onClose={onClose} />;
+    return (
+      <FrameTablePanel
+        isInstanceView={isInstanceView}
+        nodeStatus={nodeStatus}
+        instance={instance}
+        onClose={onClose}
+        initialFrame={frameTableInitial}
+        emptyLastInstancePlaceholder={emptyLastInstancePlaceholder}
+      />
+    );
   }
   if (node.id === "F") {
-    return <DataIngestionPanel isInstanceView={isInstanceView} nodeStatus={nodeStatus} instance={instance} onClose={onClose} />;
+    return (
+      <DataIngestionPanel
+        isInstanceView={isInstanceView}
+        nodeStatus={nodeStatus}
+        instance={instance}
+        onClose={onClose}
+        ingestionConfig={ingestionConfig}
+        emptyLastInstancePlaceholder={emptyLastInstancePlaceholder}
+      />
+    );
   }
   if (node.id === "G") {
-    return <DataCleaningPanel isInstanceView={isInstanceView} nodeStatus={nodeStatus} instance={instance} onClose={onClose} />;
+    return (
+      <DataCleaningPanel
+        isInstanceView={isInstanceView}
+        nodeStatus={nodeStatus}
+        instance={instance}
+        onClose={onClose}
+        initialCleaning={dataCleaningInitial}
+        emptyLastInstancePlaceholder={emptyLastInstancePlaceholder}
+      />
+    );
   }
   if (node.type === "feature") {
-    return <FeatureGroupPanel nodeId={node.id} isInstanceView={isInstanceView} nodeStatus={nodeStatus} instance={instance} onClose={onClose} />;
+    return (
+      <FeatureGroupPanel
+        nodeId={node.id}
+        isInstanceView={isInstanceView}
+        nodeStatus={nodeStatus}
+        instance={instance}
+        onClose={onClose}
+        initialFg={featureGroupInitial}
+        emptyLastInstancePlaceholder={emptyLastInstancePlaceholder}
+      />
+    );
   }
   return null;
 }
@@ -1691,10 +1817,22 @@ export interface CanvasPageProps {
   formValues?: WideTableFormValues;
   row?: WideTableRow;
   initialInstanceId?: string;
+  /** Seeded when list Copy → New Canvas */
+  canvasSnapshot?: WideTableCanvasSnapshot;
+  /** When true, node drawers show empty Last Instance (no mock run) in Current Config */
+  emptyNodeLastInstance?: boolean;
   onBack: () => void;
 }
 
-export function CanvasPage({ mode, formValues, row, initialInstanceId, onBack }: CanvasPageProps) {
+export function CanvasPage({
+  mode,
+  formValues,
+  row,
+  initialInstanceId,
+  canvasSnapshot,
+  emptyNodeLastInstance,
+  onBack,
+}: CanvasPageProps) {
   // ── Meta ───────────────────────────────────────────────────────────────────
   const [meta, setMeta] = useState<WideTableFormValues>(() => {
     if (formValues) return formValues;
@@ -1712,7 +1850,11 @@ export function CanvasPage({ mode, formValues, row, initialInstanceId, onBack }:
   const nodeStatuses = selectedInst ? getMockNodeStatuses(selectedInst.status) : undefined;
 
   // ── Node positions (mutable for drag) ─────────────────────────────────────
-  const [nodes, setNodes] = useState<NodeDef[]>(INITIAL_NODES);
+  const [nodes, setNodes] = useState<NodeDef[]>(() =>
+    canvasSnapshot?.nodes?.length
+      ? canvasSnapshot.nodes.map((n) => ({ ...n }))
+      : INITIAL_NODES.map((n) => ({ ...n }))
+  );
 
   // ── Selected node ──────────────────────────────────────────────────────────
   const [selectedNodeId, setSelectedNodeId] = useState<NodeId | null>(null);
@@ -2177,6 +2319,8 @@ export function CanvasPage({ mode, formValues, row, initialInstanceId, onBack }:
         {/* Right panel */}
         {selectedNodeId && (() => {
           const node = nodes.find(n => n.id === selectedNodeId)!;
+          const emptyLast =
+            Boolean(emptyNodeLastInstance && viewMode === "current-config");
           return (
             <NodeConfigPanel
               node={node}
@@ -2184,6 +2328,16 @@ export function CanvasPage({ mode, formValues, row, initialInstanceId, onBack }:
               nodeStatus={nodeStatuses?.[selectedNodeId]}
               instance={selectedInst ?? undefined}
               onClose={() => setSelectedNodeId(null)}
+              frameTableInitial={canvasSnapshot?.frameTable}
+              ingestionConfig={canvasSnapshot?.dataIngestion}
+              dataCleaningInitial={canvasSnapshot?.dataCleaning}
+              featureGroupInitial={
+                node.type === "feature" &&
+                (node.id === "C" || node.id === "D" || node.id === "E")
+                  ? canvasSnapshot?.featureGroups?.[node.id]
+                  : undefined
+              }
+              emptyLastInstancePlaceholder={emptyLast}
             />
           );
         })()}
