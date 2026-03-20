@@ -5,7 +5,7 @@
 **参考**
 
 - 导出：[`../references/feature-widetable-figma-export/`](../references/feature-widetable-figma-export/)
-- 规格：[`front-design/产品原型图.md`](front-design/产品原型图.md) §3.5
+- 规格：[`front-design/产品原型图.md`](front-design/产品原型图.md) §3.5；画布节点与 Execute Config 以 [`widetable-canvas-nodes-revamp.md`](widetable-canvas-nodes-revamp.md) 为准
 - 原型：[`../prototype/FEATURE_STORE.html`](../prototype/FEATURE_STORE.html) `#page-ts-list`
 
 ---
@@ -23,6 +23,7 @@
 | G | **状态枚举** | SUCCESS / FAILED / RUNNING / PENDING / KILLED | 含 DRAFT / READY 等画布状态机 | Mock 数据以 zip 为准；与 §3.5 状态机并集不一致处以 **API 为准** |
 | H | **分页** | 默认 **pageSize=5**；独立白卡片；`Showing M–N of T`；省略号 + 10/20/50/100 | 未写默认条数 | 与导出一致默认 **5 条/页**（可改 page size） |
 | I | **视觉** | Region **indigo** tag、Biz **purple** tag、Status **圆点胶囊** | 多为灰色 `tag-gray` / 绿红标签 | 与导出一致用 indigo/purple/状态色 |
+| J | **画布节点** | Start / Data Sink / End 等（`CanvasPage` 导出） | **无 Start**；**Data Ingestion** / **Data Cleaning**；**Execute Config**；DAG 见 revamp 文档 | 实现前以 **规格**为准；导出对齐后改走查 |
 
 **原型状态**：`#page-ts-list` 已按 zip 做结构与交互还原（嵌入 `wt-json-data`、Query/Reset、Owned by me、展开子表、分页）；与规格冲突项仍以上表为准。《产品原型图》若需统一「Add Instance」与「Copy」命名，可单独修订 §3.5。
 

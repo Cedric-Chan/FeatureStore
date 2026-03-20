@@ -40,11 +40,12 @@
 
 ## 4. 前端 / UI·UX 设计描述（可编辑）
 
-**路径**：`docs/design/front-design/`
+**路径**：`docs/design/front-design/`、`docs/design/`
 
 | 文件 | 说明 |
 |------|------|
 | [design/front-design/产品原型图.md](design/front-design/产品原型图.md) | 页面结构、分模块原型、交互与 Figma 交付约定 |
+| [design/widetable-canvas-nodes-revamp.md](design/widetable-canvas-nodes-revamp.md) | WideTable 画布：Data Ingestion / Data Cleaning、Execute Config、DAG 与 Report 弹窗 |
 
 ---
 

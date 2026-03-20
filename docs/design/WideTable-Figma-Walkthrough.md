@@ -4,7 +4,7 @@
 
 **主参考**：[`docs/references/feature-widetable-figma-export/`](../references/feature-widetable-figma-export/)（`AddWideTableModal.tsx`、`WideTableMetaModal.tsx`、`TriggerInstanceModal.tsx`、`WideTableList.tsx`、`CanvasPage.tsx`）。
 
-**冲突规则**：与内部 PRD / 《产品原型图》不一致时，**以导出稿为准**。
+**冲突规则**：与内部 PRD / 《产品原型图》不一致时，**以导出稿为准**。**例外**：画布节点命名与结构（Data Ingestion / Data Cleaning、Execute Config、移除 Start）以 [`widetable-canvas-nodes-revamp.md`](widetable-canvas-nodes-revamp.md) 与《产品原型图》§3.5.2 为准，导出对齐后再恢复「以导出为准」。
 
 **禁止项**：
 
@@ -51,7 +51,7 @@
 
 ## 4. 其他节点面板（CanvasPage 各 Panel）
 
-按节点对照 `CanvasPage.tsx`：Start（A）、Feature Group（C–E）、Data Sink（F）、End（G）— 字段与交互以导出为准；签认时逐项勾选。
+规格已演进为：**无 Start**；**Data Ingestion**（原 Data Sink）、**Data Cleaning**（原 End）、**Execute Config** 顶栏入口；连线 **FG → Data Ingestion → Data Cleaning**。对照字段与交互以 [`widetable-canvas-nodes-revamp.md`](widetable-canvas-nodes-revamp.md) 为准；当前导出仍可能含旧节点名，对齐前以规格为评审依据。
 
 ## 5. 回归 grep（每 PR）
 
