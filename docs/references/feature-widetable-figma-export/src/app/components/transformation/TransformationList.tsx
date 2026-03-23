@@ -110,16 +110,16 @@ function MoreMenu({
       <button
         type="button"
         onClick={() => setOpen((v) => !v)}
-        className="inline-flex items-center gap-0.5 text-xs text-teal-600 hover:text-teal-800 hover:underline"
+        className="inline-flex items-center gap-0.5 text-xs text-teal-600 hover:underline"
       >
         More
         <ChevronDown className={`w-3 h-3 transition-transform ${open ? "rotate-180" : ""}`} />
       </button>
       {open && (
-        <div className="absolute right-0 top-full mt-1 z-50 min-w-[120px] bg-white border border-gray-200 rounded-lg shadow-lg py-1 text-xs">
+        <div className="absolute right-0 top-full mt-1 z-50 min-w-[120px] bg-white border border-gray-200 rounded-lg shadow-lg py-1">
           <button
             type="button"
-            className="w-full text-left px-3 py-2 hover:bg-slate-50 text-slate-700"
+            className="w-full text-left px-3 py-2 hover:bg-slate-50 text-xs text-teal-600 hover:underline"
             onClick={() => {
               setOpen(false);
               onEdit();
@@ -129,7 +129,7 @@ function MoreMenu({
           </button>
           <button
             type="button"
-            className="w-full text-left px-3 py-2 hover:bg-slate-50 text-slate-700"
+            className="w-full text-left px-3 py-2 hover:bg-slate-50 text-xs text-teal-600 hover:underline"
             onClick={() => {
               setOpen(false);
               onAdd();
@@ -139,7 +139,7 @@ function MoreMenu({
           </button>
           <button
             type="button"
-            className="w-full text-left px-3 py-2 hover:bg-slate-50 text-slate-700"
+            className="w-full text-left px-3 py-2 hover:bg-slate-50 text-xs text-teal-600 hover:underline"
             onClick={() => {
               setOpen(false);
               onMonitor();

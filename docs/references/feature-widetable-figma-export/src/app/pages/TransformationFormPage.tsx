@@ -1,13 +1,21 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, type ReactNode } from "react";
 import { useNavigate, useParams, useSearchParams, useLocation } from "react-router";
-import { ArrowLeft, ChevronDown, Maximize2 } from "lucide-react";
+import { ArrowLeft, ChevronRight, Maximize2, Plus, X } from "lucide-react";
 import {
   Collapsible,
   CollapsibleContent,
   CollapsibleTrigger,
 } from "@/app/components/ui/collapsible";
-import { INITIAL_TRANSFORMATION_ROWS, TF_FILTER_REGIONS } from "@/app/components/transformation/transformationData";
-import type { TransformationVersionRow, TfParam } from "@/app/components/transformation/transformationData";
+import { Popover, PopoverContent, PopoverTrigger } from "@/app/components/ui/popover";
+import { Checkbox } from "@/app/components/ui/checkbox";
+import {
+  INITIAL_TRANSFORMATION_ROWS,
+  TF_FILTER_REGIONS,
+} from "@/app/components/transformation/transformationData";
+import type {
+  TransformationVersionRow,
+  TfParam,
+} from "@/app/components/transformation/transformationData";
 import { TransformationTestModal } from "@/app/components/transformation/TransformationTestModal";
 
 function nextVersionForName(name: string): string {
@@ -23,6 +31,51 @@ function nextVersionForName(name: string): string {
 function findRow(name: string, version: string): TransformationVersionRow | undefined {
   return INITIAL_TRANSFORMATION_ROWS.find(
     (r) => r.name === name && r.version === version
+  );
+}
+
+function parseOwnersFromSource(owner: string | undefined): string[] {
+  if (!owner?.trim()) return ["cedric.chencan@seamoney.com"];
+  const parts = owner
+    .split(/[,;]\s*/)
+    .map((s) => s.trim())
+    .filter(Boolean);
+  return parts.length ? parts : ["cedric.chencan@seamoney.com"];
+}
+
+function ownersToRowField(owners: string[]): string {
+  return owners
+    .map((o) => o.trim())
+    .filter(Boolean)
+    .join(", ");
+}
+
+const labelCol =
+  "shrink-0 w-[104px] pt-2 text-sm text-slate-800 text-right pr-3 leading-5";
+
+function HorizontalField({
+  label,
+  required,
+  children,
+}: {
+  label: string;
+  required?: boolean;
+  children: ReactNode;
+}) {
+  return (
+    <div className="flex flex-row items-start gap-0 min-w-0">
+      <div className={labelCol}>
+        {required ? (
+          <>
+            <span className="text-red-500 mr-0.5">*</span>
+            {label}
+          </>
+        ) : (
+          label
+        )}
+      </div>
+      <div className="flex-1 min-w-0">{children}</div>
+    </div>
   );
 }
 
@@ -47,8 +100,7 @@ export function TransformationFormPage() {
 
   const sourceRow = useMemo(() => {
     if (isEdit) return findRow(decodedName, decodedVersion);
-    if (copyFrom && copyVersion)
-      return findRow(copyFrom, copyVersion);
+    if (copyFrom && copyVersion) return findRow(copyFrom, copyVersion);
     return undefined;
   }, [isEdit, decodedName, decodedVersion, copyFrom, copyVersion]);
 
@@ -62,24 +114,30 @@ export function TransformationFormPage() {
     () => sourceRow?.name ?? (copyFrom ?? "")
   );
   const [type, setType] = useState(() => sourceRow?.type ?? "");
-  const [owner, setOwner] = useState(() => sourceRow?.owner ?? "cedric.chencan@seamoney.com");
-  const [description, setDescription] = useState(() => sourceRow?.description ?? "");
-  const [regions, setRegions] = useState<string[]>(() => [...(sourceRow?.regions ?? [])]);
+  const [owners, setOwners] = useState<string[]>(() =>
+    parseOwnersFromSource(sourceRow?.owner)
+  );
+  const [ownerDraft, setOwnerDraft] = useState("");
+  const [description, setDescription] = useState(
+    () => sourceRow?.description ?? ""
+  );
+  const [regions, setRegions] = useState<string[]>(() => [
+    ...(sourceRow?.regions ?? []),
+  ]);
+  const [regionPopoverOpen, setRegionPopoverOpen] = useState(false);
   const [language, setLanguage] = useState(() => sourceRow?.language ?? "Groovy");
   const [script, setScript] = useState(() => sourceRow?.script ?? "");
   const [inputParams, setInputParams] = useState<TfParam[]>(() =>
-    sourceRow?.inputParams?.length
-      ? [...sourceRow.inputParams]
-      : []
+    sourceRow?.inputParams?.length ? [...sourceRow.inputParams] : []
   );
   const [outputParams, setOutputParams] = useState<TfParam[]>(() =>
-    sourceRow?.outputParams?.length
-      ? [...sourceRow.outputParams]
-      : []
+    sourceRow?.outputParams?.length ? [...sourceRow.outputParams] : []
   );
   const [scriptExpanded, setScriptExpanded] = useState(false);
   const [detailTestOpen, setDetailTestOpen] = useState(false);
   const [hasPassedTest, setHasPassedTest] = useState(false);
+
+  const ownerField = useMemo(() => ownersToRowField(owners), [owners]);
 
   const syntheticTestRow: TransformationVersionRow = useMemo(
     () => ({
@@ -90,7 +148,7 @@ export function TransformationFormPage() {
       language,
       status: "DRAFT",
       regions: regions.length ? regions : ["SG"],
-      owner,
+      owner: ownerField || "cedric.chencan@seamoney.com",
       createTime: new Date().toISOString().slice(0, 19).replace("T", " "),
       description,
       script,
@@ -104,8 +162,21 @@ export function TransformationFormPage() {
             { name: "values", dataType: "List" },
           ],
     }),
-    [name, initialVersion, type, language, regions, owner, description, script, inputParams, outputParams]
+    [
+      name,
+      initialVersion,
+      type,
+      language,
+      regions,
+      ownerField,
+      description,
+      script,
+      inputParams,
+      outputParams,
+    ]
   );
+
+  const hasOwners = owners.some((o) => o.trim().length > 0);
 
   const canSubmit =
     name.trim() &&
@@ -113,7 +184,8 @@ export function TransformationFormPage() {
     description.trim() &&
     regions.length > 0 &&
     language &&
-    script.trim();
+    script.trim() &&
+    hasOwners;
 
   const canHeaderTest = canSubmit;
 
@@ -123,13 +195,33 @@ export function TransformationFormPage() {
     );
   };
 
+  const addOwner = () => {
+    const next = ownerDraft.trim();
+    if (!next || readOnly) return;
+    if (!owners.includes(next)) setOwners((o) => [...o, next]);
+    setOwnerDraft("");
+  };
+
+  const removeOwner = (index: number) => {
+    setOwners((o) => o.filter((_, i) => i !== index));
+  };
+
   const addInputParam = () =>
     setInputParams((p) => [...p, { name: "", dataType: "String" }]);
   const addOutputParam = () =>
     setOutputParams((p) => [...p, { name: "", dataType: "String" }]);
 
-  const sectionBtn =
-    "flex w-full items-center gap-2 px-4 py-3 bg-slate-100/80 border border-slate-200 rounded-t-lg text-left text-sm font-medium text-slate-800 hover:bg-slate-100 transition-colors";
+  const outlineHeaderBtn =
+    "px-3 py-1.5 text-xs border border-gray-300 rounded-md bg-white text-slate-700 hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed";
+
+  const sectionCard = "border border-slate-200 rounded-lg bg-white overflow-hidden";
+  const sectionTriggerClass =
+    "group flex w-full items-center gap-2 px-4 py-3 rounded-t-lg bg-slate-100 border-b border-slate-200 text-left text-sm font-medium text-slate-800 hover:bg-slate-100/90 transition-colors data-[state=closed]:rounded-b-lg";
+
+  const inputBase =
+    "w-full px-3 py-2 text-sm border border-slate-200 rounded-md bg-white text-slate-800 placeholder:text-slate-400 disabled:bg-slate-50 disabled:text-slate-500";
+
+  const regionRegionsList = TF_FILTER_REGIONS.filter(Boolean);
 
   return (
     <div className="min-h-full bg-[#f5f7fa] flex flex-col">
@@ -146,272 +238,361 @@ export function TransformationFormPage() {
           {isEdit ? "Edit Transformation" : "Add Transformation"}
         </h1>
         <div className="ml-auto flex flex-wrap items-center gap-2">
-          <button
-            type="button"
-            disabled={readOnly}
-            className="px-3 py-1.5 text-xs border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50 disabled:opacity-40"
-          >
+          <button type="button" disabled={readOnly} className={outlineHeaderBtn}>
             Copy Settings
           </button>
-          <button
-            type="button"
-            disabled={readOnly}
-            className="px-3 py-1.5 text-xs border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50 disabled:opacity-40"
-          >
+          <button type="button" disabled={readOnly} className={outlineHeaderBtn}>
             Edit in Script
           </button>
-          <button
-            type="button"
-            disabled={readOnly}
-            className="px-3 py-1.5 text-xs border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50 disabled:opacity-40"
-          >
+          <button type="button" disabled={readOnly} className={outlineHeaderBtn}>
             Save Draft
           </button>
           <button
             type="button"
             disabled={readOnly || !canHeaderTest}
             onClick={() => setDetailTestOpen(true)}
-            className="px-3 py-1.5 text-xs rounded-lg bg-teal-500 text-white hover:bg-teal-600 disabled:bg-gray-300 disabled:cursor-not-allowed"
+            className="px-3 py-1.5 text-xs rounded-md bg-teal-500 text-white hover:bg-teal-600 disabled:bg-slate-200 disabled:text-slate-500 disabled:cursor-not-allowed"
           >
             Test
           </button>
         </div>
       </header>
 
-      <div className="flex-1 overflow-y-auto p-5 max-w-3xl mx-auto w-full space-y-4 pb-24">
-        <Collapsible defaultOpen className="border border-slate-200 rounded-lg bg-white overflow-hidden">
-          <CollapsibleTrigger className={sectionBtn}>
-            <ChevronDown className="w-4 h-4 shrink-0" />
+      <div className="flex-1 overflow-y-auto p-5 w-full max-w-[1200px] mx-auto space-y-4 pb-24">
+        <Collapsible defaultOpen className={sectionCard}>
+          <CollapsibleTrigger className={sectionTriggerClass}>
+            <ChevronRight className="w-4 h-4 shrink-0 transition-transform duration-200 group-data-[state=open]:rotate-90" />
             Basic Info
           </CollapsibleTrigger>
           <CollapsibleContent>
-            <div className="p-4 space-y-4 border-t border-slate-100">
-              <div className="grid grid-cols-[1fr_auto] gap-2 items-end">
-                <div>
-                  <label className="text-xs text-slate-500 mb-1 block">Name</label>
-                  <input
-                    value={name}
-                    onChange={(e) => setName(e.target.value)}
-                    disabled={readOnly || isEdit}
-                    placeholder="Please input name."
-                    className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg disabled:bg-slate-50"
-                  />
-                </div>
-                <div>
-                  <label className="text-xs text-slate-500 mb-1 block">Version</label>
-                  <div className="px-3 py-2 text-sm font-mono bg-slate-50 border border-slate-200 rounded-lg text-slate-600 min-w-[52px] text-center">
-                    {initialVersion}
+            <div className="p-5 border-t border-slate-100 space-y-5">
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-x-8 gap-y-5">
+                <HorizontalField label="Name">
+                  <div className="flex w-full min-w-0">
+                    <input
+                      value={name}
+                      onChange={(e) => setName(e.target.value)}
+                      disabled={readOnly || isEdit}
+                      placeholder="Please input name"
+                      className={`${inputBase} rounded-l-md rounded-r-none border-r-0 flex-1 min-w-0`}
+                    />
+                    <input
+                      value={initialVersion}
+                      disabled
+                      placeholder="Input version"
+                      readOnly
+                      aria-readonly
+                      className="w-[88px] shrink-0 px-3 py-2 text-sm border border-slate-200 rounded-r-md rounded-l-none bg-slate-50 text-slate-600 text-center font-mono"
+                    />
                   </div>
-                </div>
+                </HorizontalField>
+                <HorizontalField label="Type" required>
+                  <select
+                    value={type}
+                    onChange={(e) => setType(e.target.value)}
+                    disabled={readOnly}
+                    className={inputBase}
+                  >
+                    <option value="">Please select type</option>
+                    <option value="Scalar">Scalar</option>
+                    <option value="Aggregator">Aggregator</option>
+                  </select>
+                </HorizontalField>
               </div>
-              <div>
-                <label className="text-xs text-slate-500 mb-1 block">
-                  <span className="text-red-500">*</span> Type
-                </label>
-                <select
-                  value={type}
-                  onChange={(e) => setType(e.target.value)}
-                  disabled={readOnly}
-                  className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg"
-                >
-                  <option value="">Please select</option>
-                  <option value="Scalar">Scalar</option>
-                  <option value="Aggregator">Aggregator</option>
-                </select>
-              </div>
-              <div>
-                <label className="text-xs text-slate-500 mb-1 block">Owner</label>
-                <input
-                  value={owner}
-                  onChange={(e) => setOwner(e.target.value)}
-                  disabled={readOnly}
-                  className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg"
-                />
-              </div>
-              <div>
-                <label className="text-xs text-slate-500 mb-1 block">
-                  <span className="text-red-500">*</span> Description
-                </label>
-                <textarea
-                  value={description}
-                  onChange={(e) => setDescription(e.target.value)}
-                  disabled={readOnly}
-                  rows={3}
-                  className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg resize-y min-h-[72px]"
-                />
-              </div>
-              <div>
-                <label className="text-xs text-slate-500 mb-1 block">
-                  <span className="text-red-500">*</span> Region
-                </label>
-                <div className="flex flex-wrap gap-2 p-2 border border-slate-200 rounded-lg min-h-[42px]">
-                  {TF_FILTER_REGIONS.filter(Boolean).map((r) => (
-                    <label
-                      key={r}
-                      className={`inline-flex items-center gap-1 px-2 py-1 rounded text-xs border cursor-pointer ${
-                        regions.includes(r)
-                          ? "bg-teal-50 border-teal-300 text-teal-800"
-                          : "bg-white border-slate-200 text-slate-600"
-                      }`}
-                    >
+
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-x-8 gap-y-5">
+                <HorizontalField label="Owner">
+                  <div
+                    className={`flex flex-wrap gap-1.5 items-center min-h-[40px] px-2 py-1.5 border border-slate-200 rounded-md bg-white ${readOnly ? "bg-slate-50" : ""}`}
+                  >
+                    {owners.map((o, i) => (
+                      <span
+                        key={`${o}-${i}`}
+                        className="inline-flex items-center gap-0.5 pl-2 pr-1 py-0.5 rounded-md bg-slate-100 border border-slate-200 text-xs text-slate-800 max-w-full"
+                        title={o}
+                      >
+                        <span className="truncate">{o}</span>
+                        {!readOnly && (
+                          <button
+                            type="button"
+                            className="p-0.5 rounded hover:bg-slate-200 text-slate-500 shrink-0"
+                            aria-label={`Remove ${o}`}
+                            onClick={() => removeOwner(i)}
+                          >
+                            <X className="w-3.5 h-3.5" />
+                          </button>
+                        )}
+                      </span>
+                    ))}
+                    {!readOnly && (
                       <input
-                        type="checkbox"
-                        className="sr-only"
-                        checked={regions.includes(r)}
-                        disabled={readOnly}
-                        onChange={() => toggleRegion(r)}
+                        value={ownerDraft}
+                        onChange={(e) => setOwnerDraft(e.target.value)}
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter") {
+                            e.preventDefault();
+                            addOwner();
+                          }
+                        }}
+                        onBlur={addOwner}
+                        placeholder="Please select owners"
+                        className="flex-1 min-w-[140px] border-0 bg-transparent text-sm py-1 px-1 outline-none placeholder:text-slate-400"
                       />
-                      {r}
-                    </label>
-                  ))}
-                </div>
+                    )}
+                  </div>
+                </HorizontalField>
+                <HorizontalField label="Description" required>
+                  <textarea
+                    value={description}
+                    onChange={(e) => setDescription(e.target.value)}
+                    disabled={readOnly}
+                    rows={3}
+                    placeholder="Please input desc"
+                    className={`${inputBase} resize-y min-h-[72px]`}
+                  />
+                </HorizontalField>
               </div>
-              <div>
-                <label className="text-xs text-slate-500 mb-1 block">
-                  <span className="text-red-500">*</span> Language
-                </label>
-                <select
-                  value={language}
-                  onChange={(e) => setLanguage(e.target.value)}
-                  disabled={readOnly}
-                  className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg"
-                >
-                  <option value="Groovy">Groovy</option>
-                  <option value="Python">Python</option>
-                </select>
+
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-x-8 gap-y-5">
+                <HorizontalField label="Region" required>
+                  <Popover
+                    open={regionPopoverOpen}
+                    onOpenChange={setRegionPopoverOpen}
+                  >
+                    <PopoverTrigger asChild>
+                      <button
+                        type="button"
+                        disabled={readOnly}
+                        className={`${inputBase} flex items-center justify-between text-left font-normal`}
+                      >
+                        <span
+                          className={
+                            regions.length ? "text-slate-800" : "text-slate-400"
+                          }
+                        >
+                          {regions.length
+                            ? regions.join(", ")
+                            : "Please select regions"}
+                        </span>
+                        <ChevronRight className="w-4 h-4 -rotate-90 text-slate-400 shrink-0" />
+                      </button>
+                    </PopoverTrigger>
+                    <PopoverContent className="w-64 p-3" align="start">
+                      <p className="text-xs text-slate-500 mb-2">Regions</p>
+                      <div className="flex flex-col gap-2 max-h-48 overflow-y-auto">
+                        {regionRegionsList.map((r) => (
+                          <label
+                            key={r}
+                            className="flex items-center gap-2 text-sm text-slate-700 cursor-pointer"
+                          >
+                            <Checkbox
+                              checked={regions.includes(r)}
+                              onCheckedChange={() => toggleRegion(r)}
+                            />
+                            {r}
+                          </label>
+                        ))}
+                      </div>
+                    </PopoverContent>
+                  </Popover>
+                </HorizontalField>
+                <HorizontalField label="Language" required>
+                  <select
+                    value={language}
+                    onChange={(e) => setLanguage(e.target.value)}
+                    disabled={readOnly}
+                    className={inputBase}
+                  >
+                    <option value="Groovy">Groovy</option>
+                    <option value="Python">Python</option>
+                  </select>
+                </HorizontalField>
               </div>
             </div>
           </CollapsibleContent>
         </Collapsible>
 
-        <Collapsible defaultOpen className="border border-slate-200 rounded-lg bg-white overflow-hidden">
-          <CollapsibleTrigger className={sectionBtn}>
-            <ChevronDown className="w-4 h-4 shrink-0" />
+        <Collapsible defaultOpen className={sectionCard}>
+          <CollapsibleTrigger className={sectionTriggerClass}>
+            <ChevronRight className="w-4 h-4 shrink-0 transition-transform duration-200 group-data-[state=open]:rotate-90" />
             Transformation Script
           </CollapsibleTrigger>
           <CollapsibleContent>
-            <div className="p-4 border-t border-slate-100">
-              <label className="text-xs text-slate-600 mb-2 block">
-                <span className="text-red-500">*</span> Script:
-              </label>
-              <div className="relative border border-slate-200 rounded-lg overflow-hidden">
-                <button
-                  type="button"
-                  className="absolute top-2 right-2 z-10 p-1.5 rounded bg-white/90 border border-slate-200 text-slate-500 hover:text-teal-600"
-                  title="Expand"
-                  onClick={() => setScriptExpanded(true)}
-                >
-                  <Maximize2 className="w-4 h-4" />
-                </button>
-                <div className="flex">
-                  <div className="w-10 bg-slate-50 border-r border-slate-200 py-2 text-right pr-2 text-xs text-slate-400 font-mono select-none">
-                    {script.split("\n").map((_, i) => (
-                      <div key={i}>{i + 1}</div>
-                    ))}
-                    {script.length === 0 && <div>1</div>}
+            <div className="p-5 border-t border-slate-100">
+              <div className="flex flex-col lg:flex-row gap-4 lg:gap-0 items-stretch lg:items-start min-w-0">
+                <div className={`${labelCol} lg:pt-2 text-left lg:text-right`}>
+                  <span className="text-red-500 mr-0.5">*</span>
+                  Script:
+                </div>
+                <div className="flex-1 min-w-0 lg:pl-0">
+                  <div className="relative border border-slate-200 rounded-md overflow-hidden bg-white min-h-[300px]">
+                    <button
+                      type="button"
+                      className="absolute top-2 right-2 z-10 p-1.5 rounded bg-white/90 border border-slate-200 text-slate-500 hover:text-teal-600"
+                      title="Expand"
+                      onClick={() => setScriptExpanded(true)}
+                    >
+                      <Maximize2 className="w-4 h-4" />
+                    </button>
+                    <div className="flex min-h-[300px]">
+                      <div className="w-12 bg-slate-50 border-r border-slate-200 py-2 text-right pr-2 text-xs text-slate-400 font-mono select-none leading-[22px]">
+                        {script.split("\n").map((_, i) => (
+                          <div key={i} style={{ lineHeight: "22px" }}>
+                            {i + 1}
+                          </div>
+                        ))}
+                        {script.length === 0 && (
+                          <div style={{ lineHeight: "22px" }}>1</div>
+                        )}
+                      </div>
+                      <textarea
+                        value={script}
+                        onChange={(e) => setScript(e.target.value)}
+                        disabled={readOnly}
+                        spellCheck={false}
+                        className="flex-1 min-h-[300px] px-3 py-2 text-sm font-mono border-0 focus:ring-0 resize-none leading-[22px]"
+                      />
+                    </div>
                   </div>
-                  <textarea
-                    value={script}
-                    onChange={(e) => setScript(e.target.value)}
-                    disabled={readOnly}
-                    rows={12}
-                    spellCheck={false}
-                    className="flex-1 px-3 py-2 text-sm font-mono border-0 focus:ring-0 resize-y min-h-[200px]"
-                  />
                 </div>
               </div>
             </div>
           </CollapsibleContent>
         </Collapsible>
 
-        <Collapsible defaultOpen className="border border-slate-200 rounded-lg bg-white overflow-hidden">
-          <CollapsibleTrigger className={sectionBtn}>
-            <ChevronDown className="w-4 h-4 shrink-0" />
+        <Collapsible defaultOpen className={sectionCard}>
+          <CollapsibleTrigger className={sectionTriggerClass}>
+            <ChevronRight className="w-4 h-4 shrink-0 transition-transform duration-200 group-data-[state=open]:rotate-90" />
             Params Config
           </CollapsibleTrigger>
           <CollapsibleContent>
-            <div className="p-4 space-y-4 border-t border-slate-100">
-              <div>
-                <p className="text-xs text-slate-600 mb-2">Input Params</p>
-                <div className="border border-dashed border-slate-300 rounded-lg p-3 min-h-[56px] flex flex-wrap items-center justify-end gap-2">
-                  <div className="flex flex-wrap gap-2 flex-1 mr-auto">
-                    {inputParams.map((p, i) => (
-                      <div key={i} className="flex gap-1 text-xs">
-                        <input
-                          value={p.name}
-                          disabled={readOnly}
-                          onChange={(e) => {
-                            const next = [...inputParams];
-                            next[i] = { ...next[i], name: e.target.value };
-                            setInputParams(next);
-                          }}
-                          placeholder="name"
-                          className="w-24 px-2 py-1 border border-slate-200 rounded"
-                        />
-                        <input
-                          value={p.dataType}
-                          disabled={readOnly}
-                          onChange={(e) => {
-                            const next = [...inputParams];
-                            next[i] = { ...next[i], dataType: e.target.value };
-                            setInputParams(next);
-                          }}
-                          placeholder="type"
-                          className="w-20 px-2 py-1 border border-slate-200 rounded"
-                        />
-                      </div>
-                    ))}
-                  </div>
+            <div className="p-5 space-y-6 border-t border-slate-100">
+              <div className="flex flex-col sm:flex-row gap-4 sm:gap-0 items-stretch sm:items-start">
+                <div className={`${labelCol} sm:pt-2 text-left sm:text-right`}>
+                  Input Params
+                </div>
+                <div className="flex-1 min-w-0 space-y-3 sm:pl-0">
                   {!readOnly && (
                     <button
                       type="button"
                       onClick={addInputParam}
-                      className="text-xs text-teal-600 font-medium hover:underline shrink-0"
+                      className="w-full flex items-center justify-center gap-2 py-8 border border-dashed border-slate-300 rounded-md text-sm text-slate-600 hover:border-teal-400 hover:text-teal-700 hover:bg-slate-50/80 transition-colors"
                     >
-                      + Add
+                      <Plus className="w-4 h-4" />
+                      Add
                     </button>
+                  )}
+                  {inputParams.length > 0 && (
+                    <div className="space-y-2">
+                      {inputParams.map((p, i) => (
+                        <div
+                          key={i}
+                          className="flex flex-wrap gap-2 items-center text-xs"
+                        >
+                          <input
+                            value={p.name}
+                            disabled={readOnly}
+                            onChange={(e) => {
+                              const next = [...inputParams];
+                              next[i] = { ...next[i], name: e.target.value };
+                              setInputParams(next);
+                            }}
+                            placeholder="name"
+                            className="w-32 px-2 py-1.5 border border-slate-200 rounded-md text-sm"
+                          />
+                          <input
+                            value={p.dataType}
+                            disabled={readOnly}
+                            onChange={(e) => {
+                              const next = [...inputParams];
+                              next[i] = { ...next[i], dataType: e.target.value };
+                              setInputParams(next);
+                            }}
+                            placeholder="type"
+                            className="w-28 px-2 py-1.5 border border-slate-200 rounded-md text-sm"
+                          />
+                          {!readOnly && (
+                            <button
+                              type="button"
+                              className="text-slate-400 hover:text-red-600 p-1"
+                              aria-label="Remove param"
+                              onClick={() =>
+                                setInputParams((prev) =>
+                                  prev.filter((_, j) => j !== i)
+                                )
+                              }
+                            >
+                              <X className="w-4 h-4" />
+                            </button>
+                          )}
+                        </div>
+                      ))}
+                    </div>
                   )}
                 </div>
               </div>
-              <div>
-                <p className="text-xs text-slate-600 mb-2">Output Params</p>
-                <div className="border border-dashed border-slate-300 rounded-lg p-3 min-h-[56px] flex flex-wrap items-center justify-end gap-2">
-                  <div className="flex flex-wrap gap-2 flex-1 mr-auto">
-                    {outputParams.map((p, i) => (
-                      <div key={i} className="flex gap-1 text-xs">
-                        <input
-                          value={p.name}
-                          disabled={readOnly}
-                          onChange={(e) => {
-                            const next = [...outputParams];
-                            next[i] = { ...next[i], name: e.target.value };
-                            setOutputParams(next);
-                          }}
-                          placeholder="name"
-                          className="w-24 px-2 py-1 border border-slate-200 rounded"
-                        />
-                        <input
-                          value={p.dataType}
-                          disabled={readOnly}
-                          onChange={(e) => {
-                            const next = [...outputParams];
-                            next[i] = { ...next[i], dataType: e.target.value };
-                            setOutputParams(next);
-                          }}
-                          placeholder="type"
-                          className="w-20 px-2 py-1 border border-slate-200 rounded"
-                        />
-                      </div>
-                    ))}
-                  </div>
+
+              <div className="flex flex-col sm:flex-row gap-4 sm:gap-0 items-stretch sm:items-start">
+                <div className={`${labelCol} sm:pt-2 text-left sm:text-right`}>
+                  Output Params
+                </div>
+                <div className="flex-1 min-w-0 space-y-3 sm:pl-0">
                   {!readOnly && (
                     <button
                       type="button"
                       onClick={addOutputParam}
-                      className="text-xs text-teal-600 font-medium hover:underline shrink-0"
+                      className="w-full flex items-center justify-center gap-2 py-8 border border-dashed border-slate-300 rounded-md text-sm text-slate-600 hover:border-teal-400 hover:text-teal-700 hover:bg-slate-50/80 transition-colors"
                     >
-                      + Add
+                      <Plus className="w-4 h-4" />
+                      Add
                     </button>
+                  )}
+                  {outputParams.length > 0 && (
+                    <div className="space-y-2">
+                      {outputParams.map((p, i) => (
+                        <div
+                          key={i}
+                          className="flex flex-wrap gap-2 items-center text-xs"
+                        >
+                          <input
+                            value={p.name}
+                            disabled={readOnly}
+                            onChange={(e) => {
+                              const next = [...outputParams];
+                              next[i] = { ...next[i], name: e.target.value };
+                              setOutputParams(next);
+                            }}
+                            placeholder="name"
+                            className="w-32 px-2 py-1.5 border border-slate-200 rounded-md text-sm"
+                          />
+                          <input
+                            value={p.dataType}
+                            disabled={readOnly}
+                            onChange={(e) => {
+                              const next = [...outputParams];
+                              next[i] = { ...next[i], dataType: e.target.value };
+                              setOutputParams(next);
+                            }}
+                            placeholder="type"
+                            className="w-28 px-2 py-1.5 border border-slate-200 rounded-md text-sm"
+                          />
+                          {!readOnly && (
+                            <button
+                              type="button"
+                              className="text-slate-400 hover:text-red-600 p-1"
+                              aria-label="Remove param"
+                              onClick={() =>
+                                setOutputParams((prev) =>
+                                  prev.filter((_, j) => j !== i)
+                                )
+                              }
+                            >
+                              <X className="w-4 h-4" />
+                            </button>
+                          )}
+                        </div>
+                      ))}
+                    </div>
                   )}
                 </div>
               </div>
@@ -419,18 +600,18 @@ export function TransformationFormPage() {
           </CollapsibleContent>
         </Collapsible>
 
-        <Collapsible defaultOpen className="border border-slate-200 rounded-lg bg-white overflow-hidden">
-          <CollapsibleTrigger className={sectionBtn}>
-            <ChevronDown className="w-4 h-4 shrink-0" />
+        <Collapsible defaultOpen className={sectionCard}>
+          <CollapsibleTrigger className={sectionTriggerClass}>
+            <ChevronRight className="w-4 h-4 shrink-0 transition-transform duration-200 group-data-[state=open]:rotate-90" />
             Transformation Agent Review
           </CollapsibleTrigger>
           <CollapsibleContent>
-            <div className="p-4 border-t border-slate-100 flex flex-wrap items-center gap-3">
+            <div className="p-5 border-t border-slate-100 flex flex-wrap items-center gap-3">
               <button
                 type="button"
                 disabled={readOnly || !hasPassedTest}
                 onClick={() => window.alert("AI Review (mock)")}
-                className="px-4 py-2 text-sm border border-slate-300 rounded-lg text-slate-700 hover:bg-slate-50 disabled:bg-slate-100 disabled:text-slate-400 disabled:cursor-not-allowed"
+                className="px-4 py-2 text-sm border border-slate-300 rounded-md bg-white text-slate-700 hover:bg-slate-50 disabled:bg-slate-100 disabled:text-slate-400 disabled:cursor-not-allowed"
               >
                 AI Review
               </button>
@@ -439,7 +620,9 @@ export function TransformationFormPage() {
                   Please pass the Test first to enable AI Review
                 </span>
               ) : (
-                <span className="text-xs text-emerald-600">Test passed — AI Review is available.</span>
+                <span className="text-xs text-emerald-600">
+                  Test passed — AI Review is available.
+                </span>
               )}
             </div>
           </CollapsibleContent>
@@ -450,7 +633,7 @@ export function TransformationFormPage() {
         <button
           type="button"
           onClick={() => navigate("/tf")}
-          className="px-4 py-2 text-sm border border-slate-300 rounded-lg text-slate-700 hover:bg-slate-50"
+          className="px-4 py-2 text-sm border border-slate-300 rounded-md bg-white text-slate-700 hover:bg-slate-50"
         >
           Cancel
         </button>
@@ -461,7 +644,7 @@ export function TransformationFormPage() {
             window.alert("Submit (mock)");
             navigate("/tf");
           }}
-          className="px-5 py-2 text-sm rounded-lg bg-teal-500 text-white hover:bg-teal-600 disabled:bg-gray-300 disabled:cursor-not-allowed"
+          className="px-5 py-2 text-sm rounded-md bg-teal-500 text-white hover:bg-teal-600 disabled:bg-slate-200 disabled:text-slate-500 disabled:cursor-not-allowed"
         >
           Submit
         </button>
