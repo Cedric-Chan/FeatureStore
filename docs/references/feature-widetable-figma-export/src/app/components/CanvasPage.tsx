@@ -2086,14 +2086,14 @@ export function CanvasPage({
                 <span className="px-1.5 py-0.5 text-xs bg-gray-100 text-gray-600 rounded shrink-0">{meta.region}</span>
               )}
               <button
-                onClick={() => viewMode !== "instance-view" && setShowMetaModal(true)}
-                disabled={viewMode === "instance-view"}
-                title={viewMode === "instance-view" ? "Only available in Config Canvas" : "Edit table metadata"}
-                className={`flex items-center gap-1.5 px-2.5 py-1 text-xs font-medium rounded-lg border shadow-sm transition-all shrink-0 ${
+                onClick={() => setShowMetaModal(true)}
+                title={
                   viewMode === "instance-view"
-                    ? "text-gray-300 border-gray-100 bg-gray-50 cursor-not-allowed opacity-70"
-                    : "text-teal-700 border-teal-200 bg-gradient-to-b from-teal-50 to-white hover:border-teal-400 hover:shadow cursor-pointer"
-                }`}>
+                    ? "View table metadata (read-only)"
+                    : "Edit table metadata"
+                }
+                className="flex items-center gap-1.5 px-2.5 py-1 text-xs font-medium rounded-lg border shadow-sm transition-all shrink-0 text-teal-700 border-teal-200 bg-gradient-to-b from-teal-50 to-white hover:border-teal-400 hover:shadow cursor-pointer"
+              >
                 <Pencil size={11} className="shrink-0" /> Edit Meta
               </button>
             </div>
@@ -2355,8 +2355,19 @@ export function CanvasPage({
 
       {/* Modals */}
       {showMetaModal && (
-        <WideTableMetaModal values={meta} onClose={() => setShowMetaModal(false)}
-          onSave={u => { setMeta(u); setShowMetaModal(false); }} />
+        <WideTableMetaModal
+          values={meta}
+          readOnly={viewMode === "instance-view"}
+          onClose={() => setShowMetaModal(false)}
+          onSave={
+            viewMode === "instance-view"
+              ? undefined
+              : (u) => {
+                  setMeta(u);
+                  setShowMetaModal(false);
+                }
+          }
+        />
       )}
       {showTriggerModal && (
         <TriggerInstanceModal onClose={() => setShowTriggerModal(false)} onTrigger={handleTrigger} />

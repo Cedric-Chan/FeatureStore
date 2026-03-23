@@ -31,7 +31,9 @@ const BIZ_TEAMS = [
 interface Props {
   values: WideTableFormValues;
   onClose: () => void;
-  onSave: (updated: WideTableFormValues) => void;
+  /** When true (e.g. Instance View canvas), all fields are read-only and Save is hidden. */
+  readOnly?: boolean;
+  onSave?: (updated: WideTableFormValues) => void;
 }
 
 function ReadOnlyField({
@@ -77,7 +79,7 @@ function EditField({
   );
 }
 
-export function WideTableMetaModal({ values, onClose, onSave }: Props) {
+export function WideTableMetaModal({ values, onClose, readOnly = false, onSave }: Props) {
   const [owners, setOwners] = useState<string[]>(values.owners);
   const [bizTeam, setBizTeam] = useState(values.bizTeam);
   const [description, setDescription] = useState(values.description);
@@ -113,8 +115,8 @@ export function WideTableMetaModal({ values, onClose, onSave }: Props) {
   };
 
   const handleSave = () => {
-    if (validate())
-      onSave({ ...values, owners, bizTeam, description });
+    if (readOnly || !onSave) return;
+    if (validate()) onSave({ ...values, owners, bizTeam, description });
   };
 
   const toggleOwner = (o: string) => {
@@ -138,7 +140,9 @@ export function WideTableMetaModal({ values, onClose, onSave }: Props) {
               <h2 className="text-gray-800">WideTable Meta</h2>
             </div>
             <p className="text-xs text-gray-400 mt-1 ml-3">
-              WideTable Name and Region are not editable.
+              {readOnly
+                ? "View only — metadata cannot be changed in Instance View."
+                : "WideTable Name and Region are not editable."}
             </p>
           </div>
           <button
@@ -155,113 +159,140 @@ export function WideTableMetaModal({ values, onClose, onSave }: Props) {
           <ReadOnlyField label="WideTable Name" value={values.name} />
           <ReadOnlyField label="Region" value={values.region} />
 
-          {/* Owner multi-select */}
-          <EditField label="Owner" error={errors.owners}>
-            <div ref={ownerRef} className="relative">
-              <button
-                type="button"
-                onClick={() => setOwnerOpen((v) => !v)}
-                className={`w-full px-3 py-2 text-sm border rounded-lg outline-none transition-all text-left flex items-center justify-between ${
-                  errors.owners ? "border-red-300" : "border-gray-200"
-                } ${ownerOpen ? "border-teal-400 ring-2 ring-teal-50" : "hover:border-gray-300"}`}
-              >
-                <span className={owners.length === 0 ? "text-gray-300" : "text-gray-700"}>
-                  {owners.length === 0
-                    ? "Select owners..."
-                    : `${owners.length} owner${owners.length > 1 ? "s" : ""} selected`}
-                </span>
-                <ChevronDown
-                  size={14}
-                  className={`text-gray-400 transition-transform ${ownerOpen ? "rotate-180" : ""}`}
-                />
-              </button>
-              {owners.length > 0 && (
-                <div className="flex flex-wrap gap-1 mt-2">
-                  {owners.map((o) => (
-                    <span
-                      key={o}
-                      className="inline-flex items-center gap-1 px-2 py-0.5 text-xs bg-teal-50 text-teal-700 border border-teal-100 rounded-full"
-                    >
-                      {o}
-                      <button type="button" onClick={() => toggleOwner(o)}>
-                        <X size={10} />
-                      </button>
-                    </span>
-                  ))}
-                </div>
-              )}
-              {ownerOpen && (
-                <div className="absolute z-20 top-full left-0 mt-1 w-full bg-white border border-gray-200 rounded-xl shadow-xl max-h-48 overflow-y-auto py-1">
-                  {OWNER_OPTIONS.map((o) => {
-                    const selected = owners.includes(o);
-                    return (
-                      <button
-                        key={o}
-                        type="button"
-                        onClick={() => toggleOwner(o)}
-                        className={`w-full flex items-center gap-2.5 px-3 py-2 text-xs text-left transition-colors ${
-                          selected ? "bg-teal-50 text-teal-700" : "text-gray-600 hover:bg-gray-50"
-                        }`}
-                      >
-                        <span
-                          className={`w-4 h-4 rounded border flex items-center justify-center shrink-0 ${
-                            selected ? "bg-teal-500 border-teal-500" : "border-gray-300"
-                          }`}
-                        >
-                          {selected && <Check size={10} className="text-white" />}
-                        </span>
-                        {o}
-                      </button>
-                    );
-                  })}
-                </div>
-              )}
-            </div>
-          </EditField>
-
-          {/* Biz Team */}
-          <EditField label="Biz Team" error={errors.bizTeam}>
-            <div className="relative">
-              <select
-                value={bizTeam}
-                onChange={(e) => {
-                  setBizTeam(e.target.value);
-                  setErrors((er) => ({ ...er, bizTeam: undefined }));
-                }}
-                className={`w-full px-3 py-2 text-sm border rounded-lg outline-none transition-all appearance-none bg-white pr-8 ${
-                  errors.bizTeam
-                    ? "border-red-300"
-                    : "border-gray-200 focus:border-teal-400 focus:ring-2 focus:ring-teal-50"
-                } ${!bizTeam ? "text-gray-300" : "text-gray-700"}`}
-              >
-                <option value="" disabled>Select biz team...</option>
-                {BIZ_TEAMS.map((b) => (
-                  <option key={b} value={b} className="text-gray-700">{b}</option>
-                ))}
-              </select>
-              <ChevronDown
-                size={14}
-                className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none"
+          {readOnly ? (
+            <>
+              <ReadOnlyField
+                label="Owner"
+                value={values.owners.length ? values.owners.join(", ") : "—"}
               />
-            </div>
-          </EditField>
+              <ReadOnlyField label="Biz Team" value={values.bizTeam || "—"} />
+              <div className="flex flex-col gap-1.5">
+                <label className="text-xs text-gray-500 flex items-center gap-1.5">
+                  Description
+                  <span className="text-xs text-gray-400 bg-gray-100 px-1.5 py-0.5 rounded font-mono">
+                    read-only
+                  </span>
+                </label>
+                <div className="px-3 py-2 text-sm text-gray-500 bg-gray-50 border border-gray-100 rounded-lg whitespace-pre-wrap min-h-[4.5rem]">
+                  {values.description.trim() || "—"}
+                </div>
+              </div>
+            </>
+          ) : (
+            <>
+              {/* Owner multi-select */}
+              <EditField label="Owner" error={errors.owners}>
+                <div ref={ownerRef} className="relative">
+                  <button
+                    type="button"
+                    onClick={() => setOwnerOpen((v) => !v)}
+                    className={`w-full px-3 py-2 text-sm border rounded-lg outline-none transition-all text-left flex items-center justify-between ${
+                      errors.owners ? "border-red-300" : "border-gray-200"
+                    } ${ownerOpen ? "border-teal-400 ring-2 ring-teal-50" : "hover:border-gray-300"}`}
+                  >
+                    <span className={owners.length === 0 ? "text-gray-300" : "text-gray-700"}>
+                      {owners.length === 0
+                        ? "Select owners..."
+                        : `${owners.length} owner${owners.length > 1 ? "s" : ""} selected`}
+                    </span>
+                    <ChevronDown
+                      size={14}
+                      className={`text-gray-400 transition-transform ${ownerOpen ? "rotate-180" : ""}`}
+                    />
+                  </button>
+                  {owners.length > 0 && (
+                    <div className="flex flex-wrap gap-1 mt-2">
+                      {owners.map((o) => (
+                        <span
+                          key={o}
+                          className="inline-flex items-center gap-1 px-2 py-0.5 text-xs bg-teal-50 text-teal-700 border border-teal-100 rounded-full"
+                        >
+                          {o}
+                          <button type="button" onClick={() => toggleOwner(o)}>
+                            <X size={10} />
+                          </button>
+                        </span>
+                      ))}
+                    </div>
+                  )}
+                  {ownerOpen && (
+                    <div className="absolute z-20 top-full left-0 mt-1 w-full bg-white border border-gray-200 rounded-xl shadow-xl max-h-48 overflow-y-auto py-1">
+                      {OWNER_OPTIONS.map((o) => {
+                        const selected = owners.includes(o);
+                        return (
+                          <button
+                            key={o}
+                            type="button"
+                            onClick={() => toggleOwner(o)}
+                            className={`w-full flex items-center gap-2.5 px-3 py-2 text-xs text-left transition-colors ${
+                              selected ? "bg-teal-50 text-teal-700" : "text-gray-600 hover:bg-gray-50"
+                            }`}
+                          >
+                            <span
+                              className={`w-4 h-4 rounded border flex items-center justify-center shrink-0 ${
+                                selected ? "bg-teal-500 border-teal-500" : "border-gray-300"
+                              }`}
+                            >
+                              {selected && <Check size={10} className="text-white" />}
+                            </span>
+                            {o}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+              </EditField>
 
-          {/* Description */}
-          <EditField label="Description" error={errors.description}>
-            <textarea
-              rows={3}
-              value={description}
-              onChange={(e) => {
-                setDescription(e.target.value);
-                setErrors((er) => ({ ...er, description: undefined }));
-              }}
-              className={`w-full px-3 py-2 text-sm border rounded-lg outline-none transition-all resize-none ${
-                errors.description
-                  ? "border-red-300"
-                  : "border-gray-200 focus:border-teal-400 focus:ring-2 focus:ring-teal-50"
-              }`}
-            />
-          </EditField>
+              {/* Biz Team */}
+              <EditField label="Biz Team" error={errors.bizTeam}>
+                <div className="relative">
+                  <select
+                    value={bizTeam}
+                    onChange={(e) => {
+                      setBizTeam(e.target.value);
+                      setErrors((er) => ({ ...er, bizTeam: undefined }));
+                    }}
+                    className={`w-full px-3 py-2 text-sm border rounded-lg outline-none transition-all appearance-none bg-white pr-8 ${
+                      errors.bizTeam
+                        ? "border-red-300"
+                        : "border-gray-200 focus:border-teal-400 focus:ring-2 focus:ring-teal-50"
+                    } ${!bizTeam ? "text-gray-300" : "text-gray-700"}`}
+                  >
+                    <option value="" disabled>
+                      Select biz team...
+                    </option>
+                    {BIZ_TEAMS.map((b) => (
+                      <option key={b} value={b} className="text-gray-700">
+                        {b}
+                      </option>
+                    ))}
+                  </select>
+                  <ChevronDown
+                    size={14}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none"
+                  />
+                </div>
+              </EditField>
+
+              {/* Description */}
+              <EditField label="Description" error={errors.description}>
+                <textarea
+                  rows={3}
+                  value={description}
+                  onChange={(e) => {
+                    setDescription(e.target.value);
+                    setErrors((er) => ({ ...er, description: undefined }));
+                  }}
+                  className={`w-full px-3 py-2 text-sm border rounded-lg outline-none transition-all resize-none ${
+                    errors.description
+                      ? "border-red-300"
+                      : "border-gray-200 focus:border-teal-400 focus:ring-2 focus:ring-teal-50"
+                  }`}
+                />
+              </EditField>
+            </>
+          )}
         </div>
 
         {/* Footer */}
@@ -270,14 +301,17 @@ export function WideTableMetaModal({ values, onClose, onSave }: Props) {
             onClick={onClose}
             className="px-4 py-2 text-sm text-gray-500 hover:text-gray-700 hover:bg-gray-100 rounded-lg transition-all"
           >
-            Cancel
+            {readOnly ? "Close" : "Cancel"}
           </button>
-          <button
-            onClick={handleSave}
-            className="px-5 py-2 text-sm text-white bg-teal-500 rounded-lg hover:bg-teal-600 transition-all shadow-sm shadow-teal-200"
-          >
-            Save
-          </button>
+          {!readOnly && (
+            <button
+              type="button"
+              onClick={handleSave}
+              className="px-5 py-2 text-sm text-white bg-teal-500 rounded-lg hover:bg-teal-600 transition-all shadow-sm shadow-teal-200"
+            >
+              Save
+            </button>
+          )}
         </div>
       </div>
     </div>
