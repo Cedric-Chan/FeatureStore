@@ -1,6 +1,7 @@
 import { useState, useMemo, type ReactNode } from "react";
 import { useNavigate, useParams, useSearchParams, useLocation } from "react-router";
-import { ArrowLeft, ChevronRight, Maximize2, Plus, X } from "lucide-react";
+import { ArrowLeft, ChevronRight, Maximize2, X } from "lucide-react";
+import { ParamRowEditor } from "@/app/components/shared/ParamRowEditor";
 import {
   Collapsible,
   CollapsibleContent,
@@ -49,6 +50,23 @@ function ownersToRowField(owners: string[]): string {
     .filter(Boolean)
     .join(", ");
 }
+
+const FEATURE_SOURCE_STYLE_DATA_TYPES = [
+  "string",
+  "int",
+  "long",
+  "double",
+  "float",
+  "boolean",
+  "list",
+  "map",
+  "json",
+];
+
+/** Feature Source modal options plus types used in Transformation mocks */
+const TF_PARAM_DATA_TYPES = Array.from(
+  new Set([...FEATURE_SOURCE_STYLE_DATA_TYPES, "String", "List", "Map"])
+);
 
 const labelCol =
   "shrink-0 w-[104px] pt-2 text-sm text-slate-800 text-right pr-3 leading-5";
@@ -205,11 +223,6 @@ export function TransformationFormPage() {
   const removeOwner = (index: number) => {
     setOwners((o) => o.filter((_, i) => i !== index));
   };
-
-  const addInputParam = () =>
-    setInputParams((p) => [...p, { name: "", dataType: "String" }]);
-  const addOutputParam = () =>
-    setOutputParams((p) => [...p, { name: "", dataType: "String" }]);
 
   const outlineHeaderBtn =
     "px-3 py-1.5 text-xs border border-gray-300 rounded-md bg-white text-slate-700 hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed";
@@ -471,64 +484,13 @@ export function TransformationFormPage() {
                 <div className={`${labelCol} sm:pt-2 text-left sm:text-right`}>
                   Input Params
                 </div>
-                <div className="flex-1 min-w-0 space-y-3 sm:pl-0">
-                  {!readOnly && (
-                    <button
-                      type="button"
-                      onClick={addInputParam}
-                      className="w-full flex items-center justify-center gap-2 py-8 border border-dashed border-slate-300 rounded-md text-sm text-slate-600 hover:border-teal-400 hover:text-teal-700 hover:bg-slate-50/80 transition-colors"
-                    >
-                      <Plus className="w-4 h-4" />
-                      Add
-                    </button>
-                  )}
-                  {inputParams.length > 0 && (
-                    <div className="space-y-2">
-                      {inputParams.map((p, i) => (
-                        <div
-                          key={i}
-                          className="flex flex-wrap gap-2 items-center text-xs"
-                        >
-                          <input
-                            value={p.name}
-                            disabled={readOnly}
-                            onChange={(e) => {
-                              const next = [...inputParams];
-                              next[i] = { ...next[i], name: e.target.value };
-                              setInputParams(next);
-                            }}
-                            placeholder="name"
-                            className="w-32 px-2 py-1.5 border border-slate-200 rounded-md text-sm"
-                          />
-                          <input
-                            value={p.dataType}
-                            disabled={readOnly}
-                            onChange={(e) => {
-                              const next = [...inputParams];
-                              next[i] = { ...next[i], dataType: e.target.value };
-                              setInputParams(next);
-                            }}
-                            placeholder="type"
-                            className="w-28 px-2 py-1.5 border border-slate-200 rounded-md text-sm"
-                          />
-                          {!readOnly && (
-                            <button
-                              type="button"
-                              className="text-slate-400 hover:text-red-600 p-1"
-                              aria-label="Remove param"
-                              onClick={() =>
-                                setInputParams((prev) =>
-                                  prev.filter((_, j) => j !== i)
-                                )
-                              }
-                            >
-                              <X className="w-4 h-4" />
-                            </button>
-                          )}
-                        </div>
-                      ))}
-                    </div>
-                  )}
+                <div className="flex-1 min-w-0 sm:pl-0">
+                  <ParamRowEditor
+                    params={inputParams}
+                    onChange={setInputParams}
+                    disabled={readOnly}
+                    dataTypeOptions={TF_PARAM_DATA_TYPES}
+                  />
                 </div>
               </div>
 
@@ -536,64 +498,13 @@ export function TransformationFormPage() {
                 <div className={`${labelCol} sm:pt-2 text-left sm:text-right`}>
                   Output Params
                 </div>
-                <div className="flex-1 min-w-0 space-y-3 sm:pl-0">
-                  {!readOnly && (
-                    <button
-                      type="button"
-                      onClick={addOutputParam}
-                      className="w-full flex items-center justify-center gap-2 py-8 border border-dashed border-slate-300 rounded-md text-sm text-slate-600 hover:border-teal-400 hover:text-teal-700 hover:bg-slate-50/80 transition-colors"
-                    >
-                      <Plus className="w-4 h-4" />
-                      Add
-                    </button>
-                  )}
-                  {outputParams.length > 0 && (
-                    <div className="space-y-2">
-                      {outputParams.map((p, i) => (
-                        <div
-                          key={i}
-                          className="flex flex-wrap gap-2 items-center text-xs"
-                        >
-                          <input
-                            value={p.name}
-                            disabled={readOnly}
-                            onChange={(e) => {
-                              const next = [...outputParams];
-                              next[i] = { ...next[i], name: e.target.value };
-                              setOutputParams(next);
-                            }}
-                            placeholder="name"
-                            className="w-32 px-2 py-1.5 border border-slate-200 rounded-md text-sm"
-                          />
-                          <input
-                            value={p.dataType}
-                            disabled={readOnly}
-                            onChange={(e) => {
-                              const next = [...outputParams];
-                              next[i] = { ...next[i], dataType: e.target.value };
-                              setOutputParams(next);
-                            }}
-                            placeholder="type"
-                            className="w-28 px-2 py-1.5 border border-slate-200 rounded-md text-sm"
-                          />
-                          {!readOnly && (
-                            <button
-                              type="button"
-                              className="text-slate-400 hover:text-red-600 p-1"
-                              aria-label="Remove param"
-                              onClick={() =>
-                                setOutputParams((prev) =>
-                                  prev.filter((_, j) => j !== i)
-                                )
-                              }
-                            >
-                              <X className="w-4 h-4" />
-                            </button>
-                          )}
-                        </div>
-                      ))}
-                    </div>
-                  )}
+                <div className="flex-1 min-w-0 sm:pl-0">
+                  <ParamRowEditor
+                    params={outputParams}
+                    onChange={setOutputParams}
+                    disabled={readOnly}
+                    dataTypeOptions={TF_PARAM_DATA_TYPES}
+                  />
                 </div>
               </div>
             </div>
