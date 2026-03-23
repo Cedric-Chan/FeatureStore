@@ -1,5 +1,6 @@
 import { Navigate, Route, Routes } from "react-router";
 import { AppShell } from "@/app/layout/AppShell";
+import { FeatureSourceListPage } from "@/app/pages/FeatureSourceListPage";
 import { MigratedPlaceholderPage } from "@/app/pages/MigratedPlaceholderPage";
 import { WideTableListPage } from "@/app/pages/WideTableListPage";
 import {
@@ -24,15 +25,7 @@ export default function App() {
 
       <Route element={<AppShell />}>
         <Route path="/" element={<Navigate to="/wt" replace />} />
-        <Route
-          path="/fs"
-          element={
-            <MigratedPlaceholderPage
-              title="Feature Source"
-              description="Browse and manage feature sources (HBase, gRPC, Redis, GraphDB). Aligns with legacy `page-fs-list` in FEATURE_STORE.legacy.html."
-            />
-          }
-        />
+        <Route path="/fs" element={<FeatureSourceListPage />} />
         <Route
           path="/tf"
           element={
