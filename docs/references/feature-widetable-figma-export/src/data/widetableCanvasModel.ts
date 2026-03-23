@@ -1,6 +1,6 @@
 /** Serializable DAG + panel state for WideTable canvas (mock / copy snapshot). */
 
-export type NodeId = "B" | "C" | "D" | "E" | "F" | "G";
+export type NodeId = "B" | "C" | "D" | "E" | "F";
 
 export interface NodeDef {
   id: NodeId;
@@ -16,14 +16,13 @@ export interface NodeDef {
 export const CANVAS_W = 1060;
 export const CANVAS_H = 520;
 
-/** Default DAG — FG → Data Ingestion → Data Cleaning */
+/** Default DAG — Feature Groups → Data Ingestion (includes optional cleaning config) */
 export const INITIAL_NODES: NodeDef[] = [
   { id: "B", type: "source", x: 96, y: 224, w: 144, h: 72, title: "Frame Table", subtitle: "Source Table" },
   { id: "C", type: "feature", x: 300, y: 108, w: 185, h: 72, title: "user_profile_features", subtitle: "Feature Group" },
   { id: "D", type: "feature", x: 300, y: 224, w: 185, h: 72, title: "order_history_features", subtitle: "Feature Group" },
   { id: "E", type: "feature", x: 300, y: 340, w: 185, h: 72, title: "credit_behavior_features", subtitle: "Feature Group" },
-  { id: "F", type: "sink", x: 536, y: 224, w: 200, h: 72, title: "Data Ingestion", subtitle: "Raw wide table · S3" },
-  { id: "G", type: "end", x: 788, y: 224, w: 168, h: 72, title: "Data Cleaning", subtitle: "Optional clean step" },
+  { id: "F", type: "sink", x: 640, y: 224, w: 220, h: 72, title: "Data Ingestion", subtitle: "Ingestion · optional cleaning" },
 ];
 
 export const EDGES: [NodeId, NodeId][] = [
@@ -33,7 +32,6 @@ export const EDGES: [NodeId, NodeId][] = [
   ["C", "F"],
   ["D", "F"],
   ["E", "F"],
-  ["F", "G"],
 ];
 
 export interface FrameTableSnapshot {
@@ -60,11 +58,16 @@ export interface FeatureGroupNodeSnapshot {
   eventTimeJoinCol: string;
 }
 
-/** Data Ingestion node Config tab (read-only mock paths) */
+/** Data Ingestion node Config tab (read-only mock paths + optional clean outputs) */
 export interface DataIngestionConfigSnapshot {
   rawTable: string;
   datePart: string;
+  /** Data report path (e.g. raw stats JSON) */
   rawS3: string;
+  /** Hive table after cleaning; shown when Data Cleaning is enabled */
+  cleanedTable?: string;
+  /** Clean data report path; shown when Data Cleaning is enabled */
+  cleanedReportPath?: string;
 }
 
 export interface WideTableCanvasSnapshot {
@@ -85,6 +88,9 @@ export function createDefaultCanvasSnapshot(): WideTableCanvasSnapshot {
       rawTable: "feature_store.dwd_wide_raw_feat_v1",
       datePart: "ds",
       rawS3: "s3://data-lake-prod/widetable/reports/ts_demo/20240315/raw_stats.json",
+      cleanedTable: "feature_store.dwd_wide_clean_feat_v1",
+      cleanedReportPath:
+        "s3://data-lake-prod/widetable/reports/ts_demo/20240315/clean_stats.json",
     },
     frameTable: {
       sourceType: "hive",
@@ -138,8 +144,7 @@ export function snapshotRiskWideTable(): WideTableCanvasSnapshot {
       { id: "C", type: "feature", x: 292, y: 100, w: 185, h: 72, title: "user_profile_features", subtitle: "Feature Group" },
       { id: "D", type: "feature", x: 292, y: 220, w: 185, h: 72, title: "order_history_features", subtitle: "Feature Group" },
       { id: "E", type: "feature", x: 292, y: 336, w: 185, h: 72, title: "credit_behavior_features", subtitle: "Feature Group" },
-      { id: "F", type: "sink", x: 528, y: 220, w: 200, h: 72, title: "Data Ingestion", subtitle: "Raw wide table · S3" },
-      { id: "G", type: "end", x: 784, y: 220, w: 168, h: 72, title: "Data Cleaning", subtitle: "Optional clean step" },
+      { id: "F", type: "sink", x: 632, y: 220, w: 220, h: 72, title: "Data Ingestion", subtitle: "Ingestion · optional cleaning" },
     ]),
     frameTable: {
       sourceType: "hive",
@@ -160,6 +165,9 @@ export function snapshotRiskWideTable(): WideTableCanvasSnapshot {
       rawTable: "feature_store.dwd_wide_raw_risk_th",
       datePart: "ds",
       rawS3: "s3://data-lake-prod/widetable/reports/risk_th/20260217/raw_stats.json",
+      cleanedTable: "feature_store.dwd_wide_clean_feat_v1",
+      cleanedReportPath:
+        "s3://data-lake-prod/widetable/reports/ts_demo/20240315/clean_stats.json",
     },
     featureGroups: {
       ...base.featureGroups,

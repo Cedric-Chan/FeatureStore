@@ -3,7 +3,7 @@ import {
   ArrowLeft, Pencil, ChevronDown, History, Zap, Square,
   AlertCircle, X, Database, Layers, Minus, Plus,
   Maximize2, RotateCcw, GitBranch, Trash2, Search, Eye,
-  Copy, Check, Settings, Sparkles,
+  Copy, Check, Settings,
 } from "lucide-react";
 import { WideTableFormValues } from "./AddWideTableModal";
 import { WideTableRow, Instance, InstanceStatus } from "./WideTableList";
@@ -48,16 +48,16 @@ const EDGE_COLORS: Record<NodeStatus, string> = {
 
 function getMockNodeStatuses(s: InstanceStatus): Record<NodeId, NodeStatus> {
   switch (s) {
-    case "SUCCESS": return { B: "success",      C: "success",      D: "success",      E: "success", F: "success", G: "success" };
-    case "FAILED":  return { B: "success",      C: "success",      D: "failed",       E: "waiting", F: "waiting", G: "waiting" };
-    case "RUNNING": return { B: "success",      C: "cache_skipped",D: "running",      E: "waiting", F: "waiting", G: "waiting" };
-    case "PENDING": return { B: "waiting",      C: "waiting",      D: "waiting",      E: "waiting", F: "waiting", G: "waiting" };
-    case "KILLED":  return { B: "cache_skipped",C: "failed",       D: "waiting",      E: "waiting", F: "waiting", G: "waiting" };
+    case "SUCCESS": return { B: "success",      C: "success",      D: "success",      E: "success", F: "success" };
+    case "FAILED":  return { B: "success",      C: "success",      D: "failed",       E: "waiting", F: "waiting" };
+    case "RUNNING": return { B: "success",      C: "cache_skipped",D: "running",      E: "waiting", F: "waiting" };
+    case "PENDING": return { B: "waiting",      C: "waiting",      D: "waiting",      E: "waiting", F: "waiting" };
+    case "KILLED":  return { B: "cache_skipped",C: "failed",       D: "waiting",      E: "waiting", F: "waiting" };
   }
 }
 
 function getMockLogs(id: NodeId, st: NodeStatus): string[] {
-  const t = { B: "14:07", C: "14:14", D: "14:22", E: "14:35", F: "15:01", G: "15:04" }[id];
+  const t = { B: "14:07", C: "14:14", D: "14:22", E: "14:35", F: "15:04" }[id];
   if (st === "waiting")       return [`[--:--] ◷ Waiting for upstream nodes...`];
   if (st === "cache_skipped") return [`[${t}:00] ⚡ Cache hit detected.`, `[${t}:01] ⚡ Skipping recompute, using cached output.`];
   if (st === "running")       return [`[${t}:00] → Starting computation...`, `[${t}:??] ⟳ Processing… (67%)`];
@@ -101,7 +101,6 @@ function PipelineNodeCard({
   const Icon =
     node.id === "B" ? Database
     : node.type === "feature" ? Layers
-    : node.type === "end" ? Sparkles
     : Database;
 
   return (
@@ -264,13 +263,16 @@ function ReadonlyCopyRow({ label, value }: { label: string; value: string }) {
   );
 }
 
-// ─── Data Ingestion panel ─────────────────────────────────────────────────────
-function DataIngestionPanel({
+// ─── Data Ingestion (merged cleaning + ingestion) ────────────────────────────
+const FILLNA_METHODS = ["mean", "median", "constant", "forward_fill"] as const;
+
+function DataIngestionMergedPanel({
   isInstanceView: _isInstanceView,
   nodeStatus,
   instance,
   onClose,
   ingestionConfig,
+  dataCleaningInitial,
   emptyLastInstancePlaceholder,
 }: {
   isInstanceView: boolean;
@@ -278,23 +280,51 @@ function DataIngestionPanel({
   instance?: Instance;
   onClose: () => void;
   ingestionConfig?: DataIngestionConfigSnapshot;
+  dataCleaningInitial?: DataCleaningSnapshot;
   emptyLastInstancePlaceholder?: boolean;
 }) {
-  const [tab, setTab] = useState<"config"|"lastInstance">("config");
+  const [tab, setTab] = useState<"config" | "lastInstance">("config");
+  const [enabled, setEnabled] = useState(() => dataCleaningInitial?.enabled ?? false);
+  const [fillnaRows, setFillnaRows] = useState<{ id: string; method: string; features: string }[]>(() =>
+    dataCleaningInitial?.fillnaRows?.length ? dataCleaningInitial.fillnaRows.map((r) => ({ ...r })) : []
+  );
+  const [vmRows, setVmRows] = useState<{ id: string; feature: string; sql: string }[]>(() =>
+    dataCleaningInitial?.vmRows?.length ? dataCleaningInitial.vmRows.map((r) => ({ ...r })) : []
+  );
+  const [vmFullscreen, setVmFullscreen] = useState<string | null>(null);
   const [reportOpen, setReportOpen] = useState(false);
-  const rawTable = ingestionConfig?.rawTable ?? "feature_store.dwd_wide_raw_feat_v1";
-  const datePart = ingestionConfig?.datePart ?? "ds";
-  const rawS3 = ingestionConfig?.rawS3 ?? "s3://data-lake-prod/widetable/reports/ts_demo/20240315/raw_stats.json";
 
-  const last = {
+  const rawTable = ingestionConfig?.rawTable ?? "feature_store.dwd_wide_raw_feat_v1";
+  const rawS3 =
+    ingestionConfig?.rawS3 ?? "s3://data-lake-prod/widetable/reports/ts_demo/20240315/raw_stats.json";
+  const cleanedTable =
+    ingestionConfig?.cleanedTable ?? "feature_store.dwd_wide_clean_feat_v1";
+  const cleanedReportPath =
+    ingestionConfig?.cleanedReportPath ??
+    "s3://data-lake-prod/widetable/reports/ts_demo/20240315/clean_stats.json";
+
+  const addFillna = () =>
+    setFillnaRows((p) => [...p, { id: `fn-${Date.now()}`, method: "mean", features: "" }]);
+  const addVm = () =>
+    setVmRows((p) => [...p, { id: `vm-${Date.now()}`, feature: "", sql: "" }]);
+
+  const lastRaw = {
     instanceId: instance?.id ?? "inst_20240315_083012",
     hiveTable: rawTable,
     rows: 2_847_392,
     cols: 42,
   };
+  const lastClean = {
+    hiveTable: cleanedTable,
+    rows: 2_847_100,
+    cols: 38,
+  };
   const rawReportColumnCount = instance?.columnsCnt?.trim()
     ? parseColumnCount(instance.columnsCnt)
-    : last.cols;
+    : lastRaw.cols;
+  const cleanReportColumnCount = instance?.columnsCnt?.trim()
+    ? Math.max(1, parseColumnCount(instance.columnsCnt) - 4)
+    : lastClean.cols;
   const st = STATUS_STYLES[nodeStatus ?? "success"];
 
   return (
@@ -308,17 +338,23 @@ function DataIngestionPanel({
               </div>
               <div className="min-w-0">
                 <div className="text-sm text-gray-800">Data Ingestion</div>
-                <div className="text-xs text-gray-400">Raw wide table · S3 report</div>
+                <div className="text-xs text-gray-400">Ingestion · optional cleaning</div>
               </div>
             </div>
-            <button type="button" onClick={onClose} className="p-1 text-gray-300 hover:text-gray-500 shrink-0 mt-0.5"><X size={13}/></button>
+            <button type="button" onClick={onClose} className="p-1 text-gray-300 hover:text-gray-500 shrink-0 mt-0.5">
+              <X size={13} />
+            </button>
           </div>
           <div className="flex gap-0 -mb-px">
-            {(["config","lastInstance"] as const).map(t => (
-              <button key={t} type="button" onClick={() => setTab(t)}
+            {(["config", "lastInstance"] as const).map((t) => (
+              <button
+                key={t}
+                type="button"
+                onClick={() => setTab(t)}
                 className={`px-4 py-2 text-xs border-b-2 transition-colors ${
                   tab === t ? "border-teal-500 text-teal-600" : "border-transparent text-gray-400 hover:text-gray-600"
-                }`}>
+                }`}
+              >
                 {t === "config" ? "Config" : "Last Instance"}
               </button>
             ))}
@@ -327,12 +363,157 @@ function DataIngestionPanel({
         <div className="flex-1 overflow-y-auto px-4 py-4 flex flex-col gap-4">
           {tab === "config" ? (
             <>
-              <ReadonlyCopyRow label="Raw Data Result" value={rawTable} />
-              <div>
-                <div className="text-xs text-gray-500 mb-1.5">Date Partition</div>
-                <div className="rounded-xl border border-gray-200 bg-gray-50 px-3 py-2 text-xs font-mono text-gray-500">{datePart}</div>
+              <div className="space-y-3">
+                <div className="text-xs font-medium text-gray-500 tracking-wide uppercase">Data Cleaning</div>
+                <div className="flex items-center justify-between rounded-xl border border-gray-200 px-3 py-2.5 bg-gray-50/80">
+                  <span className="text-sm text-gray-700">Enable Data Cleaning</span>
+                  <button
+                    type="button"
+                    role="switch"
+                    aria-checked={enabled}
+                    onClick={() => setEnabled((e) => !e)}
+                    className={`relative w-11 h-6 rounded-full transition-colors ${enabled ? "bg-teal-500" : "bg-gray-200"}`}
+                  >
+                    <span
+                      className={`absolute top-1 left-1 w-4 h-4 rounded-full bg-white shadow transition-transform ${enabled ? "translate-x-5" : ""}`}
+                    />
+                  </button>
+                </div>
+                {enabled && (
+                  <>
+                    <div>
+                      <div className="flex items-center justify-between mb-2">
+                        <span className="text-xs text-gray-500 tracking-wide">Fillna</span>
+                        <button
+                          type="button"
+                          onClick={addFillna}
+                          className="text-xs text-teal-600 hover:text-teal-700 font-medium"
+                        >
+                          + Add row
+                        </button>
+                      </div>
+                      <div className="flex flex-col gap-2">
+                        {fillnaRows.map((row, idx) => (
+                          <div key={row.id} className="rounded-xl border border-gray-200 p-3 space-y-2 bg-white">
+                            <div className="flex items-center justify-between">
+                              <span className="text-xs text-gray-400">#{idx + 1}</span>
+                              <button
+                                type="button"
+                                onClick={() => setFillnaRows((p) => p.filter((r) => r.id !== row.id))}
+                                className="text-gray-300 hover:text-red-400"
+                              >
+                                <Trash2 size={13} />
+                              </button>
+                            </div>
+                            <select
+                              value={row.method}
+                              onChange={(e) =>
+                                setFillnaRows((p) =>
+                                  p.map((r) => (r.id === row.id ? { ...r, method: e.target.value } : r))
+                                )
+                              }
+                              className="w-full text-xs border border-gray-200 rounded-lg px-2 py-1.5 bg-gray-50 focus:outline-none focus:border-teal-400"
+                            >
+                              {FILLNA_METHODS.map((m) => (
+                                <option key={m} value={m}>
+                                  {m}
+                                </option>
+                              ))}
+                            </select>
+                            <input
+                              value={row.features}
+                              onChange={(e) =>
+                                setFillnaRows((p) =>
+                                  p.map((r) => (r.id === row.id ? { ...r, features: e.target.value } : r))
+                                )
+                              }
+                              placeholder="Feature names (comma-separated, fuzzy match)"
+                              className="w-full text-xs border border-gray-200 rounded-lg px-2 py-1.5 font-mono bg-gray-50 focus:outline-none focus:border-teal-400"
+                            />
+                          </div>
+                        ))}
+                        {fillnaRows.length === 0 && (
+                          <p className="text-xs text-gray-400 border border-dashed border-gray-200 rounded-xl py-4 text-center">
+                            No Fillna rules — optional
+                          </p>
+                        )}
+                      </div>
+                    </div>
+                    <div>
+                      <div className="flex items-center justify-between mb-2">
+                        <span className="text-xs text-gray-500 tracking-wide">Value Mapping</span>
+                        <button
+                          type="button"
+                          onClick={addVm}
+                          className="text-xs text-teal-600 hover:text-teal-700 font-medium"
+                        >
+                          + Add row
+                        </button>
+                      </div>
+                      <div className="flex flex-col gap-2">
+                        {vmRows.map((row, idx) => (
+                          <div key={row.id} className="rounded-xl border border-gray-200 p-3 space-y-2 bg-white">
+                            <div className="flex items-center justify-between">
+                              <span className="text-xs text-gray-400">#{idx + 1}</span>
+                              <div className="flex items-center gap-1">
+                                <button
+                                  type="button"
+                                  title="Expand SQL"
+                                  onClick={() => setVmFullscreen(row.id)}
+                                  className="p-1 rounded-lg text-gray-400 hover:text-teal-600 hover:bg-teal-50"
+                                >
+                                  <Maximize2 size={13} />
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => setVmRows((p) => p.filter((r) => r.id !== row.id))}
+                                  className="text-gray-300 hover:text-red-400"
+                                >
+                                  <Trash2 size={13} />
+                                </button>
+                              </div>
+                            </div>
+                            <input
+                              value={row.feature}
+                              onChange={(e) =>
+                                setVmRows((p) =>
+                                  p.map((r) => (r.id === row.id ? { ...r, feature: e.target.value } : r))
+                                )
+                              }
+                              placeholder="Feature name (fuzzy)"
+                              className="w-full text-xs border border-gray-200 rounded-lg px-2 py-1.5 font-mono"
+                            />
+                            <textarea
+                              value={row.sql}
+                              onChange={(e) =>
+                                setVmRows((p) =>
+                                  p.map((r) => (r.id === row.id ? { ...r, sql: e.target.value } : r))
+                                )
+                              }
+                              rows={3}
+                              placeholder="SQL / CASE WHEN …"
+                              className="w-full text-xs font-mono border border-gray-200 rounded-lg px-2 py-1.5 bg-gray-50 resize-y focus:outline-none focus:border-teal-400"
+                            />
+                          </div>
+                        ))}
+                        {vmRows.length === 0 && (
+                          <p className="text-xs text-gray-400 border border-dashed border-gray-200 rounded-xl py-4 text-center">
+                            No value mappings — optional
+                          </p>
+                        )}
+                      </div>
+                    </div>
+                  </>
+                )}
               </div>
-              <ReadonlyCopyRow label="Raw Data Report" value={rawS3} />
+
+              <div className="rounded-xl border border-gray-200 bg-slate-100/70 p-3 space-y-3">
+                <p className="text-xs font-medium text-gray-500 tracking-wide">Data Ingestion</p>
+                <ReadonlyCopyRow label="Raw Data Result" value={rawTable} />
+                {enabled && <ReadonlyCopyRow label="Cleaned Data Result" value={cleanedTable} />}
+                <ReadonlyCopyRow label="Data Report path" value={rawS3} />
+                {enabled && <ReadonlyCopyRow label="Cleaned Data Report path" value={cleanedReportPath} />}
+              </div>
             </>
           ) : emptyLastInstancePlaceholder && !_isInstanceView ? (
             <div className="py-12 px-2 text-center text-xs text-gray-400 leading-relaxed">
@@ -342,25 +523,50 @@ function DataIngestionPanel({
             <>
               <div className="flex items-center justify-between">
                 <span className="text-xs text-gray-500">Status</span>
-                <span className={`inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs ${st.badge} ${st.badgeText}`}>
-                  <span className={`w-1.5 h-1.5 rounded-full ${st.dot}`} />{st.label}
+                <span
+                  className={`inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs ${st.badge} ${st.badgeText}`}
+                >
+                  <span className={`w-1.5 h-1.5 rounded-full ${st.dot}`} />
+                  {st.label}
                 </span>
               </div>
               <div className="flex items-center justify-between gap-2">
                 <span className="text-xs text-gray-500 shrink-0">Instance ID</span>
-                <span className="text-xs text-gray-700 font-mono bg-gray-100 px-2 py-0.5 rounded-lg truncate">{last.instanceId}</span>
+                <span className="text-xs text-gray-700 font-mono bg-gray-100 px-2 py-0.5 rounded-lg truncate">
+                  {lastRaw.instanceId}
+                </span>
               </div>
-              <ReadonlyCopyRow label="Raw Data Hive table" value={last.hiveTable} />
+              <ReadonlyCopyRow label="Raw Data Hive table" value={lastRaw.hiveTable} />
               <div className="grid grid-cols-2 gap-2">
                 <div className="rounded-xl border border-gray-100 bg-gray-50 px-3 py-2.5 text-center">
-                  <div className="text-lg font-semibold text-teal-600 tabular-nums">{last.rows.toLocaleString()}</div>
+                  <div className="text-lg font-semibold text-teal-600 tabular-nums">
+                    {lastRaw.rows.toLocaleString()}
+                  </div>
                   <div className="text-[10px] text-gray-400 uppercase tracking-wide mt-1">Rows</div>
                 </div>
                 <div className="rounded-xl border border-gray-100 bg-gray-50 px-3 py-2.5 text-center">
-                  <div className="text-lg font-semibold text-sky-600 tabular-nums">{last.cols}</div>
+                  <div className="text-lg font-semibold text-sky-600 tabular-nums">{lastRaw.cols}</div>
                   <div className="text-[10px] text-gray-400 uppercase tracking-wide mt-1">Columns</div>
                 </div>
               </div>
+              {enabled && (
+                <>
+                  <div className="border-t border-gray-100 pt-3 mt-1" />
+                  <ReadonlyCopyRow label="Cleaned Data Hive table" value={lastClean.hiveTable} />
+                  <div className="grid grid-cols-2 gap-2">
+                    <div className="rounded-xl border border-gray-100 bg-gray-50 px-3 py-2.5 text-center">
+                      <div className="text-lg font-semibold text-violet-600 tabular-nums">
+                        {lastClean.rows.toLocaleString()}
+                      </div>
+                      <div className="text-[10px] text-gray-400 uppercase tracking-wide mt-1">Rows</div>
+                    </div>
+                    <div className="rounded-xl border border-gray-100 bg-gray-50 px-3 py-2.5 text-center">
+                      <div className="text-lg font-semibold text-sky-600 tabular-nums">{lastClean.cols}</div>
+                      <div className="text-[10px] text-gray-400 uppercase tracking-wide mt-1">Columns</div>
+                    </div>
+                  </div>
+                </>
+              )}
               <button
                 type="button"
                 onClick={() => setReportOpen(true)}
@@ -372,246 +578,61 @@ function DataIngestionPanel({
           )}
         </div>
         <div className="px-4 py-2 border-t border-gray-50">
-          <span className="text-xs text-gray-400">{tab === "lastInstance" ? "Node · Last Instance" : "Node · Config (read-only)"}</span>
+          <span className="text-xs text-gray-400">
+            {tab === "lastInstance"
+              ? "Node · Data Ingestion · Last Instance"
+              : enabled
+                ? "Node · Data Ingestion · Config"
+                : "Data Cleaning off — only raw ingestion paths apply"}
+          </span>
         </div>
       </div>
-      {reportOpen && (
-        <DataReportModal
-          variant="single"
-          singleTitle="Raw Data Report"
-          columnCount={rawReportColumnCount}
-          onClose={() => setReportOpen(false)}
-        />
-      )}
-    </>
-  );
-}
-
-// ─── Data Cleaning panel ──────────────────────────────────────────────────────
-const FILLNA_METHODS = ["mean", "median", "constant", "forward_fill"] as const;
-
-function DataCleaningPanel({
-  isInstanceView: _isInstanceView,
-  nodeStatus,
-  instance,
-  onClose,
-  initialCleaning,
-  emptyLastInstancePlaceholder,
-}: {
-  isInstanceView: boolean;
-  nodeStatus?: NodeStatus;
-  instance?: Instance;
-  onClose: () => void;
-  initialCleaning?: DataCleaningSnapshot;
-  emptyLastInstancePlaceholder?: boolean;
-}) {
-  const [tab, setTab] = useState<"config"|"lastInstance">("config");
-  const [enabled, setEnabled] = useState(() => initialCleaning?.enabled ?? false);
-  const [fillnaRows, setFillnaRows] = useState<{ id: string; method: string; features: string }[]>(
-    () => (initialCleaning?.fillnaRows?.length ? initialCleaning.fillnaRows.map((r) => ({ ...r })) : [])
-  );
-  const [vmRows, setVmRows] = useState<{ id: string; feature: string; sql: string }[]>(
-    () => (initialCleaning?.vmRows?.length ? initialCleaning.vmRows.map((r) => ({ ...r })) : [])
-  );
-  const [vmFullscreen, setVmFullscreen] = useState<string | null>(null);
-  const [reportOpen, setReportOpen] = useState(false);
-
-  const cleanTable = "feature_store.dwd_wide_clean_feat_v1";
-  const cleanS3 = "s3://data-lake-prod/widetable/reports/ts_demo/20240315/clean_stats.json";
-
-  const addFillna = () => setFillnaRows(p => [...p, { id: `fn-${Date.now()}`, method: "mean", features: "" }]);
-  const addVm = () => setVmRows(p => [...p, { id: `vm-${Date.now()}`, feature: "", sql: "" }]);
-
-  const last = {
-    instanceId: instance?.id ?? "inst_20240315_083012",
-    hiveTable: cleanTable,
-    rows: 2_847_100,
-    cols: 38,
-  };
-  const cleanReportColumnCount = instance?.columnsCnt?.trim()
-    ? Math.max(1, parseColumnCount(instance.columnsCnt) - 4)
-    : last.cols;
-  const st = STATUS_STYLES[nodeStatus ?? "success"];
-
-  return (
-    <>
-      <div className="w-80 shrink-0 bg-white border-l border-gray-100 flex flex-col h-full overflow-hidden">
-        <div className="px-4 pt-3 pb-0 border-b border-gray-100 bg-violet-50/40">
-          <div className="flex items-start justify-between gap-2 pb-3">
-            <div className="flex items-center gap-2.5 min-w-0">
-              <div className="w-9 h-9 rounded-xl flex items-center justify-center shrink-0 bg-violet-100">
-                <Sparkles size={15} className="text-violet-600" />
-              </div>
-              <div className="min-w-0">
-                <div className="text-sm text-gray-800">Data Cleaning</div>
-                <div className="text-xs text-gray-400">Fillna · Value mapping · Clean table</div>
-              </div>
-            </div>
-            <button type="button" onClick={onClose} className="p-1 text-gray-300 hover:text-gray-500 shrink-0 mt-0.5"><X size={13}/></button>
-          </div>
-          <div className="flex gap-0 -mb-px">
-            {(["config","lastInstance"] as const).map(t => (
-              <button key={t} type="button" onClick={() => setTab(t)}
-                className={`px-4 py-2 text-xs border-b-2 transition-colors ${
-                  tab === t ? "border-teal-500 text-teal-600" : "border-transparent text-gray-400 hover:text-gray-600"
-                }`}>
-                {t === "config" ? "Config" : "Last Instance"}
-              </button>
-            ))}
-          </div>
-        </div>
-        <div className="flex-1 overflow-y-auto px-4 py-4 flex flex-col gap-4">
-          {tab === "config" ? (
-            <>
-              <div className="flex items-center justify-between rounded-xl border border-gray-200 px-3 py-2.5 bg-gray-50/80">
-                <span className="text-sm text-gray-700">Data Cleaning</span>
-                <button
-                  type="button"
-                  role="switch"
-                  aria-checked={enabled}
-                  onClick={() => setEnabled(e => !e)}
-                  className={`relative w-11 h-6 rounded-full transition-colors ${enabled ? "bg-teal-500" : "bg-gray-200"}`}
-                >
-                  <span className={`absolute top-1 left-1 w-4 h-4 rounded-full bg-white shadow transition-transform ${enabled ? "translate-x-5" : ""}`} />
-                </button>
-              </div>
-              {enabled && (
-                <>
-                  <div>
-                    <div className="flex items-center justify-between mb-2">
-                      <span className="text-xs text-gray-500 tracking-wide">Fillna</span>
-                      <button type="button" onClick={addFillna} className="text-xs text-teal-600 hover:text-teal-700 font-medium">+ Add row</button>
-                    </div>
-                    <div className="flex flex-col gap-2">
-                      {fillnaRows.map((row, idx) => (
-                        <div key={row.id} className="rounded-xl border border-gray-200 p-3 space-y-2 bg-white">
-                          <div className="flex items-center justify-between">
-                            <span className="text-xs text-gray-400">#{idx + 1}</span>
-                            <button type="button" onClick={() => setFillnaRows(p => p.filter(r => r.id !== row.id))} className="text-gray-300 hover:text-red-400"><Trash2 size={13} /></button>
-                          </div>
-                          <select
-                            value={row.method}
-                            onChange={e => setFillnaRows(p => p.map(r => r.id === row.id ? { ...r, method: e.target.value } : r))}
-                            className="w-full text-xs border border-gray-200 rounded-lg px-2 py-1.5 bg-gray-50 focus:outline-none focus:border-teal-400"
-                          >
-                            {FILLNA_METHODS.map(m => <option key={m} value={m}>{m}</option>)}
-                          </select>
-                          <input
-                            value={row.features}
-                            onChange={e => setFillnaRows(p => p.map(r => r.id === row.id ? { ...r, features: e.target.value } : r))}
-                            placeholder="Feature names (comma-separated, fuzzy match)"
-                            className="w-full text-xs border border-gray-200 rounded-lg px-2 py-1.5 font-mono bg-gray-50 focus:outline-none focus:border-teal-400"
-                          />
-                        </div>
-                      ))}
-                      {fillnaRows.length === 0 && (
-                        <p className="text-xs text-gray-400 border border-dashed border-gray-200 rounded-xl py-4 text-center">No Fillna rules — optional</p>
-                      )}
-                    </div>
-                  </div>
-                  <div>
-                    <div className="flex items-center justify-between mb-2">
-                      <span className="text-xs text-gray-500 tracking-wide">Value Mapping</span>
-                      <button type="button" onClick={addVm} className="text-xs text-teal-600 hover:text-teal-700 font-medium">+ Add row</button>
-                    </div>
-                    <div className="flex flex-col gap-2">
-                      {vmRows.map((row, idx) => (
-                        <div key={row.id} className="rounded-xl border border-gray-200 p-3 space-y-2 bg-white">
-                          <div className="flex items-center justify-between">
-                            <span className="text-xs text-gray-400">#{idx + 1}</span>
-                            <div className="flex items-center gap-1">
-                              <button type="button" title="Expand SQL" onClick={() => setVmFullscreen(row.id)} className="p-1 rounded-lg text-gray-400 hover:text-teal-600 hover:bg-teal-50"><Maximize2 size={13} /></button>
-                              <button type="button" onClick={() => setVmRows(p => p.filter(r => r.id !== row.id))} className="text-gray-300 hover:text-red-400"><Trash2 size={13} /></button>
-                            </div>
-                          </div>
-                          <input
-                            value={row.feature}
-                            onChange={e => setVmRows(p => p.map(r => r.id === row.id ? { ...r, feature: e.target.value } : r))}
-                            placeholder="Feature name (fuzzy)"
-                            className="w-full text-xs border border-gray-200 rounded-lg px-2 py-1.5 font-mono"
-                          />
-                          <textarea
-                            value={row.sql}
-                            onChange={e => setVmRows(p => p.map(r => r.id === row.id ? { ...r, sql: e.target.value } : r))}
-                            rows={3}
-                            placeholder="SQL / CASE WHEN …"
-                            className="w-full text-xs font-mono border border-gray-200 rounded-lg px-2 py-1.5 bg-gray-50 resize-y focus:outline-none focus:border-teal-400"
-                          />
-                        </div>
-                      ))}
-                      {vmRows.length === 0 && (
-                        <p className="text-xs text-gray-400 border border-dashed border-gray-200 rounded-xl py-4 text-center">No value mappings — optional</p>
-                      )}
-                    </div>
-                  </div>
-                </>
-              )}
-              <ReadonlyCopyRow label="Clean Data Result" value={cleanTable} />
-              <ReadonlyCopyRow label="Clean Data Report" value={cleanS3} />
-            </>
-          ) : emptyLastInstancePlaceholder && !_isInstanceView ? (
-            <div className="py-12 px-2 text-center text-xs text-gray-400 leading-relaxed">
-              No run history for this WideTable yet. Trigger an instance to see execution results here.
-            </div>
-          ) : (
-            <>
-              <div className="flex items-center justify-between">
-                <span className="text-xs text-gray-500">Status</span>
-                <span className={`inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs ${st.badge} ${st.badgeText}`}>
-                  <span className={`w-1.5 h-1.5 rounded-full ${st.dot}`} />{st.label}
-                </span>
-              </div>
-              <div className="flex items-center justify-between gap-2">
-                <span className="text-xs text-gray-500 shrink-0">Instance ID</span>
-                <span className="text-xs text-gray-700 font-mono bg-gray-100 px-2 py-0.5 rounded-lg truncate">{last.instanceId}</span>
-              </div>
-              <ReadonlyCopyRow label="Clean Data Hive table" value={last.hiveTable} />
-              <div className="grid grid-cols-2 gap-2">
-                <div className="rounded-xl border border-gray-100 bg-gray-50 px-3 py-2.5 text-center">
-                  <div className="text-lg font-semibold text-violet-600 tabular-nums">{last.rows.toLocaleString()}</div>
-                  <div className="text-[10px] text-gray-400 uppercase tracking-wide mt-1">Rows</div>
-                </div>
-                <div className="rounded-xl border border-gray-100 bg-gray-50 px-3 py-2.5 text-center">
-                  <div className="text-lg font-semibold text-sky-600 tabular-nums">{last.cols}</div>
-                  <div className="text-[10px] text-gray-400 uppercase tracking-wide mt-1">Columns</div>
-                </div>
-              </div>
-              <button
-                type="button"
-                onClick={() => setReportOpen(true)}
-                className="w-full py-2.5 rounded-xl text-sm text-white bg-violet-500 hover:bg-violet-600 shadow-sm transition-all"
-              >
-                Clean Data Report
-              </button>
-            </>
-          )}
-        </div>
-        <div className="px-4 py-2 border-t border-gray-50">
-          <span className="text-xs text-gray-400">{!enabled && tab === "config" ? "Cleaning off — node kept; execution may skip clean step" : "Node · Data Cleaning"}</span>
-        </div>
-      </div>
-      {reportOpen && (
-        <DataReportModal
-          variant="single"
-          singleTitle="Clean Data Report"
-          columnCount={cleanReportColumnCount}
-          onClose={() => setReportOpen(false)}
-        />
-      )}
+      {reportOpen &&
+        (enabled ? (
+          <DataReportModal
+            variant="tabs"
+            rawColumnCount={rawReportColumnCount}
+            cleanColumnCount={cleanReportColumnCount}
+            onClose={() => setReportOpen(false)}
+          />
+        ) : (
+          <DataReportModal
+            variant="single"
+            singleTitle="Raw Data Report"
+            columnCount={rawReportColumnCount}
+            onClose={() => setReportOpen(false)}
+          />
+        ))}
       {vmFullscreen && (
-        <div className="fixed inset-0 z-[130] flex items-center justify-center p-6 bg-black/50" onClick={() => setVmFullscreen(null)}>
-          <div className="bg-white rounded-2xl w-full max-w-3xl shadow-2xl border border-gray-100 flex flex-col max-h-[85vh]" onClick={e => e.stopPropagation()}>
+        <div
+          className="fixed inset-0 z-[130] flex items-center justify-center p-6 bg-black/50"
+          onClick={() => setVmFullscreen(null)}
+        >
+          <div
+            className="bg-white rounded-2xl w-full max-w-3xl shadow-2xl border border-gray-100 flex flex-col max-h-[85vh]"
+            onClick={(e) => e.stopPropagation()}
+          >
             <div className="px-4 py-3 border-b border-gray-100 flex justify-between items-center">
               <span className="text-sm font-medium text-gray-800">SQL editor</span>
-              <button type="button" onClick={() => setVmFullscreen(null)} className="p-1 text-gray-400 hover:text-gray-600"><X size={16} /></button>
+              <button type="button" onClick={() => setVmFullscreen(null)} className="p-1 text-gray-400 hover:text-gray-600">
+                <X size={16} />
+              </button>
             </div>
             <textarea
-              value={vmRows.find(r => r.id === vmFullscreen)?.sql ?? ""}
-              onChange={e => setVmRows(p => p.map(r => r.id === vmFullscreen ? { ...r, sql: e.target.value } : r))}
+              value={vmRows.find((r) => r.id === vmFullscreen)?.sql ?? ""}
+              onChange={(e) =>
+                setVmRows((p) => p.map((r) => (r.id === vmFullscreen ? { ...r, sql: e.target.value } : r)))
+              }
               className="flex-1 min-h-[240px] m-4 font-mono text-sm border border-gray-200 rounded-xl p-3 focus:outline-none focus:border-teal-400"
             />
             <div className="px-4 py-3 border-t border-gray-100 flex justify-end">
-              <button type="button" onClick={() => setVmFullscreen(null)} className="px-4 py-2 text-sm bg-teal-500 text-white rounded-lg hover:bg-teal-600">Done</button>
+              <button
+                type="button"
+                onClick={() => setVmFullscreen(null)}
+                className="px-4 py-2 text-sm bg-teal-500 text-white rounded-lg hover:bg-teal-600"
+              >
+                Done
+              </button>
             </div>
           </div>
         </div>
@@ -1673,24 +1694,13 @@ function NodeConfigPanel({
   }
   if (node.id === "F") {
     return (
-      <DataIngestionPanel
+      <DataIngestionMergedPanel
         isInstanceView={isInstanceView}
         nodeStatus={nodeStatus}
         instance={instance}
         onClose={onClose}
         ingestionConfig={ingestionConfig}
-        emptyLastInstancePlaceholder={emptyLastInstancePlaceholder}
-      />
-    );
-  }
-  if (node.id === "G") {
-    return (
-      <DataCleaningPanel
-        isInstanceView={isInstanceView}
-        nodeStatus={nodeStatus}
-        instance={instance}
-        onClose={onClose}
-        initialCleaning={dataCleaningInitial}
+        dataCleaningInitial={dataCleaningInitial}
         emptyLastInstancePlaceholder={emptyLastInstancePlaceholder}
       />
     );

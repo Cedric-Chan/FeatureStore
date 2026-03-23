@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Database, Download, Search, X } from "lucide-react";
 
 export type ReportRow = {
@@ -68,6 +68,7 @@ export function DataReportModal({
   cleanColumnCount,
   defaultTab = "raw",
   singleTitle = "Data Report",
+  showCleanTab = true,
 }: {
   onClose: () => void;
   variant: "single" | "tabs";
@@ -78,16 +79,25 @@ export function DataReportModal({
   cleanColumnCount?: number;
   defaultTab?: TabKey;
   singleTitle?: string;
+  /** When variant is "tabs", hide the Clean Data Report tab (raw only). */
+  showCleanTab?: boolean;
 }) {
   const [tab, setTab] = useState<TabKey>(defaultTab);
   const [q, setQ] = useState("");
   const [page, setPage] = useState(1);
   const pageSize = 20;
 
+  useEffect(() => {
+    if (variant === "tabs" && !showCleanTab && tab === "clean") setTab("raw");
+  }, [variant, showCleanTab, tab]);
+
+  const effectiveTab: TabKey =
+    variant === "tabs" && !showCleanTab ? "raw" : tab;
+
   const activeCount =
     variant === "single"
       ? Math.max(1, columnCount ?? 42)
-      : tab === "raw"
+      : effectiveTab === "raw"
         ? Math.max(1, rawColumnCount ?? 42)
         : Math.max(1, cleanColumnCount ?? 38);
 
@@ -143,7 +153,7 @@ export function DataReportModal({
               </div>
               <div className="text-xs text-gray-400">
                 {variant === "tabs"
-                  ? `${activeCount} columns · ${tab === "raw" ? "Raw" : "Clean"} statistics`
+                  ? `${activeCount} columns · ${effectiveTab === "raw" ? "Raw" : "Clean"} statistics`
                   : `${activeCount} columns · column-level statistics`}
               </div>
             </div>
@@ -155,7 +165,7 @@ export function DataReportModal({
                 downloadCsv(
                   filtered,
                   variant === "tabs"
-                    ? `data-report-${tab}-${activeCount}cols.csv`
+                    ? `data-report-${effectiveTab}-${activeCount}cols.csv`
                     : "data-quality-report.csv"
                 )
               }
@@ -179,24 +189,26 @@ export function DataReportModal({
               type="button"
               onClick={() => handleTab("raw")}
               className={`px-4 py-2 text-xs font-medium rounded-t-lg border-b-2 transition-colors ${
-                tab === "raw"
+                effectiveTab === "raw"
                   ? "border-teal-500 text-teal-700 bg-teal-50/50"
                   : "border-transparent text-gray-500 hover:text-gray-700"
               }`}
             >
               Raw Data Report
             </button>
-            <button
-              type="button"
-              onClick={() => handleTab("clean")}
-              className={`px-4 py-2 text-xs font-medium rounded-t-lg border-b-2 transition-colors ${
-                tab === "clean"
-                  ? "border-violet-500 text-violet-700 bg-violet-50/40"
-                  : "border-transparent text-gray-500 hover:text-gray-700"
-              }`}
-            >
-              Clean Data Report
-            </button>
+            {showCleanTab && (
+              <button
+                type="button"
+                onClick={() => handleTab("clean")}
+                className={`px-4 py-2 text-xs font-medium rounded-t-lg border-b-2 transition-colors ${
+                  effectiveTab === "clean"
+                    ? "border-violet-500 text-violet-700 bg-violet-50/40"
+                    : "border-transparent text-gray-500 hover:text-gray-700"
+                }`}
+              >
+                Clean Data Report
+              </button>
+            )}
           </div>
         )}
 
