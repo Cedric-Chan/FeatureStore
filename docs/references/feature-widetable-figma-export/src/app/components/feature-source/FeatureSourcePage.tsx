@@ -1307,7 +1307,7 @@ export function FeatureSourcePage() {
   const [region, setRegion]             = useState("");
   const [creator, setCreator]           = useState("");
   const [filterExpanded, setFilterExpanded] = useState(false);
-  const [expandedRows, setExpandedRows] = useState<Set<string>>(new Set(["1", "2"]));
+  const [expandedRows, setExpandedRows] = useState<Set<string>>(new Set());
   const [currentPage, setCurrentPage]   = useState(1);
   const [pageSize, setPageSize]         = useState(20);
   const [appliedFilters, setAppliedFilters] = useState({
