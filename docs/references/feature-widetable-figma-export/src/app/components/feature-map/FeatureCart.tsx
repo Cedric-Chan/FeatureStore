@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { ShoppingCart, X, Zap, BookOpen } from "lucide-react";
 import { Feature } from "./types";
 
@@ -12,6 +12,15 @@ export function FeatureCart({ selectedFeatures, onRemove, onClear }: FeatureCart
   const [open, setOpen] = useState(false);
   const count = selectedFeatures.length;
   const hasItems = count > 0;
+
+  useEffect(() => {
+    if (!open || !hasItems) return;
+    const h = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setOpen(false);
+    };
+    document.addEventListener("keydown", h);
+    return () => document.removeEventListener("keydown", h);
+  }, [open, hasItems]);
 
   return (
     <div className="relative">

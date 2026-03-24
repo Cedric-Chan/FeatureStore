@@ -1,4 +1,4 @@
-import { useState, useMemo, type ReactNode } from "react";
+import { useState, useMemo, useEffect, type ReactNode } from "react";
 import { useNavigate, useParams, useSearchParams, useLocation } from "react-router";
 import { ArrowLeft, ChevronRight, Maximize2, X } from "lucide-react";
 import { ParamRowEditor } from "@/app/components/shared/ParamRowEditor";
@@ -154,6 +154,15 @@ export function TransformationFormPage() {
   const [scriptExpanded, setScriptExpanded] = useState(false);
   const [detailTestOpen, setDetailTestOpen] = useState(false);
   const [hasPassedTest, setHasPassedTest] = useState(false);
+
+  useEffect(() => {
+    if (!scriptExpanded) return;
+    const h = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setScriptExpanded(false);
+    };
+    document.addEventListener("keydown", h);
+    return () => document.removeEventListener("keydown", h);
+  }, [scriptExpanded]);
 
   const ownerField = useMemo(() => ownersToRowField(owners), [owners]);
 

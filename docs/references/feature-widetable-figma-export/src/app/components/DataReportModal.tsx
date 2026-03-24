@@ -91,6 +91,14 @@ export function DataReportModal({
     if (variant === "tabs" && !showCleanTab && tab === "clean") setTab("raw");
   }, [variant, showCleanTab, tab]);
 
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if (e.key === "Escape") onClose();
+    };
+    document.addEventListener("keydown", handler);
+    return () => document.removeEventListener("keydown", handler);
+  }, [onClose]);
+
   const effectiveTab: TabKey =
     variant === "tabs" && !showCleanTab ? "raw" : tab;
 

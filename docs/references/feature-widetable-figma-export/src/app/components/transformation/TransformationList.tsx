@@ -331,6 +331,15 @@ export function TransformationList() {
   const [testRow, setTestRow] = useState<TransformationVersionRow | null>(null);
   const [monitorOpen, setMonitorOpen] = useState(false);
 
+  useEffect(() => {
+    if (!monitorOpen) return;
+    const h = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setMonitorOpen(false);
+    };
+    document.addEventListener("keydown", h);
+    return () => document.removeEventListener("keydown", h);
+  }, [monitorOpen]);
+
   const activeFilterCount = [
     applied.name,
     applied.owner,

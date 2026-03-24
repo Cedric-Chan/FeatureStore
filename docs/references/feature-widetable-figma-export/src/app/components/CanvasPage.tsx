@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect, useCallback } from "react";
+import React, { useState, useRef, useEffect, useCallback, useMemo } from "react";
 import {
   ArrowLeft, Pencil, ChevronDown, History, Zap, Square,
   AlertCircle, X, Database, Layers, Minus, Plus,
@@ -266,6 +266,110 @@ function ReadonlyCopyRow({ label, value }: { label: string; value: string }) {
 // ─── Data Ingestion (merged cleaning + ingestion) ────────────────────────────
 const FILLNA_METHODS = ["mean", "median", "constant", "forward_fill"] as const;
 
+function parseFeaturesCsv(csv: string): string[] {
+  return csv.split(",").map((s) => s.trim()).filter(Boolean);
+}
+
+function joinFeaturesCsv(names: string[]): string {
+  return names.join(", ");
+}
+
+function FillnaFeatureNamesMultiSelect({
+  value,
+  options,
+  onChange,
+}: {
+  value: string;
+  options: string[];
+  onChange: (csv: string) => void;
+}) {
+  const selectedSet = useMemo(() => new Set(parseFeaturesCsv(value)), [value]);
+  const [open, setOpen] = useState(false);
+  const [q, setQ] = useState("");
+  const wrapRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    const h = (e: MouseEvent) => {
+      if (wrapRef.current && !wrapRef.current.contains(e.target as Node)) setOpen(false);
+    };
+    document.addEventListener("mousedown", h);
+    return () => document.removeEventListener("mousedown", h);
+  }, [open]);
+
+  const filtered = useMemo(
+    () => options.filter((o) => o.toLowerCase().includes(q.trim().toLowerCase())),
+    [options, q]
+  );
+
+  const toggle = (name: string) => {
+    const next = new Set(selectedSet);
+    if (next.has(name)) next.delete(name);
+    else next.add(name);
+    const sorted = [...next].sort((a, b) => a.localeCompare(b));
+    onChange(joinFeaturesCsv(sorted));
+  };
+
+  const summary =
+    selectedSet.size === 0
+      ? "Select features…"
+      : selectedSet.size <= 2
+        ? joinFeaturesCsv([...selectedSet].sort((a, b) => a.localeCompare(b)))
+        : `${selectedSet.size} features selected`;
+
+  return (
+    <div className="relative" ref={wrapRef}>
+      <button
+        type="button"
+        onClick={() => setOpen((o) => !o)}
+        className="w-full flex items-center justify-between gap-2 text-left text-xs border border-gray-200 rounded-lg px-2 py-1.5 bg-gray-50 focus:outline-none focus:border-teal-400"
+      >
+        <span className={`truncate min-w-0 ${selectedSet.size ? "text-gray-800 font-mono" : "text-gray-400"}`}>
+          {summary}
+        </span>
+        <ChevronDown size={14} className="shrink-0 text-gray-400" />
+      </button>
+      {open && (
+        <div className="absolute left-0 right-0 z-50 mt-1 rounded-xl border border-gray-200 bg-white shadow-lg flex flex-col max-h-56 overflow-hidden">
+          <div className="p-2 border-b border-gray-100 shrink-0">
+            <input
+              value={q}
+              onChange={(e) => setQ(e.target.value)}
+              placeholder="Search features…"
+              className="w-full text-xs border border-gray-200 rounded-lg px-2 py-1.5 bg-gray-50 focus:outline-none focus:border-teal-400"
+            />
+          </div>
+          <div className="overflow-y-auto py-1">
+            {filtered.length === 0 && (
+              <div className="px-3 py-2 text-xs text-gray-400 text-center">No matches</div>
+            )}
+            {filtered.map((name) => {
+              const on = selectedSet.has(name);
+              return (
+                <button
+                  key={name}
+                  type="button"
+                  onClick={() => toggle(name)}
+                  className="w-full flex items-center gap-2 px-2.5 py-1.5 text-left hover:bg-teal-50/80 transition-colors"
+                >
+                  <span
+                    className={`flex h-4 w-4 shrink-0 items-center justify-center rounded border ${
+                      on ? "border-teal-500 bg-teal-500 text-white" : "border-gray-300 bg-white"
+                    }`}
+                  >
+                    {on ? <Check size={10} strokeWidth={3} /> : null}
+                  </span>
+                  <span className="text-xs font-mono text-gray-700 truncate">{name}</span>
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function DataIngestionMergedPanel({
   isInstanceView: _isInstanceView,
   nodeStatus,
@@ -274,6 +378,7 @@ function DataIngestionMergedPanel({
   ingestionConfig,
   dataCleaningInitial,
   emptyLastInstancePlaceholder,
+  cleaningFeatureOptions,
 }: {
   isInstanceView: boolean;
   nodeStatus?: NodeStatus;
@@ -282,6 +387,7 @@ function DataIngestionMergedPanel({
   ingestionConfig?: DataIngestionConfigSnapshot;
   dataCleaningInitial?: DataCleaningSnapshot;
   emptyLastInstancePlaceholder?: boolean;
+  cleaningFeatureOptions: string[];
 }) {
   const [tab, setTab] = useState<"config" | "lastInstance">("config");
   const [enabled, setEnabled] = useState(() => dataCleaningInitial?.enabled ?? false);
@@ -293,6 +399,15 @@ function DataIngestionMergedPanel({
   );
   const [vmFullscreen, setVmFullscreen] = useState<string | null>(null);
   const [reportOpen, setReportOpen] = useState(false);
+
+  useEffect(() => {
+    if (!vmFullscreen) return;
+    const h = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setVmFullscreen(null);
+    };
+    document.addEventListener("keydown", h);
+    return () => document.removeEventListener("keydown", h);
+  }, [vmFullscreen]);
 
   const rawTable = ingestionConfig?.rawTable ?? "feature_store.dwd_wide_raw_feat_v1";
   const rawS3 =
@@ -420,16 +535,18 @@ function DataIngestionMergedPanel({
                                 </option>
                               ))}
                             </select>
-                            <input
-                              value={row.features}
-                              onChange={(e) =>
-                                setFillnaRows((p) =>
-                                  p.map((r) => (r.id === row.id ? { ...r, features: e.target.value } : r))
-                                )
-                              }
-                              placeholder="Feature names (comma-separated, fuzzy match)"
-                              className="w-full text-xs border border-gray-200 rounded-lg px-2 py-1.5 font-mono bg-gray-50 focus:outline-none focus:border-teal-400"
-                            />
+                            <div>
+                              <div className="text-[10px] text-gray-400 mb-1">Feature names</div>
+                              <FillnaFeatureNamesMultiSelect
+                                value={row.features}
+                                options={cleaningFeatureOptions}
+                                onChange={(csv) =>
+                                  setFillnaRows((p) =>
+                                    p.map((r) => (r.id === row.id ? { ...r, features: csv } : r))
+                                  )
+                                }
+                              />
+                            </div>
                           </div>
                         ))}
                         {fillnaRows.length === 0 && (
@@ -473,16 +590,28 @@ function DataIngestionMergedPanel({
                                 </button>
                               </div>
                             </div>
-                            <input
-                              value={row.feature}
-                              onChange={(e) =>
-                                setVmRows((p) =>
-                                  p.map((r) => (r.id === row.id ? { ...r, feature: e.target.value } : r))
-                                )
-                              }
-                              placeholder="Feature name (fuzzy)"
-                              className="w-full text-xs border border-gray-200 rounded-lg px-2 py-1.5 font-mono"
-                            />
+                            <div>
+                              <div className="text-[10px] text-gray-400 mb-1">Feature name</div>
+                              <select
+                                value={row.feature}
+                                onChange={(e) =>
+                                  setVmRows((p) =>
+                                    p.map((r) => (r.id === row.id ? { ...r, feature: e.target.value } : r))
+                                  )
+                                }
+                                className="w-full text-xs border border-gray-200 rounded-lg px-2 py-1.5 font-mono bg-gray-50 focus:outline-none focus:border-teal-400"
+                              >
+                                <option value="">Select feature…</option>
+                                {row.feature.trim() && !cleaningFeatureOptions.includes(row.feature) ? (
+                                  <option value={row.feature}>{row.feature}</option>
+                                ) : null}
+                                {cleaningFeatureOptions.map((name) => (
+                                  <option key={name} value={name}>
+                                    {name}
+                                  </option>
+                                ))}
+                              </select>
+                            </div>
                             <textarea
                               value={row.sql}
                               onChange={(e) =>
@@ -771,6 +900,15 @@ function FrameTablePanel({
   const allSel  = parsedCols.length > 0 && parsedCols.every(c => selectedCols.has(c.name));
   const someSel = parsedCols.some(c => selectedCols.has(c.name));
   const sqlLines = Math.max((sql||"").split("\n").length, 1);
+
+  useEffect(() => {
+    if (!fullscreen) return;
+    const h = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setFullscreen(false);
+    };
+    document.addEventListener("keydown", h);
+    return () => document.removeEventListener("keydown", h);
+  }, [fullscreen]);
 
   // Hive: trigger parse when dataServer + tableSchema + tableName all filled
   useEffect(() => {
@@ -1263,6 +1401,20 @@ const FG_CATALOG: FGDef[] = [
     ],
   },
 ];
+
+function getCleaningFeatureNameOptions(): string[] {
+  const names = new Set<string>();
+  for (const fg of FG_CATALOG) {
+    for (const c of fg.cols) names.add(c.name);
+    fg.entityCols.forEach((x) => names.add(x));
+    fg.eventTimeCols.forEach((x) => names.add(x));
+  }
+  for (const x of ["user_id", "event_time", "order_id", "item_id", "ds"]) {
+    names.add(x);
+  }
+  return [...names].sort((a, b) => a.localeCompare(b));
+}
+
 const DEFAULT_FG_BY_NODE: Partial<Record<NodeId, string>> = {
   C: "user_profile_features",
   D: "order_history_features",
@@ -1680,6 +1832,8 @@ function NodeConfigPanel({
   featureGroupInitial?: FeatureGroupNodeSnapshot;
   emptyLastInstancePlaceholder?: boolean;
 }) {
+  const cleaningFeatureOptions = useMemo(() => getCleaningFeatureNameOptions(), []);
+
   if (node.id === "B") {
     return (
       <FrameTablePanel
@@ -1702,6 +1856,7 @@ function NodeConfigPanel({
         ingestionConfig={ingestionConfig}
         dataCleaningInitial={dataCleaningInitial}
         emptyLastInstancePlaceholder={emptyLastInstancePlaceholder}
+        cleaningFeatureOptions={cleaningFeatureOptions}
       />
     );
   }
@@ -1745,6 +1900,15 @@ function ExecuteConfigModal({ open, onClose }: { open: boolean; onClose: () => v
   const [sched, setSched] = useState<"once"|"cron">("once");
   const [cronExpr, setCronExpr] = useState("0 6 * * *");
   const cron = parseCronEnglish(cronExpr);
+
+  useEffect(() => {
+    if (!open) return;
+    const h = (e: KeyboardEvent) => {
+      if (e.key === "Escape") onClose();
+    };
+    document.addEventListener("keydown", h);
+    return () => document.removeEventListener("keydown", h);
+  }, [open, onClose]);
 
   if (!open) return null;
   return (
