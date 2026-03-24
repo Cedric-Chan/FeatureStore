@@ -2,15 +2,19 @@ import { useState, useMemo, useCallback } from "react";
 import { useNavigate } from "react-router";
 import { RefreshCw, Table2 } from "lucide-react";
 import { FilterBar } from "@/app/components/FilterBar";
-import { WideTableList, WideTableRow, Instance } from "@/app/components/WideTableList";
-import { DataReportModal, parseColumnCount } from "@/app/components/DataReportModal";
-import { DataCleaningAndReportsModal } from "@/app/components/DataCleaningAndReportsModal";
+import { WideTableList, WideTableRow } from "@/app/components/WideTableList";
+import {
+  DataCleaningAndReportsModal,
+  type CleaningTaskState,
+} from "@/app/components/DataCleaningAndReportsModal";
 import { Pagination } from "@/app/components/Pagination";
 import { AddWideTableModal, WideTableFormValues } from "@/app/components/AddWideTableModal";
 import { getCanvasSnapshotByRow, MOCK_WIDE_TABLES } from "@/data/mockWideTables";
 import type { DataCleaningSnapshot } from "@/data/widetableCanvasModel";
 
 const CURRENT_USER = "cedric.chencan@seamoney.com";
+
+const DEFAULT_CLEANING_TASK: CleaningTaskState = { taskId: "—", status: "NONE" };
 
 export function WideTableListPage() {
   const navigate = useNavigate();
@@ -26,18 +30,59 @@ export function WideTableListPage() {
   const [showAddModal, setShowAddModal] = useState(false);
   /** When set, Add modal is in Copy-from mode and canvas is seeded from this row's snapshot */
   const [copySourceRow, setCopySourceRow] = useState<WideTableRow | null>(null);
-  const [reportInst, setReportInst] = useState<Instance | null>(null);
   const [cleaningRow, setCleaningRow] = useState<WideTableRow | null>(null);
   const [cleaningByTableId, setCleaningByTableId] = useState<Record<string, DataCleaningSnapshot>>({});
+  const [cleaningTaskByTableId, setCleaningTaskByTableId] = useState<Record<string, CleaningTaskState>>({});
 
   const cleaningSnapshotForRow = useCallback(
     (row: WideTableRow): DataCleaningSnapshot => {
       const override = cleaningByTableId[row.id];
-      if (override) return { ...override, fillnaRows: override.fillnaRows.map((r) => ({ ...r })), vmRows: override.vmRows.map((r) => ({ ...r })) };
+      if (override)
+        return {
+          ...override,
+          fillnaRows: override.fillnaRows.map((r) => ({ ...r })),
+          vmRows: override.vmRows.map((r) => ({ ...r })),
+        };
       return getCanvasSnapshotByRow(row).dataCleaning;
     },
     [cleaningByTableId]
   );
+
+  const cleaningTaskForRow = useCallback(
+    (rowId: string): CleaningTaskState => cleaningTaskByTableId[rowId] ?? DEFAULT_CLEANING_TASK,
+    [cleaningTaskByTableId]
+  );
+
+  const handleCleaningRunTask = useCallback((row: WideTableRow, payload: Pick<DataCleaningSnapshot, "fillnaRows" | "vmRows">) => {
+    const taskId = `clean_task_${Date.now()}`;
+    setCleaningTaskByTableId((prev) => ({
+      ...prev,
+      [row.id]: { taskId, status: "PENDING" },
+    }));
+
+    window.setTimeout(() => {
+      setCleaningTaskByTableId((prev) => ({
+        ...prev,
+        [row.id]: { taskId, status: "RUNNING" },
+      }));
+    }, 400);
+
+    window.setTimeout(() => {
+      const finishedAt = new Date().toISOString().slice(0, 19).replace("T", " ");
+      setCleaningTaskByTableId((prev) => ({
+        ...prev,
+        [row.id]: { taskId, status: "SUCCESS", finishedAt },
+      }));
+      setCleaningByTableId((prev) => ({
+        ...prev,
+        [row.id]: {
+          enabled: true,
+          fillnaRows: payload.fillnaRows.map((r) => ({ ...r })),
+          vmRows: payload.vmRows.map((r) => ({ ...r })),
+        },
+      }));
+    }, 1800);
+  }, []);
 
   const filtered = useMemo(() => {
     return MOCK_WIDE_TABLES.filter((row) => {
@@ -141,9 +186,8 @@ export function WideTableListPage() {
             setCopySourceRow(row);
             setShowAddModal(true);
           }}
-          onDataCleaning={(row) => setCleaningRow(row)}
+          onClean={(row) => setCleaningRow(row)}
           onView={goCanvasInstance}
-          onReport={(_, inst) => setReportInst(inst)}
           onTask={(_, inst) =>
             navigate(`/wt/task/${encodeURIComponent(inst.id)}`)
           }
@@ -176,29 +220,15 @@ export function WideTableListPage() {
         />
       )}
 
-      {reportInst && (
-        <DataReportModal
-          key={reportInst.id}
-          variant="tabs"
-          rawColumnCount={parseColumnCount(reportInst.columnsCnt)}
-          cleanColumnCount={Math.max(1, parseColumnCount(reportInst.columnsCnt) - 4)}
-          onClose={() => setReportInst(null)}
-        />
-      )}
-
       {cleaningRow && (
         <DataCleaningAndReportsModal
           key={cleaningRow.id}
           row={cleaningRow}
           initialCleaning={cleaningSnapshotForRow(cleaningRow)}
+          cleaningTask={cleaningTaskForRow(cleaningRow.id)}
           ingestionConfig={getCanvasSnapshotByRow(cleaningRow).dataIngestion}
           onClose={() => setCleaningRow(null)}
-          onSave={(next) =>
-            setCleaningByTableId((prev) => ({
-              ...prev,
-              [cleaningRow.id]: next,
-            }))
-          }
+          onRunTask={(payload) => handleCleaningRunTask(cleaningRow, payload)}
         />
       )}
     </div>

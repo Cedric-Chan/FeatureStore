@@ -161,16 +161,13 @@ function ActionBtn({
 function InstanceRow({
   inst,
   onView,
-  onReport,
   onTask,
 }: {
   inst: Instance;
   onView?: () => void;
-  onReport?: () => void;
   onTask?: () => void;
 }) {
   const canKill = inst.status === "RUNNING";
-  const canReport = inst.status === "SUCCESS";
 
   return (
     <tr className="group hover:bg-blue-50/30 transition-colors">
@@ -205,11 +202,6 @@ function InstanceRow({
         <div className="flex items-center gap-0.5">
           <ActionBtn label="View" onClick={onView} />
           <ActionBtn label="Kill" variant="danger" disabled={!canKill} />
-          <ActionBtn
-            label="Report"
-            disabled={!canReport}
-            onClick={canReport ? onReport : undefined}
-          />
           <ActionBtn label="Task" onClick={onTask} />
         </div>
       </td>
@@ -224,9 +216,8 @@ function WideTableRowComponent({
   onToggle,
   onEdit,
   onCopy,
-  onDataCleaning,
+  onClean,
   onView,
-  onReport,
   onTask,
 }: {
   row: WideTableRow;
@@ -234,9 +225,8 @@ function WideTableRowComponent({
   onToggle: () => void;
   onEdit?: () => void;
   onCopy?: () => void;
-  onDataCleaning?: () => void;
+  onClean?: () => void;
   onView?: (instanceId: string) => void;
-  onReport?: (inst: Instance) => void;
   onTask?: (inst: Instance) => void;
 }) {
   return (
@@ -312,7 +302,7 @@ function WideTableRowComponent({
           <div className="flex items-center gap-0.5 flex-wrap">
             <ActionBtn label="Edit" onClick={onEdit} />
             <ActionBtn label="Copy" onClick={onCopy} />
-            <ActionBtn label="Data Cleaning" onClick={onDataCleaning} />
+            <ActionBtn label="Clean" onClick={onClean} />
             <ActionBtn label="Delete" variant="danger" />
           </div>
         </td>
@@ -366,7 +356,6 @@ function WideTableRowComponent({
                         key={inst.id}
                         inst={inst}
                         onView={onView ? () => onView(inst.id) : undefined}
-                        onReport={onReport ? () => onReport(inst) : undefined}
                         onTask={onTask ? () => onTask(inst) : undefined}
                       />
                     ))
@@ -396,9 +385,8 @@ interface WideTableListProps {
   onAdd: () => void;
   onEdit?: (row: WideTableRow) => void;
   onCopy?: (row: WideTableRow) => void;
-  onDataCleaning?: (row: WideTableRow) => void;
+  onClean?: (row: WideTableRow) => void;
   onView?: (row: WideTableRow, instanceId: string) => void;
-  onReport?: (row: WideTableRow, inst: Instance) => void;
   onTask?: (row: WideTableRow, inst: Instance) => void;
   ownedByMe?: boolean;
   onOwnedByMeChange?: (v: boolean) => void;
@@ -409,9 +397,8 @@ export function WideTableList({
   onAdd,
   onEdit,
   onCopy,
-  onDataCleaning,
+  onClean,
   onView,
-  onReport,
   onTask,
   ownedByMe = false,
   onOwnedByMeChange,
@@ -522,9 +509,8 @@ export function WideTableList({
                 onToggle={() => toggle(row.id)}
                 onEdit={onEdit ? () => onEdit(row) : undefined}
                 onCopy={onCopy ? () => onCopy(row) : undefined}
-                onDataCleaning={onDataCleaning ? () => onDataCleaning(row) : undefined}
+                onClean={onClean ? () => onClean(row) : undefined}
                 onView={onView ? (instId) => onView(row, instId) : undefined}
-                onReport={onReport ? (inst) => onReport(row, inst) : undefined}
                 onTask={onTask ? (inst) => onTask(row, inst) : undefined}
               />
             ))}

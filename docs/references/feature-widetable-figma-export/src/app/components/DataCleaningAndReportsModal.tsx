@@ -21,6 +21,15 @@ import {
 
 const FILLNA_METHODS = ["mean", "median", "constant", "forward_fill"] as const;
 
+/** Mock cleaning task lifecycle until backend API is wired. */
+export type CleaningTaskStatus = "NONE" | "PENDING" | "RUNNING" | "SUCCESS" | "FAILED";
+
+export type CleaningTaskState = {
+  taskId: string;
+  status: CleaningTaskStatus;
+  finishedAt?: string;
+};
+
 function parseFeaturesCsv(csv: string): string[] {
   return csv.split(",").map((s) => s.trim()).filter(Boolean);
 }
@@ -125,29 +134,41 @@ function FillnaFeatureNamesMultiSelect({
   );
 }
 
+function latestSuccessfulInstance(instances: Instance[]): Instance | null {
+  const success = instances.filter((i) => i.status === "SUCCESS");
+  if (success.length === 0) return null;
+  return [...success].sort((a, b) => b.finishTime.localeCompare(a.finishTime))[0];
+}
+
 function latestSuccessfulInstanceColumnsCnt(instances: Instance[]): string | undefined {
-  const success = [...instances].filter((i) => i.status === "SUCCESS");
-  if (success.length === 0) return undefined;
-  success.sort((a, b) => b.finishTime.localeCompare(a.finishTime));
-  return success[0].columnsCnt;
+  const inst = latestSuccessfulInstance(instances);
+  return inst?.columnsCnt;
+}
+
+function instanceUpdatedAtLabel(inst: Instance | null): string {
+  if (!inst) return "—";
+  return (inst.finishTime || inst.startTime || "—").trim() || "—";
 }
 
 export function DataCleaningAndReportsModal({
   row,
   initialCleaning,
+  cleaningTask,
   ingestionConfig,
   onClose,
-  onSave,
+  onRunTask,
 }: {
   row: WideTableRow;
   initialCleaning: DataCleaningSnapshot;
+  cleaningTask: CleaningTaskState;
   ingestionConfig?: DataIngestionConfigSnapshot;
   onClose: () => void;
-  onSave: (next: DataCleaningSnapshot) => void;
+  /** Trigger mock task lifecycle; list page persists snapshot with enabled on SUCCESS. */
+  onRunTask: (payload: Pick<DataCleaningSnapshot, "fillnaRows" | "vmRows">) => void;
 }) {
   const cleaningFeatureOptions = useMemo(() => getCleaningFeatureNameOptions(), []);
-  const [reportTab, setReportTab] = useState<"raw" | "clean">("raw");
-  const [enabled, setEnabled] = useState(() => initialCleaning.enabled);
+  const [mainTab, setMainTab] = useState<"report" | "config">("report");
+  const [reportSubTab, setReportSubTab] = useState<"raw" | "clean">("raw");
   const [fillnaRows, setFillnaRows] = useState<{ id: string; method: string; features: string }[]>(() =>
     initialCleaning.fillnaRows?.length ? initialCleaning.fillnaRows.map((r) => ({ ...r })) : []
   );
@@ -155,10 +176,6 @@ export function DataCleaningAndReportsModal({
     initialCleaning.vmRows?.length ? initialCleaning.vmRows.map((r) => ({ ...r })) : []
   );
   const [vmFullscreen, setVmFullscreen] = useState<string | null>(null);
-
-  useEffect(() => {
-    if (!enabled && reportTab === "clean") setReportTab("raw");
-  }, [enabled, reportTab]);
 
   useEffect(() => {
     if (!vmFullscreen) return;
@@ -177,9 +194,17 @@ export function DataCleaningAndReportsModal({
     return () => document.removeEventListener("keydown", h);
   }, [onClose]);
 
+  const rawSuccessInst = useMemo(() => latestSuccessfulInstance(row.instances), [row.instances]);
+  const rawHasData = rawSuccessInst !== null;
   const rawColCount = parseColumnCount(latestSuccessfulInstanceColumnsCnt(row.instances));
   const cleanColCount = Math.max(1, rawColCount - 4);
-  const reportColumnCount = reportTab === "raw" ? rawColCount : cleanColCount;
+  const cleanHasData = cleaningTask.status === "SUCCESS" && Boolean(cleaningTask.finishedAt);
+
+  const rawUpdatedLabel = instanceUpdatedAtLabel(rawSuccessInst);
+  const cleanUpdatedLabel =
+    cleaningTask.status === "SUCCESS" && cleaningTask.finishedAt ? cleaningTask.finishedAt : "—";
+
+  const reportColumnCount = reportSubTab === "raw" ? rawColCount : cleanColCount;
 
   const rawTable = ingestionConfig?.rawTable ?? "feature_store.dwd_wide_raw_feat_v1";
   const rawS3 = ingestionConfig?.rawS3 ?? "s3://data-lake-prod/widetable/reports/ts_demo/20240315/raw_stats.json";
@@ -194,19 +219,38 @@ export function DataCleaningAndReportsModal({
   const addVm = () =>
     setVmRows((p) => [...p, { id: `vm-${Date.now()}`, feature: "", sql: "" }]);
 
-  const handleSave = () => {
-    onSave({
-      enabled,
+  const handleRunTaskClick = () => {
+    onRunTask({
       fillnaRows: fillnaRows.map((r) => ({ ...r })),
       vmRows: vmRows.map((r) => ({ ...r })),
     });
-    onClose();
   };
 
-  const handleDownloadReport = () => {
+  const downloadCurrentReport = () => {
     const rows = generateReportRows(reportColumnCount);
-    downloadDataReportCsv(rows, `data-report-${reportTab}-${row.name}-${reportColumnCount}cols.csv`);
+    const kind = reportSubTab === "raw" ? "raw" : "clean";
+    downloadDataReportCsv(rows, `data-report-${kind}-${row.name.replace(/\s+/g, "_")}-${reportColumnCount}cols.csv`);
   };
+
+  const reportToolbarEnd = (
+    <>
+      <span className="text-[11px] text-gray-500 whitespace-nowrap tabular-nums">
+        Updated: {reportSubTab === "raw" ? rawUpdatedLabel : cleanUpdatedLabel}
+      </span>
+      <button
+        type="button"
+        onClick={downloadCurrentReport}
+        className="inline-flex items-center gap-1.5 px-2.5 py-1.5 text-[11px] rounded-lg border border-gray-200 text-gray-600 hover:border-teal-300 hover:text-teal-700 hover:bg-teal-50/50 transition-all"
+      >
+        <Download size={12} /> Download CSV
+      </button>
+    </>
+  );
+
+  const runDisabled =
+    mainTab !== "config" ||
+    cleaningTask.status === "PENDING" ||
+    cleaningTask.status === "RUNNING";
 
   return (
     <>
@@ -221,251 +265,319 @@ export function DataCleaningAndReportsModal({
                 <Sparkles size={16} className="text-teal-600" />
               </div>
               <div className="min-w-0">
-                <div className="text-sm font-medium text-gray-800 truncate">Data cleaning · {row.name}</div>
+                <div className="text-sm font-medium text-gray-800 truncate">Clean · {row.name}</div>
                 <div className="text-[11px] text-gray-400 mt-0.5 leading-snug">
-                  Raw table → Raw report → Data cleaning → Cleaned report
+                  Raw table → Raw report → Cleaning config → Cleaned report
                 </div>
                 <div className="text-[10px] text-gray-400 mt-1 font-mono truncate" title={rawTable}>
                   Raw: {rawTable}
                 </div>
               </div>
             </div>
-            <div className="flex items-center gap-2 shrink-0">
-              <button
-                type="button"
-                onClick={handleDownloadReport}
-                className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs rounded-lg border border-gray-200 text-gray-600 hover:border-teal-300 hover:text-teal-700 hover:bg-teal-50/50 transition-all"
-              >
-                <Download size={13} /> Download CSV
-              </button>
-              <button
-                type="button"
-                onClick={onClose}
-                className="p-1.5 rounded-lg text-gray-400 hover:bg-gray-100 hover:text-gray-600"
-              >
-                <X size={16} />
-              </button>
-            </div>
+            <button
+              type="button"
+              onClick={onClose}
+              className="p-1.5 rounded-lg text-gray-400 hover:bg-gray-100 hover:text-gray-600 shrink-0"
+            >
+              <X size={16} />
+            </button>
+          </div>
+
+          <div className="flex border-b border-gray-200 px-5 gap-1 shrink-0 bg-white">
+            <button
+              type="button"
+              onClick={() => setMainTab("report")}
+              className={`px-4 py-2.5 text-xs font-medium border-b-2 -mb-px transition-colors ${
+                mainTab === "report"
+                  ? "border-teal-500 text-teal-700"
+                  : "border-transparent text-gray-500 hover:text-gray-700"
+              }`}
+            >
+              Data Report
+            </button>
+            <button
+              type="button"
+              onClick={() => setMainTab("config")}
+              className={`px-4 py-2.5 text-xs font-medium border-b-2 -mb-px transition-colors ${
+                mainTab === "config"
+                  ? "border-teal-500 text-teal-700"
+                  : "border-transparent text-gray-500 hover:text-gray-700"
+              }`}
+            >
+              Cleaning Config
+            </button>
           </div>
 
           <div className="flex-1 overflow-y-auto min-h-0">
-            <div className="px-5 py-4 border-b border-gray-100 bg-slate-50/40">
-              <div className="flex items-center gap-2 mb-3">
-                <Database size={14} className="text-teal-600 shrink-0" />
-                <span className="text-xs font-medium text-gray-600 tracking-wide uppercase">Data report</span>
-              </div>
-              <div className="flex flex-wrap gap-1 border-b border-gray-200 pb-2 mb-3">
-                <button
-                  type="button"
-                  onClick={() => setReportTab("raw")}
-                  className={`px-3 py-1.5 text-xs font-medium rounded-lg border transition-colors ${
-                    reportTab === "raw"
-                      ? "border-teal-400 bg-teal-50 text-teal-800"
-                      : "border-transparent text-gray-500 hover:text-gray-700"
-                  }`}
-                >
-                  Raw Data Report
-                </button>
-                <button
-                  type="button"
-                  disabled={!enabled}
-                  onClick={() => setReportTab("clean")}
-                  className={`px-3 py-1.5 text-xs font-medium rounded-lg border transition-colors ${
-                    reportTab === "clean"
-                      ? "border-violet-400 bg-violet-50 text-violet-800"
-                      : "border-transparent text-gray-500 hover:text-gray-700"
-                  } ${!enabled ? "opacity-40 cursor-not-allowed" : ""}`}
-                >
-                  Cleaned Data Report
-                </button>
-              </div>
-              {!enabled && (
-                <p className="text-[11px] text-amber-700 bg-amber-50 border border-amber-100 rounded-lg px-3 py-2 mb-3">
-                  Enable data cleaning below to view the cleaned data report (post-processing after raw wide
-                  table writes).
-                </p>
-              )}
-              <div className="rounded-xl border border-gray-200 bg-white overflow-hidden flex flex-col max-h-[320px]">
-                <DataReportTableSection
-                  key={`${reportTab}-${reportColumnCount}`}
-                  columnCount={reportColumnCount}
-                  pageSize={12}
-                  tableClassName="max-h-[200px]"
-                />
-              </div>
-              <div className="mt-2 text-[10px] text-gray-400 space-y-0.5 font-mono break-all">
-                <div>Raw report path: {rawS3}</div>
-                {enabled && <div>Cleaned report path: {cleanedReportPath}</div>}
-              </div>
-            </div>
+            {mainTab === "report" && (
+              <div className="px-5 py-4 border-b border-gray-100">
+                <div className="flex items-center gap-2 mb-3">
+                  <Database size={14} className="text-teal-600 shrink-0" />
+                  <span className="text-xs font-medium text-gray-600 tracking-wide uppercase">Data report</span>
+                </div>
 
-            <div className="px-5 py-4">
-              <div className="text-xs font-medium text-gray-500 tracking-wide uppercase mb-3">Data cleaning</div>
-              <div className="flex items-center justify-between rounded-xl border border-gray-200 px-3 py-2.5 bg-gray-50/80 mb-4">
-                <span className="text-sm text-gray-700">Enable data cleaning</span>
-                <button
-                  type="button"
-                  role="switch"
-                  aria-checked={enabled}
-                  onClick={() => setEnabled((e) => !e)}
-                  className={`relative w-11 h-6 rounded-full transition-colors ${enabled ? "bg-teal-500" : "bg-gray-200"}`}
-                >
-                  <span
-                    className={`absolute top-1 left-1 w-4 h-4 rounded-full bg-white shadow transition-transform ${enabled ? "translate-x-5" : ""}`}
-                  />
-                </button>
-              </div>
-
-              {enabled && (
-                <>
-                  <div className="mb-4">
-                    <div className="flex items-center justify-between mb-2">
-                      <span className="text-xs text-gray-500 tracking-wide">Fillna</span>
+                <div className="rounded-xl border border-gray-200 bg-white border-l-4 border-l-teal-400 shadow-sm overflow-hidden">
+                  <div className="px-3 pt-3 pb-2 border-b border-gray-100 bg-slate-50/50">
+                    <div className="flex flex-wrap gap-1">
                       <button
                         type="button"
-                        onClick={addFillna}
-                        className="text-xs text-teal-600 hover:text-teal-700 font-medium"
+                        onClick={() => setReportSubTab("raw")}
+                        className={`px-2.5 py-1 text-[11px] font-medium rounded-full border transition-colors ${
+                          reportSubTab === "raw"
+                            ? "border-teal-300 bg-teal-50 text-teal-800"
+                            : "border-transparent text-gray-500 hover:text-gray-700"
+                        }`}
                       >
-                        + Add row
+                        Raw Data
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setReportSubTab("clean")}
+                        className={`px-2.5 py-1 text-[11px] font-medium rounded-full border transition-colors ${
+                          reportSubTab === "clean"
+                            ? "border-violet-300 bg-violet-50 text-violet-800"
+                            : "border-transparent text-gray-500 hover:text-gray-700"
+                        }`}
+                      >
+                        Cleaned Data
                       </button>
                     </div>
-                    <div className="flex flex-col gap-2">
-                      {fillnaRows.map((rrow, idx) => (
-                        <div key={rrow.id} className="rounded-xl border border-gray-200 p-3 space-y-2 bg-white">
-                          <div className="flex items-center justify-between">
-                            <span className="text-xs text-gray-400">#{idx + 1}</span>
+                  </div>
+
+                  <div className="p-3 flex flex-col min-h-[200px]">
+                    {reportSubTab === "raw" && !rawHasData && (
+                      <div className="flex-1 flex items-center justify-center py-14 px-4 text-center text-sm text-gray-500">
+                        No successful wide table instance yet. Run an instance first to generate a raw data
+                        report.
+                      </div>
+                    )}
+                    {reportSubTab === "raw" && rawHasData && (
+                      <div className="rounded-lg border border-gray-100 overflow-hidden flex flex-col max-h-[320px]">
+                        <DataReportTableSection
+                          key={`raw-${reportColumnCount}`}
+                          columnCount={rawColCount}
+                          pageSize={12}
+                          tableClassName="max-h-[200px]"
+                          toolbarEnd={reportToolbarEnd}
+                        />
+                      </div>
+                    )}
+                    {reportSubTab === "clean" && !cleanHasData && (
+                      <div className="flex-1 flex items-center justify-center py-14 px-4 text-center text-sm text-gray-500">
+                        No cleaned data report yet. Open{" "}
+                        <button
+                          type="button"
+                          className="text-teal-600 font-medium hover:underline"
+                          onClick={() => setMainTab("config")}
+                        >
+                          Cleaning Config
+                        </button>
+                        , set Fillna / Value mapping, and click Run Task.
+                      </div>
+                    )}
+                    {reportSubTab === "clean" && cleanHasData && (
+                      <div className="rounded-lg border border-gray-100 overflow-hidden flex flex-col max-h-[320px]">
+                        <DataReportTableSection
+                          key={`clean-${reportColumnCount}`}
+                          columnCount={cleanColCount}
+                          pageSize={12}
+                          tableClassName="max-h-[200px]"
+                          toolbarEnd={reportToolbarEnd}
+                        />
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                <div className="mt-2 text-[10px] text-gray-400 space-y-0.5 font-mono break-all">
+                  <div>Raw report path: {rawS3}</div>
+                  {cleanHasData ? (
+                    <div>Cleaned report path: {cleanedReportPath}</div>
+                  ) : (
+                    <div className="text-gray-300">Cleaned report path: (after a successful clean task)</div>
+                  )}
+                </div>
+              </div>
+            )}
+
+            {mainTab === "config" && (
+              <div className="px-5 py-4">
+                <div className="text-xs font-medium text-gray-500 tracking-wide uppercase mb-3">Cleaning config</div>
+
+                <div className="rounded-xl border border-gray-200 bg-gray-50/80 px-3 py-2.5 mb-4 grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs">
+                  <div>
+                    <span className="text-gray-400 block text-[10px] uppercase tracking-wide mb-0.5">
+                      Latest cleaning task ID
+                    </span>
+                    <span className="font-mono text-gray-800">{cleaningTask.taskId || "—"}</span>
+                  </div>
+                  <div>
+                    <span className="text-gray-400 block text-[10px] uppercase tracking-wide mb-0.5">
+                      Task status
+                    </span>
+                    <span
+                      className={`font-medium ${
+                        cleaningTask.status === "SUCCESS"
+                          ? "text-teal-700"
+                          : cleaningTask.status === "FAILED"
+                            ? "text-red-600"
+                            : cleaningTask.status === "RUNNING" || cleaningTask.status === "PENDING"
+                              ? "text-amber-700"
+                              : "text-gray-600"
+                      }`}
+                    >
+                      {cleaningTask.status}
+                    </span>
+                  </div>
+                </div>
+
+                <div className="mb-4">
+                  <div className="flex items-center justify-between mb-2">
+                    <span className="text-xs text-gray-500 tracking-wide">Fillna</span>
+                    <button
+                      type="button"
+                      onClick={addFillna}
+                      className="text-xs text-teal-600 hover:text-teal-700 font-medium"
+                    >
+                      + Add row
+                    </button>
+                  </div>
+                  <div className="flex flex-col gap-2">
+                    {fillnaRows.map((rrow, idx) => (
+                      <div key={rrow.id} className="rounded-xl border border-gray-200 p-3 space-y-2 bg-white">
+                        <div className="flex items-center justify-between">
+                          <span className="text-xs text-gray-400">#{idx + 1}</span>
+                          <button
+                            type="button"
+                            onClick={() => setFillnaRows((p) => p.filter((r) => r.id !== rrow.id))}
+                            className="text-gray-300 hover:text-red-400"
+                          >
+                            <Trash2 size={13} />
+                          </button>
+                        </div>
+                        <select
+                          value={rrow.method}
+                          onChange={(e) =>
+                            setFillnaRows((p) =>
+                              p.map((r) => (r.id === rrow.id ? { ...r, method: e.target.value } : r))
+                            )
+                          }
+                          className="w-full text-xs border border-gray-200 rounded-lg px-2 py-1.5 bg-gray-50 focus:outline-none focus:border-teal-400"
+                        >
+                          {FILLNA_METHODS.map((m) => (
+                            <option key={m} value={m}>
+                              {m}
+                            </option>
+                          ))}
+                        </select>
+                        <div>
+                          <div className="text-[10px] text-gray-400 mb-1">Feature names</div>
+                          <FillnaFeatureNamesMultiSelect
+                            value={rrow.features}
+                            options={cleaningFeatureOptions}
+                            onChange={(csv) =>
+                              setFillnaRows((p) =>
+                                p.map((r) => (r.id === rrow.id ? { ...r, features: csv } : r))
+                              )
+                            }
+                          />
+                        </div>
+                      </div>
+                    ))}
+                    {fillnaRows.length === 0 && (
+                      <p className="text-xs text-gray-400 border border-dashed border-gray-200 rounded-xl py-4 text-center">
+                        No Fillna rules — optional
+                      </p>
+                    )}
+                  </div>
+                </div>
+
+                <div>
+                  <div className="flex items-center justify-between mb-2">
+                    <span className="text-xs text-gray-500 tracking-wide">Value mapping</span>
+                    <button
+                      type="button"
+                      onClick={addVm}
+                      className="text-xs text-teal-600 hover:text-teal-700 font-medium"
+                    >
+                      + Add row
+                    </button>
+                  </div>
+                  <div className="flex flex-col gap-2">
+                    {vmRows.map((rrow, idx) => (
+                      <div key={rrow.id} className="rounded-xl border border-gray-200 p-3 space-y-2 bg-white">
+                        <div className="flex items-center justify-between">
+                          <span className="text-xs text-gray-400">#{idx + 1}</span>
+                          <div className="flex items-center gap-1">
                             <button
                               type="button"
-                              onClick={() => setFillnaRows((p) => p.filter((r) => r.id !== rrow.id))}
+                              title="Expand SQL"
+                              onClick={() => setVmFullscreen(rrow.id)}
+                              className="p-1 rounded-lg text-gray-400 hover:text-teal-600 hover:bg-teal-50"
+                            >
+                              <Maximize2 size={13} />
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => setVmRows((p) => p.filter((r) => r.id !== rrow.id))}
                               className="text-gray-300 hover:text-red-400"
                             >
                               <Trash2 size={13} />
                             </button>
                           </div>
+                        </div>
+                        <div>
+                          <div className="text-[10px] text-gray-400 mb-1">Feature name</div>
                           <select
-                            value={rrow.method}
+                            value={rrow.feature}
                             onChange={(e) =>
-                              setFillnaRows((p) =>
-                                p.map((r) => (r.id === rrow.id ? { ...r, method: e.target.value } : r))
+                              setVmRows((p) =>
+                                p.map((r) => (r.id === rrow.id ? { ...r, feature: e.target.value } : r))
                               )
                             }
-                            className="w-full text-xs border border-gray-200 rounded-lg px-2 py-1.5 bg-gray-50 focus:outline-none focus:border-teal-400"
+                            className="w-full text-xs border border-gray-200 rounded-lg px-2 py-1.5 font-mono bg-gray-50 focus:outline-none focus:border-teal-400"
                           >
-                            {FILLNA_METHODS.map((m) => (
-                              <option key={m} value={m}>
-                                {m}
+                            <option value="">Select feature…</option>
+                            {rrow.feature.trim() && !cleaningFeatureOptions.includes(rrow.feature) ? (
+                              <option value={rrow.feature}>{rrow.feature}</option>
+                            ) : null}
+                            {cleaningFeatureOptions.map((name) => (
+                              <option key={name} value={name}>
+                                {name}
                               </option>
                             ))}
                           </select>
-                          <div>
-                            <div className="text-[10px] text-gray-400 mb-1">Feature names</div>
-                            <FillnaFeatureNamesMultiSelect
-                              value={rrow.features}
-                              options={cleaningFeatureOptions}
-                              onChange={(csv) =>
-                                setFillnaRows((p) =>
-                                  p.map((r) => (r.id === rrow.id ? { ...r, features: csv } : r))
-                                )
-                              }
-                            />
-                          </div>
                         </div>
-                      ))}
-                      {fillnaRows.length === 0 && (
-                        <p className="text-xs text-gray-400 border border-dashed border-gray-200 rounded-xl py-4 text-center">
-                          No Fillna rules — optional
-                        </p>
-                      )}
-                    </div>
+                        <textarea
+                          value={rrow.sql}
+                          onChange={(e) =>
+                            setVmRows((p) =>
+                              p.map((r) => (r.id === rrow.id ? { ...r, sql: e.target.value } : r))
+                            )
+                          }
+                          rows={3}
+                          placeholder="SQL / CASE WHEN …"
+                          className="w-full text-xs font-mono border border-gray-200 rounded-lg px-2 py-1.5 bg-gray-50 resize-y focus:outline-none focus:border-teal-400"
+                        />
+                      </div>
+                    ))}
+                    {vmRows.length === 0 && (
+                      <p className="text-xs text-gray-400 border border-dashed border-gray-200 rounded-xl py-4 text-center">
+                        No value mappings — optional
+                      </p>
+                    )}
                   </div>
+                </div>
 
-                  <div>
-                    <div className="flex items-center justify-between mb-2">
-                      <span className="text-xs text-gray-500 tracking-wide">Value mapping</span>
-                      <button
-                        type="button"
-                        onClick={addVm}
-                        className="text-xs text-teal-600 hover:text-teal-700 font-medium"
-                      >
-                        + Add row
-                      </button>
-                    </div>
-                    <div className="flex flex-col gap-2">
-                      {vmRows.map((rrow, idx) => (
-                        <div key={rrow.id} className="rounded-xl border border-gray-200 p-3 space-y-2 bg-white">
-                          <div className="flex items-center justify-between">
-                            <span className="text-xs text-gray-400">#{idx + 1}</span>
-                            <div className="flex items-center gap-1">
-                              <button
-                                type="button"
-                                title="Expand SQL"
-                                onClick={() => setVmFullscreen(rrow.id)}
-                                className="p-1 rounded-lg text-gray-400 hover:text-teal-600 hover:bg-teal-50"
-                              >
-                                <Maximize2 size={13} />
-                              </button>
-                              <button
-                                type="button"
-                                onClick={() => setVmRows((p) => p.filter((r) => r.id !== rrow.id))}
-                                className="text-gray-300 hover:text-red-400"
-                              >
-                                <Trash2 size={13} />
-                              </button>
-                            </div>
-                          </div>
-                          <div>
-                            <div className="text-[10px] text-gray-400 mb-1">Feature name</div>
-                            <select
-                              value={rrow.feature}
-                              onChange={(e) =>
-                                setVmRows((p) =>
-                                  p.map((r) => (r.id === rrow.id ? { ...r, feature: e.target.value } : r))
-                                )
-                              }
-                              className="w-full text-xs border border-gray-200 rounded-lg px-2 py-1.5 font-mono bg-gray-50 focus:outline-none focus:border-teal-400"
-                            >
-                              <option value="">Select feature…</option>
-                              {rrow.feature.trim() && !cleaningFeatureOptions.includes(rrow.feature) ? (
-                                <option value={rrow.feature}>{rrow.feature}</option>
-                              ) : null}
-                              {cleaningFeatureOptions.map((name) => (
-                                <option key={name} value={name}>
-                                  {name}
-                                </option>
-                              ))}
-                            </select>
-                          </div>
-                          <textarea
-                            value={rrow.sql}
-                            onChange={(e) =>
-                              setVmRows((p) =>
-                                p.map((r) => (r.id === rrow.id ? { ...r, sql: e.target.value } : r))
-                              )
-                            }
-                            rows={3}
-                            placeholder="SQL / CASE WHEN …"
-                            className="w-full text-xs font-mono border border-gray-200 rounded-lg px-2 py-1.5 bg-gray-50 resize-y focus:outline-none focus:border-teal-400"
-                          />
-                        </div>
-                      ))}
-                      {vmRows.length === 0 && (
-                        <p className="text-xs text-gray-400 border border-dashed border-gray-200 rounded-xl py-4 text-center">
-                          No value mappings — optional
-                        </p>
-                      )}
-                    </div>
-                  </div>
-
-                  <div className="mt-4 rounded-xl border border-violet-100 bg-violet-50/30 px-3 py-2 text-[11px] text-violet-900">
-                    Cleaned wide table (reference):{" "}
-                    <span className="font-mono text-violet-800">{cleanedTable}</span>
-                  </div>
-                </>
-              )}
-            </div>
+                <div className="mt-4 rounded-xl border border-violet-100 bg-violet-50/30 px-3 py-2 text-[11px] text-violet-900">
+                  Cleaned wide table (reference):{" "}
+                  <span className="font-mono text-violet-800">{cleanedTable}</span>
+                </div>
+              </div>
+            )}
           </div>
 
-          <div className="px-5 py-3 border-t border-gray-100 flex justify-end gap-2 bg-gray-50/60">
+          <div className="px-5 py-3 border-t border-gray-100 flex justify-end gap-2 bg-gray-50/60 shrink-0">
             <button
               type="button"
               onClick={onClose}
@@ -475,10 +587,15 @@ export function DataCleaningAndReportsModal({
             </button>
             <button
               type="button"
-              onClick={handleSave}
-              className="px-4 py-2 text-sm rounded-xl bg-teal-500 text-white hover:bg-teal-600 shadow-sm"
+              disabled={runDisabled}
+              onClick={handleRunTaskClick}
+              className={`px-4 py-2 text-sm rounded-xl shadow-sm ${
+                runDisabled
+                  ? "bg-gray-200 text-gray-500 cursor-not-allowed"
+                  : "bg-teal-500 text-white hover:bg-teal-600"
+              }`}
             >
-              Save
+              Run Task
             </button>
           </div>
         </div>

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { Database, Download, Search, X } from "lucide-react";
 
 export type ReportRow = {
@@ -79,11 +79,14 @@ export function DataReportTableSection({
   columnCount,
   pageSize = 20,
   tableClassName = "min-h-[160px]",
+  toolbarEnd,
 }: {
   columnCount: number;
   pageSize?: number;
   /** e.g. max-h-[240px] for embedded layouts */
   tableClassName?: string;
+  /** Right side of the search toolbar row (e.g. updated time + download) */
+  toolbarEnd?: ReactNode;
 }) {
   const [q, setQ] = useState("");
   const [page, setPage] = useState(1);
@@ -102,8 +105,8 @@ export function DataReportTableSection({
 
   return (
     <>
-      <div className="px-0 py-3 border-b border-gray-50">
-        <div className="relative max-w-sm">
+      <div className="px-0 py-3 border-b border-gray-50 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
+        <div className="relative max-w-sm flex-1 min-w-0">
           <Search size={13} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
           <input
             value={q}
@@ -115,6 +118,9 @@ export function DataReportTableSection({
             className="w-full pl-9 pr-3 py-2 text-sm border border-gray-200 rounded-xl bg-gray-50 focus:outline-none focus:border-teal-400 focus:bg-white transition-all"
           />
         </div>
+        {toolbarEnd ? (
+          <div className="flex flex-wrap items-center justify-end gap-2 shrink-0">{toolbarEnd}</div>
+        ) : null}
       </div>
 
       <div className={`flex-1 overflow-auto ${tableClassName}`}>
