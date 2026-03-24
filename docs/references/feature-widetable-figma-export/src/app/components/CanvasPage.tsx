@@ -1512,12 +1512,12 @@ export function CanvasPage({
     }
     setShowTriggerModal(true);
   };
-  const handleTrigger = (notes: string, useCache: boolean) => {
+  const handleTrigger = (notes: string) => {
     setShowTriggerModal(false);
     const ts = new Date().toLocaleString("sv-SE").slice(0,16).replace("T"," ");
     const inst: Instance = {
       id: `inst-trigger-${Date.now()}`, status: "RUNNING",
-      notes: notes || (useCache ? "Cache mode." : "Force full rerun."),
+      notes: notes.trim(),
       createTime: ts, startTime: ts, finishTime: "", duration: "", rowsCnt: "", columnsCnt: "",
     };
     setInstances(prev => [inst, ...prev]);
