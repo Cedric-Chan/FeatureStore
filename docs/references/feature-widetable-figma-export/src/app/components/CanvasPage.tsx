@@ -2,14 +2,13 @@ import React, { useState, useRef, useEffect, useCallback, useMemo } from "react"
 import {
   ArrowLeft, Pencil, ChevronDown, History, Zap, Square,
   AlertCircle, X, Database, Layers, Minus, Plus,
-  Maximize2, RotateCcw, GitBranch, Trash2, Search, Eye,
-  Copy, Check, Settings,
+  Maximize2, RotateCcw, GitBranch, Search, Eye,
+  Copy, Check, Settings, Info,
 } from "lucide-react";
 import { WideTableFormValues } from "./AddWideTableModal";
 import { WideTableRow, Instance, InstanceStatus } from "./WideTableList";
 import { WideTableMetaModal } from "./WideTableMetaModal";
 import { TriggerInstanceModal } from "./TriggerInstanceModal";
-import { DataReportModal, parseColumnCount } from "./DataReportModal";
 import type { NodeDef, NodeId } from "@/data/widetableCanvasModel";
 import {
   CANVAS_H,
@@ -17,11 +16,18 @@ import {
   EDGES,
   INITIAL_NODES,
   type DataIngestionConfigSnapshot,
-  type DataCleaningSnapshot,
   type FeatureGroupNodeSnapshot,
   type FrameTableSnapshot,
   type WideTableCanvasSnapshot,
 } from "@/data/widetableCanvasModel";
+import {
+  getSzfinRealtimeSchemaNames,
+  getSzfinRealtimeTablesForSchema,
+} from "@/data/szfinRealtimeHiveTables";
+import { FG_CATALOG, DEFAULT_FG_BY_NODE, JOIN_TYPES } from "@/data/featureGroupCatalog";
+
+const HIVE_ALLOWLIST_HINT =
+  "Only Hive tables on the szfin_realtime project allowlist are listed. Contact DOD if you need access.";
 
 type NodeStatus = "waiting" | "cache_skipped" | "running" | "failed" | "success";
 
@@ -54,15 +60,6 @@ function getMockNodeStatuses(s: InstanceStatus): Record<NodeId, NodeStatus> {
     case "PENDING": return { B: "waiting",      C: "waiting",      D: "waiting",      E: "waiting", F: "waiting" };
     case "KILLED":  return { B: "cache_skipped",C: "failed",       D: "waiting",      E: "waiting", F: "waiting" };
   }
-}
-
-function getMockLogs(id: NodeId, st: NodeStatus): string[] {
-  const t = { B: "14:07", C: "14:14", D: "14:22", E: "14:35", F: "15:04" }[id];
-  if (st === "waiting")       return [`[--:--] ◷ Waiting for upstream nodes...`];
-  if (st === "cache_skipped") return [`[${t}:00] ⚡ Cache hit detected.`, `[${t}:01] ⚡ Skipping recompute, using cached output.`];
-  if (st === "running")       return [`[${t}:00] → Starting computation...`, `[${t}:??] ⟳ Processing… (67%)`];
-  if (st === "failed")        return [`[${t}:00] → Starting...`, `[${t}:09] ✗ OOM during aggregation step.`];
-  return [`[${t}:00] → Starting...`, `[${t}:12] → Processing batch data...`, `[${t}:58] ✓ Completed.`];
 }
 
 // ─── InstanceStatusBadge ──────────────────────────────────────────────────────
@@ -263,152 +260,16 @@ function ReadonlyCopyRow({ label, value }: { label: string; value: string }) {
   );
 }
 
-// ─── Data Ingestion (merged cleaning + ingestion) ────────────────────────────
-const FILLNA_METHODS = ["mean", "median", "constant", "forward_fill"] as const;
-
-function parseFeaturesCsv(csv: string): string[] {
-  return csv.split(",").map((s) => s.trim()).filter(Boolean);
-}
-
-function joinFeaturesCsv(names: string[]): string {
-  return names.join(", ");
-}
-
-function FillnaFeatureNamesMultiSelect({
-  value,
-  options,
-  onChange,
-}: {
-  value: string;
-  options: string[];
-  onChange: (csv: string) => void;
-}) {
-  const selectedSet = useMemo(() => new Set(parseFeaturesCsv(value)), [value]);
-  const [open, setOpen] = useState(false);
-  const [q, setQ] = useState("");
-  const wrapRef = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    if (!open) return;
-    const h = (e: MouseEvent) => {
-      if (wrapRef.current && !wrapRef.current.contains(e.target as Node)) setOpen(false);
-    };
-    document.addEventListener("mousedown", h);
-    return () => document.removeEventListener("mousedown", h);
-  }, [open]);
-
-  const filtered = useMemo(
-    () => options.filter((o) => o.toLowerCase().includes(q.trim().toLowerCase())),
-    [options, q]
-  );
-
-  const toggle = (name: string) => {
-    const next = new Set(selectedSet);
-    if (next.has(name)) next.delete(name);
-    else next.add(name);
-    const sorted = [...next].sort((a, b) => a.localeCompare(b));
-    onChange(joinFeaturesCsv(sorted));
-  };
-
-  const summary =
-    selectedSet.size === 0
-      ? "Select features…"
-      : selectedSet.size <= 2
-        ? joinFeaturesCsv([...selectedSet].sort((a, b) => a.localeCompare(b)))
-        : `${selectedSet.size} features selected`;
-
-  return (
-    <div className="relative" ref={wrapRef}>
-      <button
-        type="button"
-        onClick={() => setOpen((o) => !o)}
-        className="w-full flex items-center justify-between gap-2 text-left text-xs border border-gray-200 rounded-lg px-2 py-1.5 bg-gray-50 focus:outline-none focus:border-teal-400"
-      >
-        <span className={`truncate min-w-0 ${selectedSet.size ? "text-gray-800 font-mono" : "text-gray-400"}`}>
-          {summary}
-        </span>
-        <ChevronDown size={14} className="shrink-0 text-gray-400" />
-      </button>
-      {open && (
-        <div className="absolute left-0 right-0 z-50 mt-1 rounded-xl border border-gray-200 bg-white shadow-lg flex flex-col max-h-56 overflow-hidden">
-          <div className="p-2 border-b border-gray-100 shrink-0">
-            <input
-              value={q}
-              onChange={(e) => setQ(e.target.value)}
-              placeholder="Search features…"
-              className="w-full text-xs border border-gray-200 rounded-lg px-2 py-1.5 bg-gray-50 focus:outline-none focus:border-teal-400"
-            />
-          </div>
-          <div className="overflow-y-auto py-1">
-            {filtered.length === 0 && (
-              <div className="px-3 py-2 text-xs text-gray-400 text-center">No matches</div>
-            )}
-            {filtered.map((name) => {
-              const on = selectedSet.has(name);
-              return (
-                <button
-                  key={name}
-                  type="button"
-                  onClick={() => toggle(name)}
-                  className="w-full flex items-center gap-2 px-2.5 py-1.5 text-left hover:bg-teal-50/80 transition-colors"
-                >
-                  <span
-                    className={`flex h-4 w-4 shrink-0 items-center justify-center rounded border ${
-                      on ? "border-teal-500 bg-teal-500 text-white" : "border-gray-300 bg-white"
-                    }`}
-                  >
-                    {on ? <Check size={10} strokeWidth={3} /> : null}
-                  </span>
-                  <span className="text-xs font-mono text-gray-700 truncate">{name}</span>
-                </button>
-              );
-            })}
-          </div>
-        </div>
-      )}
-    </div>
-  );
-}
-
+// ─── Data Ingestion (read-only paths; cleaning is configured on the list page) ─
 function DataIngestionMergedPanel({
-  isInstanceView: _isInstanceView,
-  nodeStatus,
-  instance,
   onClose,
   ingestionConfig,
-  dataCleaningInitial,
-  emptyLastInstancePlaceholder,
-  cleaningFeatureOptions,
+  dataCleaningEnabled,
 }: {
-  isInstanceView: boolean;
-  nodeStatus?: NodeStatus;
-  instance?: Instance;
   onClose: () => void;
   ingestionConfig?: DataIngestionConfigSnapshot;
-  dataCleaningInitial?: DataCleaningSnapshot;
-  emptyLastInstancePlaceholder?: boolean;
-  cleaningFeatureOptions: string[];
+  dataCleaningEnabled: boolean;
 }) {
-  const [tab, setTab] = useState<"config" | "lastInstance">("config");
-  const [enabled, setEnabled] = useState(() => dataCleaningInitial?.enabled ?? false);
-  const [fillnaRows, setFillnaRows] = useState<{ id: string; method: string; features: string }[]>(() =>
-    dataCleaningInitial?.fillnaRows?.length ? dataCleaningInitial.fillnaRows.map((r) => ({ ...r })) : []
-  );
-  const [vmRows, setVmRows] = useState<{ id: string; feature: string; sql: string }[]>(() =>
-    dataCleaningInitial?.vmRows?.length ? dataCleaningInitial.vmRows.map((r) => ({ ...r })) : []
-  );
-  const [vmFullscreen, setVmFullscreen] = useState<string | null>(null);
-  const [reportOpen, setReportOpen] = useState(false);
-
-  useEffect(() => {
-    if (!vmFullscreen) return;
-    const h = (e: KeyboardEvent) => {
-      if (e.key === "Escape") setVmFullscreen(null);
-    };
-    document.addEventListener("keydown", h);
-    return () => document.removeEventListener("keydown", h);
-  }, [vmFullscreen]);
-
   const rawTable = ingestionConfig?.rawTable ?? "feature_store.dwd_wide_raw_feat_v1";
   const rawS3 =
     ingestionConfig?.rawS3 ?? "s3://data-lake-prod/widetable/reports/ts_demo/20240315/raw_stats.json";
@@ -418,355 +279,40 @@ function DataIngestionMergedPanel({
     ingestionConfig?.cleanedReportPath ??
     "s3://data-lake-prod/widetable/reports/ts_demo/20240315/clean_stats.json";
 
-  const addFillna = () =>
-    setFillnaRows((p) => [...p, { id: `fn-${Date.now()}`, method: "mean", features: "" }]);
-  const addVm = () =>
-    setVmRows((p) => [...p, { id: `vm-${Date.now()}`, feature: "", sql: "" }]);
-
-  const lastRaw = {
-    instanceId: instance?.id ?? "inst_20240315_083012",
-    hiveTable: rawTable,
-    rows: 2_847_392,
-    cols: 42,
-  };
-  const lastClean = {
-    hiveTable: cleanedTable,
-    rows: 2_847_100,
-    cols: 38,
-  };
-  const rawReportColumnCount = instance?.columnsCnt?.trim()
-    ? parseColumnCount(instance.columnsCnt)
-    : lastRaw.cols;
-  const cleanReportColumnCount = instance?.columnsCnt?.trim()
-    ? Math.max(1, parseColumnCount(instance.columnsCnt) - 4)
-    : lastClean.cols;
-  const st = STATUS_STYLES[nodeStatus ?? "success"];
-
   return (
-    <>
-      <div className="w-80 shrink-0 bg-white border-l border-gray-100 flex flex-col h-full overflow-hidden">
-        <div className="px-4 pt-3 pb-0 border-b border-gray-100 bg-amber-50/50">
-          <div className="flex items-start justify-between gap-2 pb-3">
-            <div className="flex items-center gap-2.5 min-w-0">
-              <div className="w-9 h-9 rounded-xl flex items-center justify-center shrink-0 bg-amber-100">
-                <Database size={15} className="text-amber-700" />
-              </div>
-              <div className="min-w-0">
-                <div className="text-sm text-gray-800">Data Ingestion</div>
-                <div className="text-xs text-gray-400">Ingestion · optional cleaning</div>
-              </div>
+    <div className="w-80 shrink-0 bg-white border-l border-gray-100 flex flex-col h-full overflow-hidden">
+      <div className="px-4 pt-3 pb-3 border-b border-gray-100 bg-amber-50/50">
+        <div className="flex items-start justify-between gap-2">
+          <div className="flex items-center gap-2.5 min-w-0">
+            <div className="w-9 h-9 rounded-xl flex items-center justify-center shrink-0 bg-amber-100">
+              <Database size={15} className="text-amber-700" />
             </div>
-            <button type="button" onClick={onClose} className="p-1 text-gray-300 hover:text-gray-500 shrink-0 mt-0.5">
-              <X size={13} />
-            </button>
-          </div>
-          <div className="flex gap-0 -mb-px">
-            {(["config", "lastInstance"] as const).map((t) => (
-              <button
-                key={t}
-                type="button"
-                onClick={() => setTab(t)}
-                className={`px-4 py-2 text-xs border-b-2 transition-colors ${
-                  tab === t ? "border-teal-500 text-teal-600" : "border-transparent text-gray-400 hover:text-gray-600"
-                }`}
-              >
-                {t === "config" ? "Config" : "Last Instance"}
-              </button>
-            ))}
-          </div>
-        </div>
-        <div className="flex-1 overflow-y-auto px-4 py-4 flex flex-col gap-4">
-          {tab === "config" ? (
-            <>
-              <div className="space-y-3">
-                <div className="text-xs font-medium text-gray-500 tracking-wide uppercase">Data Cleaning</div>
-                <div className="flex items-center justify-between rounded-xl border border-gray-200 px-3 py-2.5 bg-gray-50/80">
-                  <span className="text-sm text-gray-700">Enable Data Cleaning</span>
-                  <button
-                    type="button"
-                    role="switch"
-                    aria-checked={enabled}
-                    onClick={() => setEnabled((e) => !e)}
-                    className={`relative w-11 h-6 rounded-full transition-colors ${enabled ? "bg-teal-500" : "bg-gray-200"}`}
-                  >
-                    <span
-                      className={`absolute top-1 left-1 w-4 h-4 rounded-full bg-white shadow transition-transform ${enabled ? "translate-x-5" : ""}`}
-                    />
-                  </button>
-                </div>
-                {enabled && (
-                  <>
-                    <div>
-                      <div className="flex items-center justify-between mb-2">
-                        <span className="text-xs text-gray-500 tracking-wide">Fillna</span>
-                        <button
-                          type="button"
-                          onClick={addFillna}
-                          className="text-xs text-teal-600 hover:text-teal-700 font-medium"
-                        >
-                          + Add row
-                        </button>
-                      </div>
-                      <div className="flex flex-col gap-2">
-                        {fillnaRows.map((row, idx) => (
-                          <div key={row.id} className="rounded-xl border border-gray-200 p-3 space-y-2 bg-white">
-                            <div className="flex items-center justify-between">
-                              <span className="text-xs text-gray-400">#{idx + 1}</span>
-                              <button
-                                type="button"
-                                onClick={() => setFillnaRows((p) => p.filter((r) => r.id !== row.id))}
-                                className="text-gray-300 hover:text-red-400"
-                              >
-                                <Trash2 size={13} />
-                              </button>
-                            </div>
-                            <select
-                              value={row.method}
-                              onChange={(e) =>
-                                setFillnaRows((p) =>
-                                  p.map((r) => (r.id === row.id ? { ...r, method: e.target.value } : r))
-                                )
-                              }
-                              className="w-full text-xs border border-gray-200 rounded-lg px-2 py-1.5 bg-gray-50 focus:outline-none focus:border-teal-400"
-                            >
-                              {FILLNA_METHODS.map((m) => (
-                                <option key={m} value={m}>
-                                  {m}
-                                </option>
-                              ))}
-                            </select>
-                            <div>
-                              <div className="text-[10px] text-gray-400 mb-1">Feature names</div>
-                              <FillnaFeatureNamesMultiSelect
-                                value={row.features}
-                                options={cleaningFeatureOptions}
-                                onChange={(csv) =>
-                                  setFillnaRows((p) =>
-                                    p.map((r) => (r.id === row.id ? { ...r, features: csv } : r))
-                                  )
-                                }
-                              />
-                            </div>
-                          </div>
-                        ))}
-                        {fillnaRows.length === 0 && (
-                          <p className="text-xs text-gray-400 border border-dashed border-gray-200 rounded-xl py-4 text-center">
-                            No Fillna rules — optional
-                          </p>
-                        )}
-                      </div>
-                    </div>
-                    <div>
-                      <div className="flex items-center justify-between mb-2">
-                        <span className="text-xs text-gray-500 tracking-wide">Value Mapping</span>
-                        <button
-                          type="button"
-                          onClick={addVm}
-                          className="text-xs text-teal-600 hover:text-teal-700 font-medium"
-                        >
-                          + Add row
-                        </button>
-                      </div>
-                      <div className="flex flex-col gap-2">
-                        {vmRows.map((row, idx) => (
-                          <div key={row.id} className="rounded-xl border border-gray-200 p-3 space-y-2 bg-white">
-                            <div className="flex items-center justify-between">
-                              <span className="text-xs text-gray-400">#{idx + 1}</span>
-                              <div className="flex items-center gap-1">
-                                <button
-                                  type="button"
-                                  title="Expand SQL"
-                                  onClick={() => setVmFullscreen(row.id)}
-                                  className="p-1 rounded-lg text-gray-400 hover:text-teal-600 hover:bg-teal-50"
-                                >
-                                  <Maximize2 size={13} />
-                                </button>
-                                <button
-                                  type="button"
-                                  onClick={() => setVmRows((p) => p.filter((r) => r.id !== row.id))}
-                                  className="text-gray-300 hover:text-red-400"
-                                >
-                                  <Trash2 size={13} />
-                                </button>
-                              </div>
-                            </div>
-                            <div>
-                              <div className="text-[10px] text-gray-400 mb-1">Feature name</div>
-                              <select
-                                value={row.feature}
-                                onChange={(e) =>
-                                  setVmRows((p) =>
-                                    p.map((r) => (r.id === row.id ? { ...r, feature: e.target.value } : r))
-                                  )
-                                }
-                                className="w-full text-xs border border-gray-200 rounded-lg px-2 py-1.5 font-mono bg-gray-50 focus:outline-none focus:border-teal-400"
-                              >
-                                <option value="">Select feature…</option>
-                                {row.feature.trim() && !cleaningFeatureOptions.includes(row.feature) ? (
-                                  <option value={row.feature}>{row.feature}</option>
-                                ) : null}
-                                {cleaningFeatureOptions.map((name) => (
-                                  <option key={name} value={name}>
-                                    {name}
-                                  </option>
-                                ))}
-                              </select>
-                            </div>
-                            <textarea
-                              value={row.sql}
-                              onChange={(e) =>
-                                setVmRows((p) =>
-                                  p.map((r) => (r.id === row.id ? { ...r, sql: e.target.value } : r))
-                                )
-                              }
-                              rows={3}
-                              placeholder="SQL / CASE WHEN …"
-                              className="w-full text-xs font-mono border border-gray-200 rounded-lg px-2 py-1.5 bg-gray-50 resize-y focus:outline-none focus:border-teal-400"
-                            />
-                          </div>
-                        ))}
-                        {vmRows.length === 0 && (
-                          <p className="text-xs text-gray-400 border border-dashed border-gray-200 rounded-xl py-4 text-center">
-                            No value mappings — optional
-                          </p>
-                        )}
-                      </div>
-                    </div>
-                  </>
-                )}
-              </div>
-
-              <div className="rounded-xl border border-gray-200 bg-slate-100/70 p-3 space-y-3">
-                <p className="text-xs font-medium text-gray-500 tracking-wide">Data Ingestion</p>
-                <ReadonlyCopyRow label="Raw Data Result" value={rawTable} />
-                {enabled && <ReadonlyCopyRow label="Cleaned Data Result" value={cleanedTable} />}
-                <ReadonlyCopyRow label="Data Report path" value={rawS3} />
-                {enabled && <ReadonlyCopyRow label="Cleaned Data Report path" value={cleanedReportPath} />}
-              </div>
-            </>
-          ) : emptyLastInstancePlaceholder && !_isInstanceView ? (
-            <div className="py-12 px-2 text-center text-xs text-gray-400 leading-relaxed">
-              No run history for this WideTable yet. Trigger an instance to see execution results here.
+            <div className="min-w-0">
+              <div className="text-sm text-gray-800">Data Ingestion</div>
+              <div className="text-xs text-gray-400">Wide table ingestion</div>
             </div>
-          ) : (
-            <>
-              <div className="flex items-center justify-between">
-                <span className="text-xs text-gray-500">Status</span>
-                <span
-                  className={`inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs ${st.badge} ${st.badgeText}`}
-                >
-                  <span className={`w-1.5 h-1.5 rounded-full ${st.dot}`} />
-                  {st.label}
-                </span>
-              </div>
-              <div className="flex items-center justify-between gap-2">
-                <span className="text-xs text-gray-500 shrink-0">Instance ID</span>
-                <span className="text-xs text-gray-700 font-mono bg-gray-100 px-2 py-0.5 rounded-lg truncate">
-                  {lastRaw.instanceId}
-                </span>
-              </div>
-              <ReadonlyCopyRow label="Raw Data Hive table" value={lastRaw.hiveTable} />
-              <div className="grid grid-cols-2 gap-2">
-                <div className="rounded-xl border border-gray-100 bg-gray-50 px-3 py-2.5 text-center">
-                  <div className="text-lg font-semibold text-teal-600 tabular-nums">
-                    {lastRaw.rows.toLocaleString()}
-                  </div>
-                  <div className="text-[10px] text-gray-400 uppercase tracking-wide mt-1">Rows</div>
-                </div>
-                <div className="rounded-xl border border-gray-100 bg-gray-50 px-3 py-2.5 text-center">
-                  <div className="text-lg font-semibold text-sky-600 tabular-nums">{lastRaw.cols}</div>
-                  <div className="text-[10px] text-gray-400 uppercase tracking-wide mt-1">Columns</div>
-                </div>
-              </div>
-              {enabled && (
-                <>
-                  <div className="border-t border-gray-100 pt-3 mt-1" />
-                  <ReadonlyCopyRow label="Cleaned Data Hive table" value={lastClean.hiveTable} />
-                  <div className="grid grid-cols-2 gap-2">
-                    <div className="rounded-xl border border-gray-100 bg-gray-50 px-3 py-2.5 text-center">
-                      <div className="text-lg font-semibold text-violet-600 tabular-nums">
-                        {lastClean.rows.toLocaleString()}
-                      </div>
-                      <div className="text-[10px] text-gray-400 uppercase tracking-wide mt-1">Rows</div>
-                    </div>
-                    <div className="rounded-xl border border-gray-100 bg-gray-50 px-3 py-2.5 text-center">
-                      <div className="text-lg font-semibold text-sky-600 tabular-nums">{lastClean.cols}</div>
-                      <div className="text-[10px] text-gray-400 uppercase tracking-wide mt-1">Columns</div>
-                    </div>
-                  </div>
-                </>
-              )}
-              <button
-                type="button"
-                onClick={() => setReportOpen(true)}
-                className="w-full py-2.5 rounded-xl text-sm text-white bg-teal-500 hover:bg-teal-600 shadow-sm shadow-teal-200/80 transition-all"
-              >
-                Data Report
-              </button>
-            </>
-          )}
-        </div>
-        <div className="px-4 py-2 border-t border-gray-50">
-          <span className="text-xs text-gray-400">
-            {tab === "lastInstance"
-              ? "Node · Data Ingestion · Last Instance"
-              : enabled
-                ? "Node · Data Ingestion · Config"
-                : "Data Cleaning off — only raw ingestion paths apply"}
-          </span>
+          </div>
+          <button type="button" onClick={onClose} className="p-1 text-gray-300 hover:text-gray-500 shrink-0 mt-0.5">
+            <X size={13} />
+          </button>
         </div>
       </div>
-      {reportOpen &&
-        (enabled ? (
-          <DataReportModal
-            variant="tabs"
-            rawColumnCount={rawReportColumnCount}
-            cleanColumnCount={cleanReportColumnCount}
-            onClose={() => setReportOpen(false)}
-          />
-        ) : (
-          <DataReportModal
-            variant="single"
-            singleTitle="Raw Data Report"
-            columnCount={rawReportColumnCount}
-            onClose={() => setReportOpen(false)}
-          />
-        ))}
-      {vmFullscreen && (
-        <div
-          className="fixed inset-0 z-[130] flex items-center justify-center p-6 bg-black/50"
-          onClick={() => setVmFullscreen(null)}
-        >
-          <div
-            className="bg-white rounded-2xl w-full max-w-3xl shadow-2xl border border-gray-100 flex flex-col max-h-[85vh]"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div className="px-4 py-3 border-b border-gray-100 flex justify-between items-center">
-              <span className="text-sm font-medium text-gray-800">SQL editor</span>
-              <button type="button" onClick={() => setVmFullscreen(null)} className="p-1 text-gray-400 hover:text-gray-600">
-                <X size={16} />
-              </button>
-            </div>
-            <textarea
-              value={vmRows.find((r) => r.id === vmFullscreen)?.sql ?? ""}
-              onChange={(e) =>
-                setVmRows((p) => p.map((r) => (r.id === vmFullscreen ? { ...r, sql: e.target.value } : r)))
-              }
-              className="flex-1 min-h-[240px] m-4 font-mono text-sm border border-gray-200 rounded-xl p-3 focus:outline-none focus:border-teal-400"
-            />
-            <div className="px-4 py-3 border-t border-gray-100 flex justify-end">
-              <button
-                type="button"
-                onClick={() => setVmFullscreen(null)}
-                className="px-4 py-2 text-sm bg-teal-500 text-white rounded-lg hover:bg-teal-600"
-              >
-                Done
-              </button>
-            </div>
-          </div>
+      <div className="flex-1 overflow-y-auto px-4 py-4 flex flex-col gap-4">
+        <p className="text-[11px] text-gray-400 leading-relaxed">
+          Configure data cleaning from the WideTable list (<span className="text-gray-500">Data Cleaning</span>).
+        </p>
+        <div className="rounded-xl border border-gray-200 bg-slate-100/70 p-3 space-y-3">
+          <p className="text-xs font-medium text-gray-500 tracking-wide">Output paths</p>
+          <ReadonlyCopyRow label="Raw Data Result" value={rawTable} />
+          {dataCleaningEnabled && <ReadonlyCopyRow label="Cleaned Data Result" value={cleanedTable} />}
+          <ReadonlyCopyRow label="Data Report path" value={rawS3} />
+          {dataCleaningEnabled && <ReadonlyCopyRow label="Cleaned Data Report path" value={cleanedReportPath} />}
         </div>
-      )}
-    </>
+      </div>
+      <div className="px-4 py-2 border-t border-gray-50">
+        <span className="text-xs text-gray-400">Node · Data Ingestion config</span>
+      </div>
+    </div>
   );
 }
 
@@ -783,9 +329,11 @@ const FT_COLUMNS = [
 ];
 const COL_TYPE_BADGE: Record<string, string> = {
   BIGINT:    "bg-gray-100 text-gray-500",
+  INT:       "bg-gray-100 text-gray-500",
   TIMESTAMP: "bg-gray-100 text-gray-500",
   STRING:    "bg-gray-100 text-gray-500",
   DOUBLE:    "bg-gray-100 text-gray-500",
+  BOOLEAN:   "bg-gray-100 text-gray-500",
 };
 type ParseState = "idle" | "parsing" | "ready" | "error";
 interface ParsedCol { name: string; type: string; }
@@ -860,19 +408,11 @@ function FieldLabel({ children, required }: { children: React.ReactNode; require
 
 // ─── Frame Table Panel ────────────────────────────────────────────────────────
 function FrameTablePanel({
-  isInstanceView,
-  nodeStatus,
-  instance,
   onClose,
   initialFrame,
-  emptyLastInstancePlaceholder,
 }: {
-  isInstanceView: boolean;
-  nodeStatus?: NodeStatus;
-  instance?: Instance;
   onClose: () => void;
   initialFrame?: FrameTableSnapshot;
-  emptyLastInstancePlaceholder?: boolean;
 }) {
   const [sourceType, setSourceType] = useState<"hive" | "sql">(
     () => initialFrame?.sourceType ?? "hive"
@@ -891,10 +431,25 @@ function FrameTablePanel({
   const [customFilter, setCustomFilter] = useState(() => initialFrame?.customFilter ?? "");
   const [fullscreen, setFullscreen] = useState(false);
   const [entityOpen, setEntityOpen] = useState(false);
-  const [activeTab, setActiveTab] = useState<"config" | "lastInstance">("config");
-  const logs = nodeStatus ? getMockLogs("B", nodeStatus) : [];
+  const [tableOpen, setTableOpen] = useState(false);
+  const [tableQ, setTableQ] = useState("");
 
   const isHive = sourceType === "hive";
+  const hiveTableOptions = useMemo(
+    () => getSzfinRealtimeTablesForSchema(tableSchema.trim()),
+    [tableSchema]
+  );
+  const filteredHiveTables = useMemo(
+    () => hiveTableOptions.filter((t) => t.toLowerCase().includes(tableQ.trim().toLowerCase())),
+    [hiveTableOptions, tableQ]
+  );
+
+  useEffect(() => {
+    const names = getSzfinRealtimeTablesForSchema(tableSchema.trim());
+    if (tableName && names.length > 0 && !names.includes(tableName)) {
+      setTableName("");
+    }
+  }, [tableSchema]); // eslint-disable-line react-hooks/exhaustive-deps -- reset stale table when schema changes
   const serverOpts = ["reg_sg", "reg_us"];
   const filteredCols = parsedCols.filter(c => c.name.toLowerCase().includes(colSearch.toLowerCase()));
   const allSel  = parsedCols.length > 0 && parsedCols.every(c => selectedCols.has(c.name));
@@ -966,30 +521,11 @@ function FrameTablePanel({
     </span>
   );
 
-  // ── Mock last-instance data ──────────────────────────────────────────────────
-  const LAST_INST = {
-    instanceId:       "inst_20240315_083012",
-    status:           "success" as NodeStatus,
-    sourceType:       "Hive",
-    dataServer:       "reg_sg",
-    tableRef:         "feature_store.frame_order_events",
-    sqlSnippet:       "SELECT user_id, event_time, amount FROM feature_store.frame_order_events WHERE ds = '2024-03-14'",
-    rowsLoaded:       2_847_392,
-    colsLoaded:       8,
-    datePartitionCnt: 31,
-    createdAt:        "2024-03-15 08:30:00",
-    startedAt:        "2024-03-15 08:30:12",
-    finishedAt:       "2024-03-15 08:34:37",
-    duration:         "4m 25s",
-    triggerBy:        "cedric.chencan@seamoney.com",
-  };
-
   return (
     <>
       <div className="w-80 shrink-0 bg-white border-l border-gray-100 flex flex-col h-full overflow-hidden">
-        {/* Header */}
-        <div className="px-4 pt-3 pb-0 border-b border-gray-100 bg-teal-50/40">
-          <div className="flex items-start justify-between gap-2 pb-3">
+        <div className="px-4 pt-3 pb-3 border-b border-gray-100 bg-teal-50/40">
+          <div className="flex items-start justify-between gap-2">
             <div className="flex items-center gap-2.5 min-w-0">
               <div className="w-9 h-9 rounded-xl flex items-center justify-center shrink-0 bg-teal-100">
                 <Database size={15} className="text-teal-600" />
@@ -1001,89 +537,9 @@ function FrameTablePanel({
             </div>
             <button onClick={onClose} className="p-1 text-gray-300 hover:text-gray-500 shrink-0 mt-0.5"><X size={13}/></button>
           </div>
-          {/* Tab bar */}
-          <div className="flex gap-0 -mb-px">
-            {(["config","lastInstance"] as const).map(tab => (
-              <button key={tab} onClick={()=>setActiveTab(tab)}
-                className={`px-4 py-2 text-xs border-b-2 transition-colors ${
-                  activeTab===tab
-                    ? "border-teal-500 text-teal-600"
-                    : "border-transparent text-gray-400 hover:text-gray-600"
-                }`}>
-                {tab === "config" ? "Config" : "Last Instance"}
-              </button>
-            ))}
-          </div>
         </div>
 
         <div className="flex-1 overflow-y-auto px-4 py-4 flex flex-col gap-4">
-          {activeTab === "lastInstance" ? (
-            emptyLastInstancePlaceholder && !isInstanceView ? (
-              <div className="py-12 px-2 text-center text-xs text-gray-400 leading-relaxed">
-                No run history for this WideTable yet. Trigger an instance to see execution results here.
-              </div>
-            ) : (
-            <>
-              {/* Status */}
-              <div className="flex items-center justify-between">
-                <span className="text-xs text-gray-500">Status</span>
-                <span className={`inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs ${STATUS_STYLES[LAST_INST.status].badge} ${STATUS_STYLES[LAST_INST.status].badgeText}`}>
-                  <span className={`w-1.5 h-1.5 rounded-full ${STATUS_STYLES[LAST_INST.status].dot}`}/>
-                  {STATUS_STYLES[LAST_INST.status].label}
-                </span>
-              </div>
-
-              {/* Instance ID */}
-              <div className="flex items-center justify-between">
-                <span className="text-xs text-gray-500">Instance ID</span>
-                <span className="text-xs text-gray-700 font-mono bg-gray-100 px-2 py-0.5 rounded-lg">{LAST_INST.instanceId}</span>
-              </div>
-
-              {/* Divider */}
-              <div className="border-t border-gray-100"/>
-
-              {/* Data Source section */}
-              <div className="flex flex-col gap-1">
-                <span className="text-xs text-gray-400 uppercase tracking-wide" style={{fontSize:10}}>Data Source</span>
-                <div className="mt-1.5 rounded-xl border border-gray-100 overflow-hidden">
-                  {[
-                    { label: "Source Type", value: LAST_INST.sourceType },
-                    { label: "Data Server", value: LAST_INST.dataServer },
-                    { label: "Table",       value: LAST_INST.tableRef   },
-                  ].map(({ label, value }) => (
-                    <div key={label} className="flex items-start justify-between gap-3 px-3 py-2 border-b border-gray-50 last:border-0 hover:bg-gray-50/60">
-                      <span className="text-xs text-gray-400 shrink-0">{label}</span>
-                      <span className="text-xs text-gray-700 font-mono text-right break-all">{value}</span>
-                    </div>
-                  ))}
-                </div>
-              </div>
-
-              {/* Statistics */}
-              <div className="flex flex-col gap-1">
-                <span className="text-xs text-gray-400 uppercase tracking-wide" style={{fontSize:10}}>Statistics</span>
-                <div className="mt-1.5 grid grid-cols-3 gap-2">
-                  {[
-                    { label: "Rows Loaded",    value: LAST_INST.rowsLoaded.toLocaleString(), color: "text-teal-600",  bg: "bg-teal-50"  },
-                    { label: "Cols Loaded",    value: String(LAST_INST.colsLoaded),          color: "text-sky-600",   bg: "bg-sky-50"   },
-                    { label: "Date Partitions",value: String(LAST_INST.datePartitionCnt),    color: "text-violet-600",bg: "bg-violet-50"},
-                  ].map(({ label, value, color, bg }) => (
-                    <div key={label} className="flex flex-col items-center gap-1 bg-gray-50 rounded-xl px-2 py-3 border border-gray-100">
-                      <span className={`text-sm ${color} ${bg} rounded-lg px-2 py-0.5`}>{value}</span>
-                      <span className="text-gray-400 text-center leading-tight mt-0.5" style={{fontSize:10}}>{label}</span>
-                    </div>
-                  ))}
-                </div>
-              </div>
-
-              {/* Timeline */}
-              
-
-              {/* Execution Logs */}
-              
-            </>
-            )
-          ) : (
             <>
               {/* 1. Source Type */}
               <div>
@@ -1115,23 +571,89 @@ function FrameTablePanel({
                 </div>
               </div>
 
+              {/* Hive allowlist (szfin_realtime project) */}
+              {isHive && (
+                <div
+                  className="flex items-start gap-2 rounded-xl border border-teal-100 bg-teal-50/50 px-3 py-2"
+                  title={HIVE_ALLOWLIST_HINT}
+                >
+                  <Info size={14} className="text-teal-600 shrink-0 mt-0.5" aria-hidden />
+                  <p className="text-[11px] text-gray-600 leading-relaxed">{HIVE_ALLOWLIST_HINT}</p>
+                </div>
+              )}
+
               {/* 3. Table Schema (Hive only) */}
               {isHive && (
                 <div>
                   <FieldLabel required>Table Schema</FieldLabel>
-                  <input type="text" value={tableSchema} onChange={e=>setTableSchema(e.target.value)}
-                    placeholder="Enter Hive database name"
-                    className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm text-gray-700 bg-gray-50 focus:outline-none focus:border-teal-400 placeholder:text-gray-300"/>
+                  <div className="relative">
+                    <select
+                      value={tableSchema}
+                      onChange={(e) => setTableSchema(e.target.value)}
+                      className="w-full appearance-none border border-gray-200 rounded-xl px-3 py-2 text-sm text-gray-700 bg-gray-50 focus:outline-none focus:border-teal-400 pr-8 font-mono"
+                    >
+                      <option value="">Select schema…</option>
+                      {getSzfinRealtimeSchemaNames().map((s) => (
+                        <option key={s} value={s}>
+                          {s}
+                        </option>
+                      ))}
+                    </select>
+                    <ChevronDown size={13} className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
+                  </div>
                 </div>
               )}
 
-              {/* 4. Table Name (Hive only) */}
+              {/* 4. Table Name (Hive only) — fuzzy combobox */}
               {isHive && (
                 <div>
                   <FieldLabel required>Table Name</FieldLabel>
-                  <input type="text" value={tableName} onChange={e=>setTableName(e.target.value)}
-                    placeholder="Enter Hive table name"
-                    className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm text-gray-700 bg-gray-50 focus:outline-none focus:border-teal-400 placeholder:text-gray-300"/>
+                  <div className="relative">
+                    <input
+                      type="text"
+                      value={tableOpen ? tableQ : tableName}
+                      onChange={(e) => {
+                        setTableQ(e.target.value);
+                        setTableOpen(true);
+                      }}
+                      onFocus={() => {
+                        setTableOpen(true);
+                        setTableQ("");
+                      }}
+                      onBlur={() => setTimeout(() => setTableOpen(false), 160)}
+                      disabled={!tableSchema.trim()}
+                      placeholder={
+                        tableSchema.trim() ? "Search table name…" : "Select a schema first"
+                      }
+                      className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm text-gray-700 bg-gray-50 focus:outline-none focus:border-teal-400 placeholder:text-gray-300 font-mono pr-8 disabled:opacity-50"
+                    />
+                    <ChevronDown size={13} className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
+                    {tableOpen && tableSchema.trim() && (
+                      <div className="absolute left-0 right-0 z-50 mt-1 bg-white border border-gray-200 rounded-xl shadow-xl overflow-hidden max-h-44 overflow-y-auto">
+                        {filteredHiveTables.length === 0 ? (
+                          <div className="py-4 text-center text-xs text-gray-400">No tables matched</div>
+                        ) : (
+                          filteredHiveTables.map((t) => (
+                            <button
+                              key={t}
+                              type="button"
+                              onMouseDown={() => {
+                                setTableName(t);
+                                setTableQ(t);
+                                setTableOpen(false);
+                              }}
+                              className={`w-full text-left px-3 py-2.5 text-xs font-mono border-b border-gray-50 last:border-0 hover:bg-teal-50 transition-colors ${
+                                tableName === t ? "bg-teal-50 text-teal-700" : "text-gray-700"
+                              }`}
+                            >
+                              {t}
+                              {tableName === t && <span className="ml-2 text-teal-400">✓</span>}
+                            </button>
+                          ))
+                        )}
+                      </div>
+                    )}
+                  </div>
                 </div>
               )}
 
@@ -1295,11 +817,10 @@ function FrameTablePanel({
                 </div>
               )}
             </>
-          )}
         </div>
 
         <div className="px-4 py-2 border-t border-gray-50">
-          <span className="text-xs text-gray-400">{activeTab==="lastInstance" ? "Node · Last execution result" : "Node · Click node to select"}</span>
+          <span className="text-xs text-gray-400">Node · Frame Table config</span>
         </div>
       </div>
 
@@ -1345,110 +866,16 @@ function FrameTablePanel({
 }
 
 // ─── Feature Group Panel ───────────────────────────────────────────────────────
-interface FGDef {
-  name: string; dataServer: string; schema: string;
-  table: string; marker: string; filter: string;
-  entityCols: string[]; eventTimeCols: string[]; cols: ParsedCol[];
-}
-const FG_CATALOG: FGDef[] = [
-  {
-    name: "user_profile_features",
-    dataServer: "reg_sg_hive", schema: "feature_store", table: "user_profile_v3",
-    marker: "user_profile_v3", filter: "—",
-    entityCols: ["user_id"],
-    eventTimeCols: ["last_login_days"],
-    cols: [
-      { name: "age",               type: "INT"     },
-      { name: "gender",            type: "STRING"  },
-      { name: "country",           type: "STRING"  },
-      { name: "registration_days", type: "INT"     },
-      { name: "is_verified",       type: "BOOLEAN" },
-      { name: "last_login_days",   type: "INT"     },
-      { name: "account_level",     type: "INT"     },
-    ],
-  },
-  {
-    name: "order_history_features",
-    dataServer: "reg_sg_hive", schema: "feature_store", table: "order_history_v2",
-    marker: "order_history_v2", filter: "ds >= '2024-01-01'",
-    entityCols: ["user_id", "order_id"],
-    eventTimeCols: ["order_time", "ds"],
-    cols: [
-      { name: "total_orders",    type: "INT"       },
-      { name: "total_amount",    type: "DOUBLE"    },
-      { name: "avg_order_value", type: "DOUBLE"    },
-      { name: "last_order_time", type: "TIMESTAMP" },
-      { name: "order_time",      type: "TIMESTAMP" },
-      { name: "category_pref",   type: "STRING"    },
-      { name: "return_rate",     type: "DOUBLE"    },
-      { name: "ds",              type: "STRING"    },
-    ],
-  },
-  {
-    name: "credit_behavior_features",
-    dataServer: "reg_us_hive", schema: "risk_store", table: "credit_behavior_v1",
-    marker: "credit_behavior_v1", filter: "—",
-    entityCols: ["user_id"],
-    eventTimeCols: ["event_time"],
-    cols: [
-      { name: "credit_score",     type: "INT"       },
-      { name: "overdue_cnt",      type: "INT"       },
-      { name: "loan_amount",      type: "DOUBLE"    },
-      { name: "repay_ratio",      type: "DOUBLE"    },
-      { name: "event_time",       type: "TIMESTAMP" },
-      { name: "risk_label",       type: "STRING"    },
-      { name: "delinquency_days", type: "INT"       },
-    ],
-  },
-];
-
-function getCleaningFeatureNameOptions(): string[] {
-  const names = new Set<string>();
-  for (const fg of FG_CATALOG) {
-    for (const c of fg.cols) names.add(c.name);
-    fg.entityCols.forEach((x) => names.add(x));
-    fg.eventTimeCols.forEach((x) => names.add(x));
-  }
-  for (const x of ["user_id", "event_time", "order_id", "item_id", "ds"]) {
-    names.add(x);
-  }
-  return [...names].sort((a, b) => a.localeCompare(b));
-}
-
-const DEFAULT_FG_BY_NODE: Partial<Record<NodeId, string>> = {
-  C: "user_profile_features",
-  D: "order_history_features",
-  E: "credit_behavior_features",
-};
-const JOIN_TYPES = ["Left Latest Join", "Inner Latest Join"];
-const FG_LAST_INST: Partial<Record<NodeId, {
-  instanceId: string; status: NodeStatus; featureGroup: string;
-  selectedCnt: number; datePartitionCnt: number;
-  startedAt: string; finishedAt: string; duration: string;
-}>> = {
-  C: { instanceId: "inst_20240315_083012", status: "success", featureGroup: "user_profile_features",    selectedCnt: 7, datePartitionCnt: 31, startedAt: "2024-03-15 08:30:12", finishedAt: "2024-03-15 08:34:37", duration: "4m 25s" },
-  D: { instanceId: "inst_20240315_083522", status: "success", featureGroup: "order_history_features",   selectedCnt: 6, datePartitionCnt: 31, startedAt: "2024-03-15 08:35:22", finishedAt: "2024-03-15 08:42:11", duration: "6m 49s" },
-  E: { instanceId: "inst_20240315_084318", status: "success", featureGroup: "credit_behavior_features", selectedCnt: 7, datePartitionCnt: 14, startedAt: "2024-03-15 08:43:18", finishedAt: "2024-03-15 08:47:05", duration: "3m 47s" },
-};
-
 function FeatureGroupPanel({
   nodeId,
-  isInstanceView: _iv,
-  nodeStatus,
   onClose,
   initialFg,
-  emptyLastInstancePlaceholder,
 }: {
   nodeId: NodeId;
-  isInstanceView: boolean;
-  nodeStatus?: NodeStatus;
-  instance?: Instance;
   onClose: () => void;
   initialFg?: FeatureGroupNodeSnapshot;
-  emptyLastInstancePlaceholder?: boolean;
 }) {
   const defaultFgName = initialFg?.selectedFg ?? DEFAULT_FG_BY_NODE[nodeId] ?? "";
-  const [activeTab, setActiveTab] = useState<"config" | "lastInstance">("config");
   const [fgSearch, setFgSearch] = useState(defaultFgName);
   const [fgOpen, setFgOpen] = useState(false);
   const [selectedFg, setSelectedFg] = useState(defaultFgName);
@@ -1473,7 +900,6 @@ function FeatureGroupPanel({
   const filteredCols = (fg?.cols ?? []).filter((c) => c.name.toLowerCase().includes(colSearch.toLowerCase()));
   const allSel = fg ? fg.cols.length > 0 && fg.cols.every((c) => selectedCols.has(c.name)) : false;
   const someSel = fg ? fg.cols.some((c) => selectedCols.has(c.name)) : false;
-  const lastInst = FG_LAST_INST[nodeId];
 
   // Auto-parse columns when FG selection changes (clear join mapping only when FG actually changes)
   useEffect(() => {
@@ -1512,9 +938,8 @@ function FeatureGroupPanel({
 
   return (
     <div className="w-80 shrink-0 bg-white border-l border-gray-100 flex flex-col h-full overflow-hidden">
-      {/* Header */}
-      <div className="px-4 pt-3 pb-0 border-b border-gray-100 bg-blue-50/40">
-        <div className="flex items-start justify-between gap-2 pb-3">
+      <div className="px-4 pt-3 pb-3 border-b border-gray-100 bg-blue-50/40">
+        <div className="flex items-start justify-between gap-2">
           <div className="flex items-center gap-2.5 min-w-0">
             <div className="w-9 h-9 rounded-xl flex items-center justify-center shrink-0 bg-blue-100">
               <Layers size={15} className="text-blue-600" />
@@ -1526,81 +951,9 @@ function FeatureGroupPanel({
           </div>
           <button onClick={onClose} className="p-1 text-gray-300 hover:text-gray-500 shrink-0 mt-0.5"><X size={13}/></button>
         </div>
-        {/* Tab bar */}
-        <div className="flex gap-0 -mb-px">
-          {(["config","lastInstance"] as const).map(tab => (
-            <button key={tab} onClick={() => setActiveTab(tab)}
-              className={`px-4 py-2 text-xs border-b-2 transition-colors ${activeTab===tab ? "border-teal-500 text-teal-600" : "border-transparent text-gray-400 hover:text-gray-600"}`}>
-              {tab === "config" ? "Config" : "Last Instance"}
-            </button>
-          ))}
-        </div>
       </div>
 
       <div className="flex-1 overflow-y-auto px-4 py-4 flex flex-col gap-4">
-
-        {/* ── Last Instance tab ── */}
-        {activeTab === "lastInstance" ? (
-          emptyLastInstancePlaceholder && !_iv ? (
-            <div className="py-12 px-2 text-center text-xs text-gray-400 leading-relaxed">
-              No run history for this WideTable yet. Trigger an instance to see execution results here.
-            </div>
-          ) : (
-          <>
-            {lastInst ? (
-              <>
-                {/* Status + Instance ID */}
-                <div className="flex items-center justify-between">
-                  <span className="text-xs text-gray-500">Status</span>
-                  <span className={`inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs ${STATUS_STYLES[lastInst.status].badge} ${STATUS_STYLES[lastInst.status].badgeText}`}>
-                    <span className={`w-1.5 h-1.5 rounded-full ${STATUS_STYLES[lastInst.status].dot}`}/>
-                    {STATUS_STYLES[lastInst.status].label}
-                  </span>
-                </div>
-                <div className="flex items-center justify-between">
-                  <span className="text-xs text-gray-500">Instance ID</span>
-                  <span className="text-xs text-gray-700 font-mono bg-gray-100 px-2 py-0.5 rounded-lg">{lastInst.instanceId}</span>
-                </div>
-
-                <div className="border-t border-gray-100"/>
-
-                {/* FG summary rows */}
-                <div className="flex flex-col gap-1">
-                  <span className="text-xs text-gray-400 uppercase tracking-wide" style={{fontSize:10}}>Feature Group</span>
-                  <div className="mt-1.5 rounded-xl border border-gray-100 overflow-hidden">
-                    {[
-                      { label: "FG Name",          value: lastInst.featureGroup          },
-                      { label: "Features Selected", value: String(lastInst.selectedCnt)   },
-                      { label: "Date Partitions",   value: String(lastInst.datePartitionCnt) },
-                    ].map(({label,value}) => (
-                      <div key={label} className="flex items-start justify-between gap-3 px-3 py-2 border-b border-gray-50 last:border-0 hover:bg-gray-50/60">
-                        <span className="text-xs text-gray-400 shrink-0">{label}</span>
-                        <span className="text-xs text-gray-700 font-mono text-right break-all">{value}</span>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-
-                {/* Stat tiles */}
-                
-
-                {/* Timeline */}
-                
-
-                {/* Execution log */}
-                
-              </>
-            ) : (
-              <div className="flex flex-col items-center justify-center py-12 gap-3 text-center">
-                <Layers size={24} className="text-gray-200"/>
-                <span className="text-xs text-gray-400">No execution data available</span>
-              </div>
-            )}
-          </>
-          )
-
-        ) : (
-          /* ── Config tab ── */
           <>
             {/* 1. FG Name selector */}
             <div>
@@ -1799,11 +1152,10 @@ function FeatureGroupPanel({
               </div>
             </div>
           </>
-        )}
       </div>
 
       <div className="px-4 py-2 border-t border-gray-50">
-        <span className="text-xs text-gray-400">{activeTab === "lastInstance" ? "Node · Last execution result" : "Node · Feature Group config"}</span>
+        <span className="text-xs text-gray-400">Node · Feature Group config</span>
       </div>
     </div>
   );
@@ -1811,66 +1163,34 @@ function FeatureGroupPanel({
 
 function NodeConfigPanel({
   node,
-  isInstanceView,
-  nodeStatus,
-  instance,
   onClose,
   frameTableInitial,
   ingestionConfig,
-  dataCleaningInitial,
+  dataCleaningEnabled,
   featureGroupInitial,
-  emptyLastInstancePlaceholder,
 }: {
   node: NodeDef;
-  isInstanceView: boolean;
-  nodeStatus?: NodeStatus;
-  instance?: Instance;
   onClose: () => void;
   frameTableInitial?: FrameTableSnapshot;
   ingestionConfig?: DataIngestionConfigSnapshot;
-  dataCleaningInitial?: DataCleaningSnapshot;
+  dataCleaningEnabled: boolean;
   featureGroupInitial?: FeatureGroupNodeSnapshot;
-  emptyLastInstancePlaceholder?: boolean;
 }) {
-  const cleaningFeatureOptions = useMemo(() => getCleaningFeatureNameOptions(), []);
-
   if (node.id === "B") {
-    return (
-      <FrameTablePanel
-        isInstanceView={isInstanceView}
-        nodeStatus={nodeStatus}
-        instance={instance}
-        onClose={onClose}
-        initialFrame={frameTableInitial}
-        emptyLastInstancePlaceholder={emptyLastInstancePlaceholder}
-      />
-    );
+    return <FrameTablePanel onClose={onClose} initialFrame={frameTableInitial} />;
   }
   if (node.id === "F") {
     return (
       <DataIngestionMergedPanel
-        isInstanceView={isInstanceView}
-        nodeStatus={nodeStatus}
-        instance={instance}
         onClose={onClose}
         ingestionConfig={ingestionConfig}
-        dataCleaningInitial={dataCleaningInitial}
-        emptyLastInstancePlaceholder={emptyLastInstancePlaceholder}
-        cleaningFeatureOptions={cleaningFeatureOptions}
+        dataCleaningEnabled={dataCleaningEnabled}
       />
     );
   }
   if (node.type === "feature") {
     return (
-      <FeatureGroupPanel
-        nodeId={node.id}
-        isInstanceView={isInstanceView}
-        nodeStatus={nodeStatus}
-        instance={instance}
-        onClose={onClose}
-        initialFg={featureGroupInitial}
-        emptyLastInstancePlaceholder={emptyLastInstancePlaceholder}
-      />
+      <FeatureGroupPanel nodeId={node.id} onClose={onClose} initialFg={featureGroupInitial} />
     );
   }
   return null;
@@ -1993,8 +1313,6 @@ export interface CanvasPageProps {
   initialInstanceId?: string;
   /** Seeded when list Copy → New Canvas */
   canvasSnapshot?: WideTableCanvasSnapshot;
-  /** When true, node drawers show empty Last Instance (no mock run) in Current Config */
-  emptyNodeLastInstance?: boolean;
   onBack: () => void;
 }
 
@@ -2004,7 +1322,6 @@ export function CanvasPage({
   row,
   initialInstanceId,
   canvasSnapshot,
-  emptyNodeLastInstance,
   onBack,
 }: CanvasPageProps) {
   // ── Meta ───────────────────────────────────────────────────────────────────
@@ -2493,25 +1810,19 @@ export function CanvasPage({
         {/* Right panel */}
         {selectedNodeId && (() => {
           const node = nodes.find(n => n.id === selectedNodeId)!;
-          const emptyLast =
-            Boolean(emptyNodeLastInstance && viewMode === "current-config");
           return (
             <NodeConfigPanel
               node={node}
-              isInstanceView={viewMode === "instance-view"}
-              nodeStatus={nodeStatuses?.[selectedNodeId]}
-              instance={selectedInst ?? undefined}
               onClose={() => setSelectedNodeId(null)}
               frameTableInitial={canvasSnapshot?.frameTable}
               ingestionConfig={canvasSnapshot?.dataIngestion}
-              dataCleaningInitial={canvasSnapshot?.dataCleaning}
+              dataCleaningEnabled={Boolean(canvasSnapshot?.dataCleaning?.enabled)}
               featureGroupInitial={
                 node.type === "feature" &&
                 (node.id === "C" || node.id === "D" || node.id === "E")
                   ? canvasSnapshot?.featureGroups?.[node.id]
                   : undefined
               }
-              emptyLastInstancePlaceholder={emptyLast}
             />
           );
         })()}

@@ -224,6 +224,7 @@ function WideTableRowComponent({
   onToggle,
   onEdit,
   onCopy,
+  onDataCleaning,
   onView,
   onReport,
   onTask,
@@ -233,6 +234,7 @@ function WideTableRowComponent({
   onToggle: () => void;
   onEdit?: () => void;
   onCopy?: () => void;
+  onDataCleaning?: () => void;
   onView?: (instanceId: string) => void;
   onReport?: (inst: Instance) => void;
   onTask?: (inst: Instance) => void;
@@ -307,9 +309,10 @@ function WideTableRowComponent({
           className="px-3 py-4 whitespace-nowrap"
           onClick={(e) => e.stopPropagation()}
         >
-          <div className="flex items-center gap-0.5">
+          <div className="flex items-center gap-0.5 flex-wrap">
             <ActionBtn label="Edit" onClick={onEdit} />
             <ActionBtn label="Copy" onClick={onCopy} />
+            <ActionBtn label="Data Cleaning" onClick={onDataCleaning} />
             <ActionBtn label="Delete" variant="danger" />
           </div>
         </td>
@@ -393,6 +396,7 @@ interface WideTableListProps {
   onAdd: () => void;
   onEdit?: (row: WideTableRow) => void;
   onCopy?: (row: WideTableRow) => void;
+  onDataCleaning?: (row: WideTableRow) => void;
   onView?: (row: WideTableRow, instanceId: string) => void;
   onReport?: (row: WideTableRow, inst: Instance) => void;
   onTask?: (row: WideTableRow, inst: Instance) => void;
@@ -405,6 +409,7 @@ export function WideTableList({
   onAdd,
   onEdit,
   onCopy,
+  onDataCleaning,
   onView,
   onReport,
   onTask,
@@ -517,6 +522,7 @@ export function WideTableList({
                 onToggle={() => toggle(row.id)}
                 onEdit={onEdit ? () => onEdit(row) : undefined}
                 onCopy={onCopy ? () => onCopy(row) : undefined}
+                onDataCleaning={onDataCleaning ? () => onDataCleaning(row) : undefined}
                 onView={onView ? (instId) => onView(row, instId) : undefined}
                 onReport={onReport ? (inst) => onReport(row, inst) : undefined}
                 onTask={onTask ? (inst) => onTask(row, inst) : undefined}

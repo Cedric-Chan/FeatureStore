@@ -10,7 +10,6 @@ export function CanvasNewRoute() {
   const st = location.state as {
     formValues?: WideTableFormValues;
     canvasSnapshot?: WideTableCanvasSnapshot;
-    emptyNodeLastInstance?: boolean;
   } | null;
   const formValues = st?.formValues;
   if (!formValues) {
@@ -21,7 +20,6 @@ export function CanvasNewRoute() {
       mode="new"
       formValues={formValues}
       canvasSnapshot={st?.canvasSnapshot}
-      emptyNodeLastInstance={st?.emptyNodeLastInstance}
       onBack={() => navigate("/wt")}
     />
   );

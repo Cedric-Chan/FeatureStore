@@ -1,12 +1,14 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useCallback } from "react";
 import { useNavigate } from "react-router";
 import { RefreshCw, Table2 } from "lucide-react";
 import { FilterBar } from "@/app/components/FilterBar";
 import { WideTableList, WideTableRow, Instance } from "@/app/components/WideTableList";
 import { DataReportModal, parseColumnCount } from "@/app/components/DataReportModal";
+import { DataCleaningAndReportsModal } from "@/app/components/DataCleaningAndReportsModal";
 import { Pagination } from "@/app/components/Pagination";
 import { AddWideTableModal, WideTableFormValues } from "@/app/components/AddWideTableModal";
 import { getCanvasSnapshotByRow, MOCK_WIDE_TABLES } from "@/data/mockWideTables";
+import type { DataCleaningSnapshot } from "@/data/widetableCanvasModel";
 
 const CURRENT_USER = "cedric.chencan@seamoney.com";
 
@@ -25,6 +27,17 @@ export function WideTableListPage() {
   /** When set, Add modal is in Copy-from mode and canvas is seeded from this row's snapshot */
   const [copySourceRow, setCopySourceRow] = useState<WideTableRow | null>(null);
   const [reportInst, setReportInst] = useState<Instance | null>(null);
+  const [cleaningRow, setCleaningRow] = useState<WideTableRow | null>(null);
+  const [cleaningByTableId, setCleaningByTableId] = useState<Record<string, DataCleaningSnapshot>>({});
+
+  const cleaningSnapshotForRow = useCallback(
+    (row: WideTableRow): DataCleaningSnapshot => {
+      const override = cleaningByTableId[row.id];
+      if (override) return { ...override, fillnaRows: override.fillnaRows.map((r) => ({ ...r })), vmRows: override.vmRows.map((r) => ({ ...r })) };
+      return getCanvasSnapshotByRow(row).dataCleaning;
+    },
+    [cleaningByTableId]
+  );
 
   const filtered = useMemo(() => {
     return MOCK_WIDE_TABLES.filter((row) => {
@@ -63,7 +76,6 @@ export function WideTableListPage() {
         state: {
           formValues: values,
           canvasSnapshot: getCanvasSnapshotByRow(fromCopy),
-          emptyNodeLastInstance: true,
         },
       });
     } else {
@@ -129,6 +141,7 @@ export function WideTableListPage() {
             setCopySourceRow(row);
             setShowAddModal(true);
           }}
+          onDataCleaning={(row) => setCleaningRow(row)}
           onView={goCanvasInstance}
           onReport={(_, inst) => setReportInst(inst)}
           onTask={(_, inst) =>
@@ -170,6 +183,22 @@ export function WideTableListPage() {
           rawColumnCount={parseColumnCount(reportInst.columnsCnt)}
           cleanColumnCount={Math.max(1, parseColumnCount(reportInst.columnsCnt) - 4)}
           onClose={() => setReportInst(null)}
+        />
+      )}
+
+      {cleaningRow && (
+        <DataCleaningAndReportsModal
+          key={cleaningRow.id}
+          row={cleaningRow}
+          initialCleaning={cleaningSnapshotForRow(cleaningRow)}
+          ingestionConfig={getCanvasSnapshotByRow(cleaningRow).dataIngestion}
+          onClose={() => setCleaningRow(null)}
+          onSave={(next) =>
+            setCleaningByTableId((prev) => ({
+              ...prev,
+              [cleaningRow.id]: next,
+            }))
+          }
         />
       )}
     </div>

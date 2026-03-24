@@ -16,13 +16,13 @@ export interface NodeDef {
 export const CANVAS_W = 1060;
 export const CANVAS_H = 520;
 
-/** Default DAG — Feature Groups → Data Ingestion (includes optional cleaning config) */
+/** Default DAG — Feature Groups → Data Ingestion */
 export const INITIAL_NODES: NodeDef[] = [
   { id: "B", type: "source", x: 96, y: 224, w: 144, h: 72, title: "Frame Table", subtitle: "Source Table" },
   { id: "C", type: "feature", x: 300, y: 108, w: 185, h: 72, title: "user_profile_features", subtitle: "Feature Group" },
   { id: "D", type: "feature", x: 300, y: 224, w: 185, h: 72, title: "order_history_features", subtitle: "Feature Group" },
   { id: "E", type: "feature", x: 300, y: 340, w: 185, h: 72, title: "credit_behavior_features", subtitle: "Feature Group" },
-  { id: "F", type: "sink", x: 640, y: 224, w: 220, h: 72, title: "Data Ingestion", subtitle: "Ingestion · optional cleaning" },
+  { id: "F", type: "sink", x: 640, y: 224, w: 220, h: 72, title: "Data Ingestion", subtitle: "Wide table ingestion" },
 ];
 
 export const EDGES: [NodeId, NodeId][] = [
@@ -58,7 +58,7 @@ export interface FeatureGroupNodeSnapshot {
   eventTimeJoinCol: string;
 }
 
-/** Data Ingestion node Config tab (read-only mock paths + optional clean outputs) */
+/** Data Ingestion node (read-only mock paths; clean outputs when list-level cleaning is enabled) */
 export interface DataIngestionConfigSnapshot {
   rawTable: string;
   datePart: string;
@@ -144,7 +144,7 @@ export function snapshotRiskWideTable(): WideTableCanvasSnapshot {
       { id: "C", type: "feature", x: 292, y: 100, w: 185, h: 72, title: "user_profile_features", subtitle: "Feature Group" },
       { id: "D", type: "feature", x: 292, y: 220, w: 185, h: 72, title: "order_history_features", subtitle: "Feature Group" },
       { id: "E", type: "feature", x: 292, y: 336, w: 185, h: 72, title: "credit_behavior_features", subtitle: "Feature Group" },
-      { id: "F", type: "sink", x: 632, y: 220, w: 220, h: 72, title: "Data Ingestion", subtitle: "Ingestion · optional cleaning" },
+      { id: "F", type: "sink", x: 632, y: 220, w: 220, h: 72, title: "Data Ingestion", subtitle: "Wide table ingestion" },
     ]),
     frameTable: {
       sourceType: "hive",
