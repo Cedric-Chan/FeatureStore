@@ -372,7 +372,7 @@ export function DataCleaningAndReportsModal({
                         >
                           Cleaning Config
                         </button>
-                        , set Fillna / Value mapping, and click Run Task.
+                        , set Fillna / Value mapping, and click Run Cleaning.
                       </div>
                     )}
                     {reportSubTab === "clean" && cleanHasData && (
@@ -407,7 +407,7 @@ export function DataCleaningAndReportsModal({
                 <div className="rounded-xl border border-gray-200 bg-gray-50/80 px-3 py-2.5 mb-4 grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs">
                   <div>
                     <span className="text-gray-400 block text-[10px] uppercase tracking-wide mb-0.5">
-                      Latest cleaning task ID
+                      Latest background task ID
                     </span>
                     <span className="font-mono text-gray-800">{cleaningTask.taskId || "—"}</span>
                   </div>
@@ -595,7 +595,7 @@ export function DataCleaningAndReportsModal({
                   : "bg-teal-500 text-white hover:bg-teal-600"
               }`}
             >
-              Run Task
+              Run Cleaning
             </button>
           </div>
         </div>
