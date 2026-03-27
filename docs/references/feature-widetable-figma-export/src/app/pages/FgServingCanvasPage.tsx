@@ -367,7 +367,9 @@ export default function FgServingCanvasPage() {
         updateTime: ts,
       };
     });
-    navigate(`/fg/${fgId}`);
+    navigate(`/fg/${fgId}`, {
+      state: { afterServingPublish: true },
+    });
   }
 
   const onUpdateConfig = useCallback(

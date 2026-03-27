@@ -1041,8 +1041,6 @@ function EndPanel({
     patch({ outputs: cfg.outputs.filter((r) => r.id !== id) });
   }
 
-  const hasFeatures = trainingFeatureNames.length > 0;
-
   return (
     <div className="space-y-5">
       <label className="block">
@@ -1073,6 +1071,11 @@ function EndPanel({
             </button>
           )}
         </div>
+        <p className="text-[11px] text-gray-500 mb-2 leading-relaxed">
+          Type a feature name or pick from suggestions (Training Config list).
+          Names that match the list count as mapped features on the FG detail
+          card.
+        </p>
         <div className="space-y-3">
           {cfg.outputs.map((row) => (
             <div
@@ -1081,32 +1084,30 @@ function EndPanel({
             >
               <div className="flex flex-col sm:flex-row sm:items-start gap-2">
                 <label className="sr-only" htmlFor={`end-feat-${row.id}`}>
-                  Training feature
+                  Output feature name
                 </label>
-                <select
+                <input
                   id={`end-feat-${row.id}`}
-                  disabled={readOnly || !hasFeatures}
+                  type="text"
+                  list={`end-feat-dl-${row.id}`}
+                  disabled={readOnly}
                   value={row.trainingFeatureName}
                   onChange={(e) =>
                     updateRow(row.id, { trainingFeatureName: e.target.value })
                   }
-                  className="sm:w-[140px] shrink-0 min-h-[44px] px-2 text-xs border border-gray-200 rounded-lg"
-                >
-                  {!hasFeatures ? (
-                    <option value="">
-                      Add features in Training Config
-                    </option>
-                  ) : (
-                    <>
-                      <option value="">Select feature…</option>
-                      {trainingFeatureNames.map((name) => (
-                        <option key={name} value={name}>
-                          {name}
-                        </option>
-                      ))}
-                    </>
-                  )}
-                </select>
+                  placeholder={
+                    trainingFeatureNames.length > 0
+                      ? "Feature name…"
+                      : "Feature name (Training list empty)"
+                  }
+                  autoComplete="off"
+                  className="sm:w-[min(100%,200px)] shrink-0 min-h-[44px] px-2 text-xs border border-gray-200 rounded-lg font-mono"
+                />
+                <datalist id={`end-feat-dl-${row.id}`}>
+                  {trainingFeatureNames.map((name) => (
+                    <option key={name} value={name} />
+                  ))}
+                </datalist>
                 <div className="flex-1 min-w-0 flex items-start gap-1">
                   <UpstreamCascadePicker
                     source={row.source}

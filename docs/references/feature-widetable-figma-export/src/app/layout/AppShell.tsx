@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { NavLink, Outlet } from "react-router";
 import { ChevronsLeft, ChevronsRight } from "lucide-react";
+import { Toaster } from "sonner";
 
 const NAV_ITEMS: { to: string; label: string; end?: boolean }[] = [
   { to: "/fs", label: "Feature Source", end: true },
@@ -82,6 +83,7 @@ export function AppShell() {
         <div className="flex-1 overflow-y-auto min-h-0">
           <Outlet />
         </div>
+        <Toaster position="top-right" richColors closeButton />
       </div>
     </div>
   );

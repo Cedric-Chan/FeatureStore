@@ -1,5 +1,6 @@
-import { useState, useRef, useEffect } from "react";
-import { useParams, useNavigate } from "react-router";
+import { useState, useRef, useEffect, useMemo } from "react";
+import { useParams, useNavigate, useLocation } from "react-router";
+import { toast } from "sonner";
 import {
   ArrowLeft,
   MapPin,
@@ -44,6 +45,13 @@ import {
   MOCK_FG_DIFF_NEW,
   MOCK_FG_DIFF_OLD,
 } from "./FgConfigDiffModal";
+import { FgServingCanvasThumbnail } from "./FgServingCanvasThumbnail";
+import { trainingFeatureNamesFromForm } from "./fgSeed";
+import {
+  cloneFgServingState,
+  computeFgServingPublishedSummary,
+  normalizeFgServingCanvasState,
+} from "@/data/fgServingCanvasModel";
 
 // ─── Status config ────────────────────────────────────────────────────────────
 const STATUS_CONFIG: Record<
@@ -239,6 +247,7 @@ const SYNC_ARIA =
 export default function FeatureGroupDetail() {
   const { fgId } = useParams<{ fgId: string }>();
   const navigate = useNavigate();
+  const location = useLocation();
   const { getFg, updateFg, syncFgMetadata, modules } = useFeatureGroups();
 
   const fg = fgId ? getFg(fgId) : undefined;
@@ -249,7 +258,34 @@ export default function FeatureGroupDetail() {
   const [configDiffOpen, setConfigDiffOpen] = useState(false);
 
   const trainingDone = fg ? isFgTrainingComplete(fg._formData) : false;
-  const servingConfigured = fg ? isFgServingConfigured(fg._formData) : false;
+  const hasServingCanvas = Boolean(fg?.servingCanvasState);
+  const servingConfigured =
+    Boolean(fg && (hasServingCanvas || isFgServingConfigured(fg._formData)));
+
+  const trainingFeatureSet = useMemo(() => {
+    const names = trainingFeatureNamesFromForm(fg?._formData);
+    return new Set(names);
+  }, [fg?._formData]);
+
+  const servingSummary = useMemo(() => {
+    if (!fg?.servingCanvasState) {
+      return computeFgServingPublishedSummary(undefined, trainingFeatureSet);
+    }
+    const normalized = normalizeFgServingCanvasState(
+      cloneFgServingState(fg.servingCanvasState)
+    );
+    return computeFgServingPublishedSummary(normalized, trainingFeatureSet);
+  }, [fg?.servingCanvasState, trainingFeatureSet]);
+
+  useEffect(() => {
+    const st = location.state as { afterServingPublish?: boolean } | null;
+    if (!st?.afterServingPublish || !fgId) return;
+    toast.info(
+      "Serving configuration saved. Open Manage → Online to apply the change and return this Feature Group to Online.",
+      { duration: 10_000 }
+    );
+    navigate(`/fg/${fgId}`, { replace: true, state: {} });
+  }, [location.state, fgId, navigate]);
 
   const featureRows = fg ? buildFeatureRowsFromFg(fg) : [];
   const trainingFeatureCount = featureRows.filter((r) => r.training).length;
@@ -552,15 +588,65 @@ export default function FeatureGroupDetail() {
           >
             {servingConfigured ? (
               <>
-                <FieldRow label="Serving Fts">
-                  <PlainVal>{String(servingFeatureCount)}</PlainVal>
-                </FieldRow>
-                <FieldRow label="Mapped Fts">
-                  <PlainVal>{String(mappedFeatureCount)}</PlainVal>
-                </FieldRow>
-                <FieldRow label="Canvas">
-                  <PlainVal>Open canvas to edit DAG</PlainVal>
-                </FieldRow>
+                {hasServingCanvas ? (
+                  <>
+                    <FieldRow label="Feature Sources">
+                      {servingSummary.featureSourceLines.length > 0 ? (
+                        <div className="text-xs text-gray-800 leading-relaxed break-words min-w-0">
+                          {servingSummary.featureSourceLines.map((line) => (
+                            <div key={line}>{line}</div>
+                          ))}
+                        </div>
+                      ) : (
+                        <span className="text-gray-400 text-xs">—</span>
+                      )}
+                    </FieldRow>
+                    <FieldRow label="Serving Fts">
+                      <PlainVal>{String(servingSummary.servingFts)}</PlainVal>
+                    </FieldRow>
+                    <FieldRow label="Mapped Fts">
+                      <PlainVal>{String(servingSummary.mappedFts)}</PlainVal>
+                    </FieldRow>
+                    <FieldRow label="Custom Fts">
+                      <PlainVal>{String(servingSummary.extraFts)}</PlainVal>
+                    </FieldRow>
+                    <FieldRow label="Canvas">
+                      <div className="flex flex-col gap-2 min-w-0">
+                        <FgServingCanvasThumbnail
+                          state={normalizeFgServingCanvasState(
+                            cloneFgServingState(fg.servingCanvasState!)
+                          )}
+                          width={220}
+                          className="max-w-full"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => navigate(`/fg/${fg.id}/serving`)}
+                          disabled={fg.status === "Online Changing"}
+                          className={`text-left text-xs font-medium w-fit ${
+                            fg.status === "Online Changing"
+                              ? "text-gray-300 cursor-not-allowed"
+                              : "text-teal-600 hover:text-teal-700"
+                          }`}
+                        >
+                          Open canvas to edit DAG
+                        </button>
+                      </div>
+                    </FieldRow>
+                  </>
+                ) : (
+                  <>
+                    <FieldRow label="Serving Fts">
+                      <PlainVal>{String(servingFeatureCount)}</PlainVal>
+                    </FieldRow>
+                    <FieldRow label="Mapped Fts">
+                      <PlainVal>{String(mappedFeatureCount)}</PlainVal>
+                    </FieldRow>
+                    <FieldRow label="Canvas">
+                      <PlainVal>Open canvas to edit DAG</PlainVal>
+                    </FieldRow>
+                  </>
+                )}
               </>
             ) : (
               <div className="flex flex-col items-center justify-center min-h-[160px] py-6 px-2">

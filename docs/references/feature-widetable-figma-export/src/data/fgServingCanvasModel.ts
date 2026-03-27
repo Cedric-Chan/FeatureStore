@@ -5,6 +5,73 @@ import {
   type FgServingFieldType,
 } from "./fgServingCatalog";
 
+/** Summary for Feature Group detail Serving Config card (published canvas). */
+export interface FgServingPublishedSummary {
+  /** One line per Feature Source node (B, C, D) on the canvas. */
+  featureSourceLines: string[];
+  /** END node output row count. */
+  servingFts: number;
+  /** END rows whose feature name matches Training Config feature list. */
+  mappedFts: number;
+  /** servingFts − mappedFts (includes unnamed rows). */
+  extraFts: number;
+}
+
+const FS_NODE_IDS = ["B", "C", "D"] as const;
+
+/**
+ * Lists registered Feature Source display names for nodes B/C/D from canvas config.
+ */
+export function listServingFeatureSourceDependencyLines(
+  state: FgServingCanvasState | undefined
+): string[] {
+  if (!state) return [];
+  const lines: string[] = [];
+  for (const nid of FS_NODE_IDS) {
+    const cfg = state.configs[nid];
+    if (cfg?.kind !== "feature_source") continue;
+    const id = cfg.asset.selectedCatalogId;
+    const ent = getFeatureSourceById(id);
+    lines.push(ent ? ent.label : id);
+  }
+  return lines;
+}
+
+/**
+ * END node output counts: total rows vs names present in the training feature set.
+ */
+export function computeFgServingPublishedSummary(
+  state: FgServingCanvasState | undefined,
+  trainingFeatureNameSet: Set<string>
+): FgServingPublishedSummary {
+  const featureSourceLines = listServingFeatureSourceDependencyLines(state);
+  if (!state) {
+    return {
+      featureSourceLines,
+      servingFts: 0,
+      mappedFts: 0,
+      extraFts: 0,
+    };
+  }
+  const j = state.configs.J;
+  if (!j || j.kind !== "end") {
+    return {
+      featureSourceLines,
+      servingFts: 0,
+      mappedFts: 0,
+      extraFts: 0,
+    };
+  }
+  const servingFts = j.outputs.length;
+  let mappedFts = 0;
+  for (const row of j.outputs) {
+    const n = row.trainingFeatureName.trim();
+    if (n && trainingFeatureNameSet.has(n)) mappedFts += 1;
+  }
+  const extraFts = servingFts - mappedFts;
+  return { featureSourceLines, servingFts, mappedFts, extraFts };
+}
+
 export type FgServingNodeId =
   | "A"
   | "B"
