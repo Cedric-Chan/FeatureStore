@@ -43,6 +43,22 @@ export interface FeatureGroup {
   _savedStep?: number;
 }
 
+/** Training Config feature names for End node dropdown (compute + offline mapping keys). */
+export function trainingFeatureNamesFromForm(
+  form?: Partial<FGFormData>
+): string[] {
+  const names = new Set<string>();
+  for (const row of form?.computeFeatures ?? []) {
+    const n = row.name?.trim();
+    if (n) names.add(n);
+  }
+  for (const key of Object.keys(form?.featureMapping ?? {})) {
+    const k = key.trim();
+    if (k) names.add(k);
+  }
+  return [...names].sort((a, b) => a.localeCompare(b));
+}
+
 export const INITIAL_FG_LIST_SEED: FeatureGroup[] = [
   {
     id: "1",

@@ -18,12 +18,16 @@ import { FgServingConfigPanel } from "@/app/components/feature-group/FgServingCo
 import { FgServingMinimap } from "@/app/components/feature-group/FgServingMinimap";
 import { FgServingNodeCard } from "@/app/components/feature-group/FgServingNodeCard";
 import { FgServingTestRunDrawer } from "@/app/components/feature-group/FgServingTestRunDrawer";
-import type { FgServingPublishRecord } from "@/app/components/feature-group/fgSeed";
+import {
+  trainingFeatureNamesFromForm,
+  type FgServingPublishRecord,
+} from "@/app/components/feature-group/fgSeed";
 import {
   cloneFgServingState,
   createInitialFgServingState,
   FG_SERVING_CANVAS_H,
   FG_SERVING_CANVAS_W,
+  normalizeFgServingCanvasState,
   resolveServingNodeConfig,
   type FgServingCanvasState,
   type FgServingNodeConfig,
@@ -48,7 +52,9 @@ function resolveHistoryState(
   rec: FgServingPublishRecord,
   entitiesColumns: string[]
 ): FgServingCanvasState {
-  if (rec.state) return cloneFgServingState(rec.state);
+  if (rec.state) {
+    return normalizeFgServingCanvasState(cloneFgServingState(rec.state));
+  }
   if (rec.nodes && isLegacyWideTableNodes(rec.nodes)) {
     return createInitialFgServingState(entitiesColumns);
   }
@@ -107,10 +113,26 @@ export default function FgServingCanvasPage() {
 
   const entitiesKey = (fg?._formData?.entitiesColumns ?? []).join("\0");
 
+  const trainingFeaturesKey = useMemo(() => {
+    const cf = fg?._formData?.computeFeatures ?? [];
+    const fm = fg?._formData?.featureMapping ?? {};
+    return JSON.stringify({
+      cf: cf.map((c) => c.name),
+      fmKeys: Object.keys(fm).sort(),
+    });
+  }, [fg?._formData?.computeFeatures, fg?._formData?.featureMapping]);
+
+  const trainingFeatureNames = useMemo(
+    () => trainingFeatureNamesFromForm(fg?._formData),
+    [trainingFeaturesKey, fg?._formData]
+  );
+
   useEffect(() => {
     if (!fg || !fgId) return;
     if (fg.servingCanvasState) {
-      setCanvasState(cloneFgServingState(fg.servingCanvasState));
+      setCanvasState(
+        normalizeFgServingCanvasState(cloneFgServingState(fg.servingCanvasState))
+      );
     } else if (fg.servingCanvasNodes && isLegacyWideTableNodes(fg.servingCanvasNodes)) {
       setCanvasState(
         createInitialFgServingState(fg._formData?.entitiesColumns ?? [])
@@ -591,6 +613,7 @@ export default function FgServingCanvasPage() {
         config={selectedConfig}
         canvasState={readOnly ? displayState : canvasState}
         readOnly={readOnly}
+        trainingFeatureNames={trainingFeatureNames}
         onClose={() => setSelectedNodeId(null)}
         onUpdateConfig={onUpdateConfig}
       />

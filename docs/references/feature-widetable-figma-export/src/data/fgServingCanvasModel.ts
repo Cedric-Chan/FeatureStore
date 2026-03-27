@@ -191,12 +191,50 @@ export interface MappedAssetNodeConfig {
   outputFields: OutputFieldSelection[];
 }
 
+export interface CodeBlockInputRow {
+  id: string;
+  localName: string;
+  source: SourceRef | null;
+}
+
+export interface CodeBlockOutputRow {
+  id: string;
+  name: string;
+  type: FgServingFieldType;
+}
+
+export interface EndOutputRow {
+  id: string;
+  trainingFeatureName: string;
+  source: SourceRef | null;
+}
+
+export const FG_DEFAULT_PYTHON_CODE = `def merge(data):
+    return {
+        "output": {
+            "epf_date": data.get("epf_date") if data.get("epf_date") != "" else None,
+            "qc_flag": data.get("qc_flag") if data.get("epf_date") != "" else 1,
+            "qc_score": data.get("qc_score"),
+        }
+    }`;
+
 export type FgServingNodeConfig =
   | { kind: "start"; inputFields: StartInputFieldRow[] }
   | { kind: "feature_source"; asset: MappedAssetNodeConfig }
   | { kind: "transformation"; asset: MappedAssetNodeConfig }
-  | { kind: "compute"; skeleton: true }
-  | { kind: "end"; skeleton: true };
+  | {
+      kind: "compute";
+      description: string;
+      language: "python3";
+      inputs: CodeBlockInputRow[];
+      code: string;
+      outputs: CodeBlockOutputRow[];
+    }
+  | {
+      kind: "end";
+      description: string;
+      outputs: EndOutputRow[];
+    };
 
 export interface FgServingCanvasState {
   nodes: FgServingNodeDef[];
@@ -208,6 +246,63 @@ export type { FgServingFieldType };
 
 function newRowId(): string {
   return `r-${Math.random().toString(36).slice(2, 10)}`;
+}
+
+export function defaultComputeNodeConfig(): Extract<
+  FgServingNodeConfig,
+  { kind: "compute" }
+> {
+  return {
+    kind: "compute",
+    description: "",
+    language: "python3",
+    inputs: [{ id: newRowId(), localName: "epf_date", source: null }],
+    code: FG_DEFAULT_PYTHON_CODE,
+    outputs: [{ id: newRowId(), name: "output", type: "map" }],
+  };
+}
+
+export function defaultEndNodeConfig(): Extract<FgServingNodeConfig, { kind: "end" }> {
+  return {
+    kind: "end",
+    description: "",
+    outputs: [{ id: newRowId(), trainingFeatureName: "", source: null }],
+  };
+}
+
+function isLegacyComputeSkeleton(c: unknown): boolean {
+  return (
+    typeof c === "object" &&
+    c !== null &&
+    (c as { kind?: string }).kind === "compute" &&
+    (c as { skeleton?: boolean }).skeleton === true
+  );
+}
+
+function isLegacyEndSkeleton(c: unknown): boolean {
+  return (
+    typeof c === "object" &&
+    c !== null &&
+    (c as { kind?: string }).kind === "end" &&
+    (c as { skeleton?: boolean }).skeleton === true
+  );
+}
+
+/** Normalize configs loaded from older snapshots (skeleton compute/end). */
+export function normalizeFgServingCanvasState(
+  state: FgServingCanvasState
+): FgServingCanvasState {
+  const configs = { ...state.configs };
+  for (const n of state.nodes) {
+    const c = configs[n.id];
+    if (n.kind === "compute" && isLegacyComputeSkeleton(c)) {
+      configs[n.id] = defaultComputeNodeConfig();
+    }
+    if (n.kind === "end" && isLegacyEndSkeleton(c)) {
+      configs[n.id] = defaultEndNodeConfig();
+    }
+  }
+  return { ...state, configs };
 }
 
 export function buildMappedConfigFromCatalog(
@@ -253,9 +348,9 @@ function buildDefaultConfigs(
 ): Partial<Record<FgServingNodeId, FgServingNodeConfig>> {
   const configs: Partial<Record<FgServingNodeId, FgServingNodeConfig>> = {
     A: { kind: "start", inputFields: defaultStartFields(entitiesColumns) },
-    H: { kind: "compute", skeleton: true },
-    I: { kind: "compute", skeleton: true },
-    J: { kind: "end", skeleton: true },
+    H: defaultComputeNodeConfig(),
+    I: defaultComputeNodeConfig(),
+    J: defaultEndNodeConfig(),
   };
   (["B", "C", "D", "E", "F", "G"] as const).forEach((nid) => {
     const def = FG_SERVING_DEFAULT_CATALOG_BY_NODE[nid];
@@ -309,7 +404,7 @@ function getMappedAssetOutputs(
     .map((o) => ({ name: o.name, type: o.type }));
 }
 
-const COMPUTE_OUTPUTS: Record<
+const COMPUTE_OUTPUTS_FALLBACK: Record<
   "H" | "I",
   { name: string; type: FgServingFieldType }[]
 > = {
@@ -323,6 +418,19 @@ const COMPUTE_OUTPUTS: Record<
   ],
 };
 
+function getComputeOutputs(
+  cfg: FgServingNodeConfig | undefined,
+  nodeId: FgServingNodeId
+): { name: string; type: FgServingFieldType }[] {
+  if (cfg?.kind === "compute" && Array.isArray(cfg.outputs) && cfg.outputs.length > 0) {
+    return cfg.outputs.map((o) => ({ name: o.name, type: o.type }));
+  }
+  if (nodeId === "H" || nodeId === "I") {
+    return COMPUTE_OUTPUTS_FALLBACK[nodeId];
+  }
+  return [];
+}
+
 export function getOutputsForNode(
   state: FgServingCanvasState,
   nodeId: FgServingNodeId
@@ -334,8 +442,8 @@ export function getOutputsForNode(
   if (node.kind === "feature_source" || node.kind === "transformation") {
     return getMappedAssetOutputs(cfg);
   }
-  if (node.kind === "compute" && (nodeId === "H" || nodeId === "I")) {
-    return COMPUTE_OUTPUTS[nodeId];
+  if (node.kind === "compute") {
+    return getComputeOutputs(cfg, nodeId);
   }
   return [];
 }
@@ -371,13 +479,15 @@ export function resolveServingNodeConfig(
   entitiesColumns: string[]
 ): FgServingNodeConfig {
   const hit = state.configs[node.id];
-  if (hit) return hit;
-  const seed = createInitialFgServingState(entitiesColumns);
-  const fb = seed.configs[node.id];
-  if (!fb) {
-    return node.kind === "compute"
-      ? { kind: "compute", skeleton: true }
-      : { kind: "end", skeleton: true };
+  if (hit) {
+    if (node.kind === "compute" && isLegacyComputeSkeleton(hit)) {
+      return defaultComputeNodeConfig();
+    }
+    if (node.kind === "end" && isLegacyEndSkeleton(hit)) {
+      return defaultEndNodeConfig();
+    }
+    return hit;
   }
-  return fb;
+  const seed = createInitialFgServingState(entitiesColumns);
+  return seed.configs[node.id]!;
 }

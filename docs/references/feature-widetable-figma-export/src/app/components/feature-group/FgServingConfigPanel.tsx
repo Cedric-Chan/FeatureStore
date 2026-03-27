@@ -1,7 +1,11 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ChevronRight,
+  Code2,
+  Copy,
   Info,
+  Maximize2,
+  Plus,
   Trash2,
   X,
 } from "lucide-react";
@@ -17,6 +21,9 @@ import {
   cloneFgServingState,
   countMappedInputs,
   listUpstreamOutputGroups,
+  type CodeBlockInputRow,
+  type CodeBlockOutputRow,
+  type EndOutputRow,
   type FgServingCanvasState,
   type FgServingNodeConfig,
   type FgServingNodeDef,
@@ -29,8 +36,12 @@ import {
 
 const FIELD_TYPES: FgServingFieldType[] = ["string", "int", "bool", "map"];
 
-function formatSourceLabel(ref: SourceRef | null, nodeTitleById: Map<string, string>): string {
-  if (!ref) return "Select source…";
+function formatSourceLabel(
+  ref: SourceRef | null,
+  nodeTitleById: Map<string, string>,
+  emptyLabel: string
+): string {
+  if (!ref) return emptyLabel;
   if (ref.kind === "fixed") {
     return ref.value === "" ? "FixedValue" : `FixedValue: ${ref.value}`;
   }
@@ -69,25 +80,34 @@ function autofillMappings(
   });
 }
 
-function SourceCascadePicker({
-  param,
+function UpstreamCascadePicker({
+  source,
   groups,
   nodeTitleById,
   disabled,
   onPick,
   onClear,
+  fixedFieldLabel,
+  fixedValueMode,
+  textPlaceholder = "Enter value",
+  emptyLabel = "Select source…",
 }: {
-  param: InputFieldMapping;
+  source: SourceRef | null;
   groups: ReturnType<typeof listUpstreamOutputGroups>;
   nodeTitleById: Map<string, string>;
   disabled: boolean;
   onPick: (ref: SourceRef) => void;
   onClear: () => void;
+  fixedFieldLabel: string;
+  fixedValueMode: "bool" | "text";
+  textPlaceholder?: string;
+  emptyLabel?: string;
 }) {
   const [open, setOpen] = useState(false);
   const [step, setStep] = useState<"root" | "fields" | "fixed">("root");
   const [pickedNode, setPickedNode] = useState<FgServingNodeId | null>(null);
   const rootRef = useRef<HTMLDivElement>(null);
+  const fixedInputId = `fixed-val-${fixedFieldLabel.replace(/\W/g, "_")}`;
 
   useEffect(() => {
     if (!open) return;
@@ -120,9 +140,9 @@ function SourceCascadePicker({
             hover:border-gray-300 focus:outline-none focus:ring-2 focus:ring-teal-400 focus:ring-offset-1
             disabled:opacity-50 disabled:cursor-not-allowed"
         >
-          {formatSourceLabel(param.source, nodeTitleById)}
+          {formatSourceLabel(source, nodeTitleById, emptyLabel)}
         </button>
-        {param.source !== null && !disabled && (
+        {source !== null && !disabled && (
           <button
             type="button"
             aria-label="Clear mapping"
@@ -214,8 +234,10 @@ function SourceCascadePicker({
               >
                 ← Back
               </button>
-              <p className="text-[11px] text-gray-500 mb-2">Constant value for {param.paramName}</p>
-              {param.paramType === "bool" ? (
+              <p className="text-[11px] text-gray-500 mb-2">
+                Constant value for {fixedFieldLabel}
+              </p>
+              {fixedValueMode === "bool" ? (
                 <select
                   className="w-full min-h-[44px] px-2 text-xs border border-gray-200 rounded-lg"
                   defaultValue=""
@@ -236,20 +258,16 @@ function SourceCascadePicker({
                 <>
                   <input
                     type="text"
-                    className="w-full min-h-[44px] px-2 text-xs border border-gray-200 rounded-lg"
-                    placeholder={
-                      param.paramType === "int"
-                        ? 'Integer or "null"'
-                        : "Enter value"
-                    }
-                    id={`fixed-${param.paramName}`}
+                    className="w-full min-h-[44px] px-2 text-xs border border-gray-200 rounded-lg font-mono"
+                    placeholder={textPlaceholder}
+                    id={fixedInputId}
                   />
                   <button
                     type="button"
                     className="mt-2 w-full min-h-[44px] text-xs font-medium bg-teal-500 text-white rounded-lg hover:bg-teal-600"
                     onClick={() => {
                       const el = document.getElementById(
-                        `fixed-${param.paramName}`
+                        fixedInputId
                       ) as HTMLInputElement | null;
                       onPick({ kind: "fixed", value: el?.value ?? "" });
                       setOpen(false);
@@ -268,6 +286,40 @@ function SourceCascadePicker({
   );
 }
 
+function SourceCascadePicker({
+  param,
+  groups,
+  nodeTitleById,
+  disabled,
+  onPick,
+  onClear,
+}: {
+  param: InputFieldMapping;
+  groups: ReturnType<typeof listUpstreamOutputGroups>;
+  nodeTitleById: Map<string, string>;
+  disabled: boolean;
+  onPick: (ref: SourceRef) => void;
+  onClear: () => void;
+}) {
+  const fixedValueMode = param.paramType === "bool" ? "bool" : "text";
+  const textPlaceholder =
+    param.paramType === "int" ? 'Integer or "null"' : "Enter value";
+  return (
+    <UpstreamCascadePicker
+      source={param.source}
+      groups={groups}
+      nodeTitleById={nodeTitleById}
+      disabled={disabled}
+      onPick={onPick}
+      onClear={onClear}
+      fixedFieldLabel={param.paramName}
+      fixedValueMode={fixedValueMode}
+      textPlaceholder={textPlaceholder}
+      emptyLabel="Select source…"
+    />
+  );
+}
+
 function StartPanel({
   cfg,
   readOnly,
@@ -282,7 +334,11 @@ function StartPanel({
       ...cfg,
       inputFields: [
         ...cfg.inputFields,
-        { id: `r-${Math.random().toString(36).slice(2, 10)}`, name: "", dataType: "string" },
+        {
+          id: `r-${Math.random().toString(36).slice(2, 10)}`,
+          name: "",
+          dataType: "string",
+        },
       ],
     });
   }
@@ -328,7 +384,9 @@ function StartPanel({
               disabled={readOnly}
               value={row.dataType}
               onChange={(e) =>
-                updateRow(row.id, { dataType: e.target.value as FgServingFieldType })
+                updateRow(row.id, {
+                  dataType: e.target.value as FgServingFieldType,
+                })
               }
               className="w-[100px] min-h-[44px] px-1 text-xs border border-gray-200 rounded-lg shrink-0"
             >
@@ -610,16 +668,476 @@ function MappedAssetPanel({
   );
 }
 
-function SkeletonPanel({ title }: { title: string }) {
+function CodeBlockPanel({
+  nodeId,
+  cfg,
+  canvasState,
+  readOnly,
+  onChange,
+  expandOpen,
+  onExpandOpenChange,
+}: {
+  nodeId: FgServingNodeId;
+  cfg: Extract<FgServingNodeConfig, { kind: "compute" }>;
+  canvasState: FgServingCanvasState;
+  readOnly: boolean;
+  onChange: (next: Extract<FgServingNodeConfig, { kind: "compute" }>) => void;
+  expandOpen: boolean;
+  onExpandOpenChange: (open: boolean) => void;
+}) {
+  const nodeTitleById = useMemo(() => {
+    const m = new Map<string, string>();
+    canvasState.nodes.forEach((n) => m.set(n.id, n.title));
+    return m;
+  }, [canvasState.nodes]);
+
+  const upstreamGroups = useMemo(
+    () => listUpstreamOutputGroups(canvasState, nodeId),
+    [canvasState, nodeId]
+  );
+
+  const [copyDone, setCopyDone] = useState(false);
+
+  function patch(p: Partial<typeof cfg>) {
+    onChange({ ...cfg, ...p });
+  }
+
+  function addInput() {
+    patch({
+      inputs: [
+        ...cfg.inputs,
+        {
+          id: `r-${Math.random().toString(36).slice(2, 10)}`,
+          localName: "",
+          source: null,
+        },
+      ],
+    });
+  }
+
+  function updateInput(id: string, patchRow: Partial<CodeBlockInputRow>) {
+    patch({
+      inputs: cfg.inputs.map((r) => (r.id === id ? { ...r, ...patchRow } : r)),
+    });
+  }
+
+  function removeInput(id: string) {
+    if (cfg.inputs.length <= 1) return;
+    patch({ inputs: cfg.inputs.filter((r) => r.id !== id) });
+  }
+
+  function addOutput() {
+    patch({
+      outputs: [
+        ...cfg.outputs,
+        {
+          id: `r-${Math.random().toString(36).slice(2, 10)}`,
+          name: "",
+          type: "string",
+        },
+      ],
+    });
+  }
+
+  function updateOutput(id: string, patchRow: Partial<CodeBlockOutputRow>) {
+    patch({
+      outputs: cfg.outputs.map((r) =>
+        r.id === id ? { ...r, ...patchRow } : r
+      ),
+    });
+  }
+
+  function removeOutput(id: string) {
+    if (cfg.outputs.length <= 1) return;
+    patch({ outputs: cfg.outputs.filter((r) => r.id !== id) });
+  }
+
+  async function copyCode() {
+    try {
+      await navigator.clipboard.writeText(cfg.code);
+      setCopyDone(true);
+      window.setTimeout(() => setCopyDone(false), 2000);
+    } catch {
+      setCopyDone(false);
+    }
+  }
+
+  const codeEditor = (
+    <textarea
+      value={cfg.code}
+      disabled={readOnly}
+      onChange={(e) => patch({ code: e.target.value })}
+      spellCheck={false}
+      className="w-full min-h-[200px] px-3 py-2 text-xs font-mono leading-relaxed border-0 bg-transparent resize-y focus:outline-none focus:ring-0 text-slate-800"
+      aria-label="Python code"
+    />
+  );
+
   return (
-    <div className="space-y-4" aria-busy="true">
-      <p className="text-xs text-gray-500">{title}</p>
-      <div className="space-y-2">
-        <div className="h-10 bg-gray-100 rounded-lg animate-pulse" />
-        <div className="h-24 bg-gray-100 rounded-lg animate-pulse" />
-        <div className="h-16 bg-gray-100 rounded-lg animate-pulse" />
-      </div>
-      <p className="text-[11px] text-gray-400">Configuration UI coming soon.</p>
+    <div className="space-y-5">
+      <label className="block">
+        <span className="sr-only">Description</span>
+        <textarea
+          value={cfg.description}
+          disabled={readOnly}
+          onChange={(e) => patch({ description: e.target.value })}
+          placeholder="Add description…"
+          rows={2}
+          className="w-full min-h-[52px] px-3 py-2 text-xs border border-gray-200 rounded-lg text-gray-700 placeholder:text-gray-400"
+        />
+      </label>
+
+      <section>
+        <div className="flex items-center justify-between mb-2">
+          <h3 className="text-xs font-bold text-gray-800 tracking-wide">
+            INPUT Fields
+          </h3>
+          {!readOnly && (
+            <button
+              type="button"
+              aria-label="Add input field"
+              onClick={addInput}
+              className="min-w-[44px] min-h-[44px] flex items-center justify-center rounded-lg text-gray-500 hover:bg-gray-100 hover:text-gray-800"
+            >
+              <Plus size={18} />
+            </button>
+          )}
+        </div>
+        <div className="space-y-3">
+          {cfg.inputs.map((row) => (
+            <div
+              key={row.id}
+              className="flex flex-col sm:flex-row sm:items-start gap-2 p-2 rounded-lg border border-gray-100 bg-gray-50/50"
+            >
+              <label className="sr-only" htmlFor={`cb-in-${row.id}`}>
+                Local variable name
+              </label>
+              <input
+                id={`cb-in-${row.id}`}
+                disabled={readOnly}
+                value={row.localName}
+                onChange={(e) =>
+                  updateInput(row.id, { localName: e.target.value })
+                }
+                placeholder="variable_name"
+                className="sm:w-[120px] shrink-0 min-h-[44px] px-2 text-xs border border-gray-200 rounded-lg font-mono"
+              />
+              <div className="flex-1 min-w-0 flex items-start gap-1">
+                <UpstreamCascadePicker
+                  source={row.source}
+                  groups={upstreamGroups}
+                  nodeTitleById={nodeTitleById}
+                  disabled={readOnly}
+                  onPick={(ref) => updateInput(row.id, { source: ref })}
+                  onClear={() => updateInput(row.id, { source: null })}
+                  fixedFieldLabel={row.localName || "field"}
+                  fixedValueMode="text"
+                  emptyLabel="Select source…"
+                />
+                {!readOnly && (
+                  <button
+                    type="button"
+                    aria-label="Remove input row"
+                    disabled={cfg.inputs.length <= 1}
+                    onClick={() => removeInput(row.id)}
+                    className="shrink-0 min-w-[44px] min-h-[44px] flex items-center justify-center text-gray-400 hover:text-red-600 rounded-lg disabled:opacity-30 disabled:pointer-events-none"
+                  >
+                    <Trash2 size={16} />
+                  </button>
+                )}
+              </div>
+            </div>
+          ))}
+        </div>
+      </section>
+
+      <section className="rounded-xl border border-gray-200 bg-slate-100 overflow-hidden">
+        <div className="flex items-center justify-between px-3 py-2 bg-slate-200/80 border-b border-slate-200">
+          <div className="flex items-center gap-2 text-xs font-semibold text-slate-700">
+            <Code2 size={14} className="text-sky-600" aria-hidden />
+            PYTHON3
+          </div>
+          <div className="flex items-center gap-1">
+            <button
+              type="button"
+              onClick={copyCode}
+              disabled={readOnly}
+              aria-label="Copy code"
+              className="min-w-[44px] min-h-[44px] flex items-center justify-center rounded-lg text-slate-600 hover:bg-white/80 disabled:opacity-40"
+            >
+              <Copy size={16} />
+            </button>
+            <button
+              type="button"
+              onClick={() => onExpandOpenChange(true)}
+              disabled={readOnly}
+              aria-label="Expand editor"
+              className="min-w-[44px] min-h-[44px] flex items-center justify-center rounded-lg text-slate-600 hover:bg-white/80 disabled:opacity-40"
+            >
+              <Maximize2 size={16} />
+            </button>
+          </div>
+        </div>
+        {copyDone && (
+          <p className="px-3 py-1 text-[11px] text-teal-700 bg-teal-50" role="status">
+            Copied to clipboard
+          </p>
+        )}
+        {codeEditor}
+      </section>
+
+      {expandOpen && (
+        <div
+          className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-black/50"
+          role="dialog"
+          aria-modal="true"
+          aria-label="Expanded code editor"
+          onClick={() => onExpandOpenChange(false)}
+        >
+          <div
+            className="bg-white rounded-xl shadow-2xl w-full max-w-4xl max-h-[90vh] flex flex-col border border-gray-200"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between px-4 py-3 border-b border-gray-100">
+              <span className="text-sm font-semibold text-gray-800">PYTHON3</span>
+              <button
+                type="button"
+                aria-label="Close expanded editor"
+                onClick={() => onExpandOpenChange(false)}
+                className="min-w-[44px] min-h-[44px] flex items-center justify-center rounded-lg text-gray-500 hover:bg-gray-100"
+              >
+                <X size={20} />
+              </button>
+            </div>
+            <textarea
+              value={cfg.code}
+              disabled={readOnly}
+              onChange={(e) => patch({ code: e.target.value })}
+              spellCheck={false}
+              className="flex-1 min-h-[min(70vh,520px)] w-full p-4 text-sm font-mono leading-relaxed border-0 focus:outline-none focus:ring-0 resize-none text-slate-800"
+            />
+          </div>
+        </div>
+      )}
+
+      <section>
+        <div className="flex items-center justify-between mb-2">
+          <h3 className="text-xs font-bold text-gray-800 tracking-wide">
+            OUTPUT Fields <span className="text-red-500">*</span>
+          </h3>
+          {!readOnly && (
+            <button
+              type="button"
+              aria-label="Add output field"
+              onClick={addOutput}
+              className="min-w-[44px] min-h-[44px] flex items-center justify-center rounded-lg text-gray-500 hover:bg-gray-100"
+            >
+              <Plus size={18} />
+            </button>
+          )}
+        </div>
+        <div className="space-y-2">
+          {cfg.outputs.map((row) => (
+            <div key={row.id} className="flex items-center gap-2">
+              <label className="sr-only" htmlFor={`cb-out-name-${row.id}`}>
+                Output field name
+              </label>
+              <input
+                id={`cb-out-name-${row.id}`}
+                disabled={readOnly}
+                value={row.name}
+                onChange={(e) => updateOutput(row.id, { name: e.target.value })}
+                placeholder="field_name"
+                className="flex-1 min-w-0 min-h-[44px] px-2 text-xs border border-gray-200 rounded-lg font-mono"
+              />
+              <select
+                disabled={readOnly}
+                value={row.type}
+                onChange={(e) =>
+                  updateOutput(row.id, {
+                    type: e.target.value as FgServingFieldType,
+                  })
+                }
+                className="w-[100px] min-h-[44px] px-1 text-xs border border-gray-200 rounded-lg shrink-0"
+              >
+                {FIELD_TYPES.map((t) => (
+                  <option key={t} value={t}>
+                    {t}
+                  </option>
+                ))}
+              </select>
+              {!readOnly && (
+                <button
+                  type="button"
+                  aria-label="Remove output row"
+                  disabled={cfg.outputs.length <= 1}
+                  onClick={() => removeOutput(row.id)}
+                  className="shrink-0 min-w-[44px] min-h-[44px] flex items-center justify-center text-gray-400 hover:text-red-600 rounded-lg disabled:opacity-30 disabled:pointer-events-none"
+                >
+                  <Trash2 size={16} />
+                </button>
+              )}
+            </div>
+          ))}
+        </div>
+      </section>
+    </div>
+  );
+}
+
+function EndPanel({
+  nodeId,
+  cfg,
+  canvasState,
+  readOnly,
+  trainingFeatureNames,
+  onChange,
+}: {
+  nodeId: FgServingNodeId;
+  cfg: Extract<FgServingNodeConfig, { kind: "end" }>;
+  canvasState: FgServingCanvasState;
+  readOnly: boolean;
+  trainingFeatureNames: string[];
+  onChange: (next: Extract<FgServingNodeConfig, { kind: "end" }>) => void;
+}) {
+  const nodeTitleById = useMemo(() => {
+    const m = new Map<string, string>();
+    canvasState.nodes.forEach((n) => m.set(n.id, n.title));
+    return m;
+  }, [canvasState.nodes]);
+
+  const upstreamGroups = useMemo(
+    () => listUpstreamOutputGroups(canvasState, nodeId),
+    [canvasState, nodeId]
+  );
+
+  function patch(p: Partial<typeof cfg>) {
+    onChange({ ...cfg, ...p });
+  }
+
+  function addRow() {
+    patch({
+      outputs: [
+        ...cfg.outputs,
+        {
+          id: `r-${Math.random().toString(36).slice(2, 10)}`,
+          trainingFeatureName: "",
+          source: null,
+        },
+      ],
+    });
+  }
+
+  function updateRow(id: string, patchRow: Partial<EndOutputRow>) {
+    patch({
+      outputs: cfg.outputs.map((r) =>
+        r.id === id ? { ...r, ...patchRow } : r
+      ),
+    });
+  }
+
+  function removeRow(id: string) {
+    if (cfg.outputs.length <= 1) return;
+    patch({ outputs: cfg.outputs.filter((r) => r.id !== id) });
+  }
+
+  const hasFeatures = trainingFeatureNames.length > 0;
+
+  return (
+    <div className="space-y-5">
+      <label className="block">
+        <span className="sr-only">Description</span>
+        <textarea
+          value={cfg.description}
+          disabled={readOnly}
+          onChange={(e) => patch({ description: e.target.value })}
+          placeholder="Add description…"
+          rows={2}
+          className="w-full min-h-[52px] px-3 py-2 text-xs border border-gray-200 rounded-lg text-gray-700 placeholder:text-gray-400"
+        />
+      </label>
+
+      <section>
+        <div className="flex items-center justify-between mb-2">
+          <h3 className="text-xs font-bold text-gray-800 tracking-wide">
+            OUTPUT VARIABLE
+          </h3>
+          {!readOnly && (
+            <button
+              type="button"
+              aria-label="Add output variable"
+              onClick={addRow}
+              className="min-w-[44px] min-h-[44px] flex items-center justify-center rounded-lg text-gray-500 hover:bg-gray-100"
+            >
+              <Plus size={18} />
+            </button>
+          )}
+        </div>
+        <div className="space-y-3">
+          {cfg.outputs.map((row) => (
+            <div
+              key={row.id}
+              className="flex flex-col gap-2 p-2 rounded-lg border border-gray-100 bg-gray-50/50"
+            >
+              <div className="flex flex-col sm:flex-row sm:items-start gap-2">
+                <label className="sr-only" htmlFor={`end-feat-${row.id}`}>
+                  Training feature
+                </label>
+                <select
+                  id={`end-feat-${row.id}`}
+                  disabled={readOnly || !hasFeatures}
+                  value={row.trainingFeatureName}
+                  onChange={(e) =>
+                    updateRow(row.id, { trainingFeatureName: e.target.value })
+                  }
+                  className="sm:w-[140px] shrink-0 min-h-[44px] px-2 text-xs border border-gray-200 rounded-lg"
+                >
+                  {!hasFeatures ? (
+                    <option value="">
+                      Add features in Training Config
+                    </option>
+                  ) : (
+                    <>
+                      <option value="">Select feature…</option>
+                      {trainingFeatureNames.map((name) => (
+                        <option key={name} value={name}>
+                          {name}
+                        </option>
+                      ))}
+                    </>
+                  )}
+                </select>
+                <div className="flex-1 min-w-0 flex items-start gap-1">
+                  <UpstreamCascadePicker
+                    source={row.source}
+                    groups={upstreamGroups}
+                    nodeTitleById={nodeTitleById}
+                    disabled={readOnly}
+                    onPick={(ref) => updateRow(row.id, { source: ref })}
+                    onClear={() => updateRow(row.id, { source: null })}
+                    fixedFieldLabel={
+                      row.trainingFeatureName || "output"
+                    }
+                    fixedValueMode="text"
+                    emptyLabel="Set variable"
+                  />
+                  {!readOnly && (
+                    <button
+                      type="button"
+                      aria-label="Remove output row"
+                      disabled={cfg.outputs.length <= 1}
+                      onClick={() => removeRow(row.id)}
+                      className="shrink-0 min-w-[44px] min-h-[44px] flex items-center justify-center text-gray-400 hover:text-red-600 rounded-lg disabled:opacity-30 disabled:pointer-events-none"
+                    >
+                      <Trash2 size={16} />
+                    </button>
+                  )}
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+      </section>
     </div>
   );
 }
@@ -630,6 +1148,7 @@ export function FgServingConfigPanel({
   config,
   canvasState,
   readOnly,
+  trainingFeatureNames,
   onClose,
   onUpdateConfig,
 }: {
@@ -638,17 +1157,32 @@ export function FgServingConfigPanel({
   config: FgServingNodeConfig | undefined;
   canvasState: FgServingCanvasState;
   readOnly: boolean;
+  trainingFeatureNames: string[];
   onClose: () => void;
   onUpdateConfig: (nodeId: FgServingNodeId, cfg: FgServingNodeConfig) => void;
 }) {
+  const [codeExpandOpen, setCodeExpandOpen] = useState(false);
+
+  useEffect(() => {
+    if (!open) {
+      setCodeExpandOpen(false);
+    }
+  }, [open, node?.id]);
+
   useEffect(() => {
     if (!open) return;
     function onKey(e: KeyboardEvent) {
-      if (e.key === "Escape") onClose();
+      if (e.key !== "Escape") return;
+      if (codeExpandOpen) {
+        e.stopPropagation();
+        setCodeExpandOpen(false);
+        return;
+      }
+      onClose();
     }
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [open, onClose]);
+  }, [open, onClose, codeExpandOpen]);
 
   const renderBody = useCallback(() => {
     if (!node || !config) return null;
@@ -690,10 +1224,37 @@ export function FgServingConfigPanel({
       );
     }
     if (config.kind === "compute") {
-      return <SkeletonPanel title="Compute code block settings" />;
+      return (
+        <CodeBlockPanel
+          nodeId={node.id}
+          cfg={config}
+          canvasState={canvasState}
+          readOnly={readOnly}
+          expandOpen={codeExpandOpen}
+          onExpandOpenChange={setCodeExpandOpen}
+          onChange={(next) => onUpdateConfig(node.id, next)}
+        />
+      );
     }
-    return <SkeletonPanel title="End node" />;
-  }, [node, config, readOnly, canvasState, onUpdateConfig]);
+    return (
+      <EndPanel
+        nodeId={node.id}
+        cfg={config}
+        canvasState={canvasState}
+        readOnly={readOnly}
+        trainingFeatureNames={trainingFeatureNames}
+        onChange={(next) => onUpdateConfig(node.id, next)}
+      />
+    );
+  }, [
+    node,
+    config,
+    readOnly,
+    canvasState,
+    onUpdateConfig,
+    trainingFeatureNames,
+    codeExpandOpen,
+  ]);
 
   if (!open || !node) return null;
 
