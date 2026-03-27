@@ -539,7 +539,10 @@ export default function FeatureGroupModal({
         </div>
 
         {/* ── Body (scrollable) ───────────────────────────────────────────── */}
-        <div className="flex-1 overflow-y-auto px-8 py-6 min-h-0">
+        <div
+          className="flex-1 overflow-y-auto px-8 py-6 min-h-0"
+          data-fg-modal-scroll
+        >
           {step === 0 && (
             <Step0BasicInfo
               form={form} setField={setField} modules={modules} err={touched}
@@ -996,8 +999,8 @@ function Step1TrainingConfig({
         </FormGroup>
       </div>
 
-      <div className="flex flex-wrap gap-4 items-start">
-        <div className="min-w-0 flex-1 max-w-md">
+      <div className="grid grid-cols-2 gap-4 items-start">
+        <div className="min-w-0">
           <FormGroup
             label="Date Partition"
             required
@@ -1005,7 +1008,7 @@ function Step1TrainingConfig({
             error={err && !form.datePartition.trim() ? "Date Partition is required" : undefined}
           >
             <DatePartitionSelect
-              className="max-w-full"
+              className="w-full max-w-full"
               value={form.datePartition}
               onChange={v => setField("datePartition", v)}
               columns={columns}
@@ -1015,7 +1018,7 @@ function Step1TrainingConfig({
             />
           </FormGroup>
         </div>
-        <div className="w-full sm:w-44 shrink-0">
+        <div className="min-w-0">
           <FormGroup
             label="Partition Type"
             required
