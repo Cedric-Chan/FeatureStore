@@ -1,8 +1,7 @@
 /**
- * Feature Group Serving canvas — fork of WideTable canvas interaction (pan, zoom, node drag).
- * No Edit Meta / Execute Config / Trigger Instance (per FG Serving PRD).
+ * Feature Group Serving canvas — DAG from Training entities + mock FS/Xfm catalogs.
  */
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router";
 import {
   ArrowLeft,
@@ -13,32 +12,47 @@ import {
   Upload,
 } from "lucide-react";
 import { useFeatureGroups } from "@/app/feature-group/FeatureGroupsProvider";
-import {
-  CanvasEdges,
-  Minimap,
-  PipelineNodeCard,
-  ZoomControls,
-  type NodeStatus,
-} from "@/app/components/CanvasPage";
-import type { NodeDef, NodeId } from "@/data/widetableCanvasModel";
-import {
-  CANVAS_H,
-  CANVAS_W,
-  INITIAL_NODES,
-} from "@/data/widetableCanvasModel";
+import { ZoomControls } from "@/app/components/CanvasPage";
+import { FgServingCanvasEdges } from "@/app/components/feature-group/FgServingCanvasEdges";
+import { FgServingConfigPanel } from "@/app/components/feature-group/FgServingConfigPanel";
+import { FgServingMinimap } from "@/app/components/feature-group/FgServingMinimap";
+import { FgServingNodeCard } from "@/app/components/feature-group/FgServingNodeCard";
 import { FgServingTestRunDrawer } from "@/app/components/feature-group/FgServingTestRunDrawer";
 import type { FgServingPublishRecord } from "@/app/components/feature-group/fgSeed";
+import {
+  cloneFgServingState,
+  createInitialFgServingState,
+  FG_SERVING_CANVAS_H,
+  FG_SERVING_CANVAS_W,
+  resolveServingNodeConfig,
+  type FgServingCanvasState,
+  type FgServingNodeConfig,
+  type FgServingNodeDef,
+  type FgServingNodeId,
+} from "@/data/fgServingCanvasModel";
 
-const HISTORY_NODE_STATUS: Record<NodeId, NodeStatus> = {
-  B: "success",
-  C: "success",
-  D: "success",
-  E: "success",
-  F: "success",
-};
+function isLegacyWideTableNodes(
+  nodes: unknown
+): nodes is { id: string }[] {
+  return (
+    Array.isArray(nodes) &&
+    nodes.length > 0 &&
+    typeof nodes[0] === "object" &&
+    nodes[0] !== null &&
+    "id" in nodes[0] &&
+    (nodes[0] as { id: string }).id === "B"
+  );
+}
 
-function cloneNodes(n: NodeDef[]): NodeDef[] {
-  return n.map((x) => ({ ...x }));
+function resolveHistoryState(
+  rec: FgServingPublishRecord,
+  entitiesColumns: string[]
+): FgServingCanvasState {
+  if (rec.state) return cloneFgServingState(rec.state);
+  if (rec.nodes && isLegacyWideTableNodes(rec.nodes)) {
+    return createInitialFgServingState(entitiesColumns);
+  }
+  return createInitialFgServingState(entitiesColumns);
 }
 
 export default function FgServingCanvasPage() {
@@ -47,14 +61,21 @@ export default function FgServingCanvasPage() {
   const { getFg, updateFg } = useFeatureGroups();
   const fg = fgId ? getFg(fgId) : undefined;
 
+  const entitiesColumns = fg?._formData?.entitiesColumns ?? [];
+
   const [viewMode, setViewMode] = useState<"current" | "history">("current");
-  const [historyNodes, setHistoryNodes] = useState<NodeDef[] | null>(null);
+  const [historyState, setHistoryState] = useState<FgServingCanvasState | null>(
+    null
+  );
   const [historyLabel, setHistoryLabel] = useState<string>("");
 
-  const [nodes, setNodes] = useState<NodeDef[]>(() =>
-    cloneNodes(INITIAL_NODES)
+  const [canvasState, setCanvasState] = useState<FgServingCanvasState>(() =>
+    createInitialFgServingState([])
   );
-  const [selectedNodeId, setSelectedNodeId] = useState<NodeId | null>(null);
+
+  const [selectedNodeId, setSelectedNodeId] = useState<FgServingNodeId | null>(
+    null
+  );
   const [zoom, setZoomState] = useState(0.88);
   const [pan, setPan] = useState({ x: 80, y: 40 });
   const zoomRef = useRef(zoom);
@@ -72,7 +93,7 @@ export default function FgServingCanvasPage() {
   const [containerSize, setContainerSize] = useState({ w: 800, h: 500 });
 
   const dragState = useRef<{
-    nodeId: NodeId;
+    nodeId: FgServingNodeId;
     startMx: number;
     startMy: number;
     startNx: number;
@@ -80,19 +101,26 @@ export default function FgServingCanvasPage() {
   } | null>(null);
   const dragMoved = useRef(false);
 
-  const displayNodes =
-    viewMode === "history" && historyNodes ? historyNodes : nodes;
-  const instanceView = viewMode === "history";
+  const displayState =
+    viewMode === "history" && historyState ? historyState : canvasState;
   const readOnly = viewMode === "history";
+
+  const entitiesKey = (fg?._formData?.entitiesColumns ?? []).join("\0");
 
   useEffect(() => {
     if (!fg || !fgId) return;
-    const seed =
-      fg.servingCanvasNodes && fg.servingCanvasNodes.length > 0
-        ? fg.servingCanvasNodes
-        : INITIAL_NODES;
-    setNodes(cloneNodes(seed));
-  }, [fg, fgId]);
+    if (fg.servingCanvasState) {
+      setCanvasState(cloneFgServingState(fg.servingCanvasState));
+    } else if (fg.servingCanvasNodes && isLegacyWideTableNodes(fg.servingCanvasNodes)) {
+      setCanvasState(
+        createInitialFgServingState(fg._formData?.entitiesColumns ?? [])
+      );
+    } else {
+      setCanvasState(
+        createInitialFgServingState(fg._formData?.entitiesColumns ?? [])
+      );
+    }
+  }, [fg, fgId, entitiesKey]);
 
   useEffect(() => {
     const el = containerRef.current;
@@ -110,7 +138,10 @@ export default function FgServingCanvasPage() {
     if (!el) return;
     const { width, height } = el.getBoundingClientRect();
     const iz = 0.88;
-    setPan({ x: width / 2 - 530 * iz, y: height / 2 - 256 * iz });
+    setPan({
+      x: width / 2 - (FG_SERVING_CANVAS_W / 2) * iz,
+      y: height / 2 - (FG_SERVING_CANVAS_H / 2) * iz,
+    });
   }, []);
 
   useEffect(() => {
@@ -145,11 +176,11 @@ export default function FgServingCanvasPage() {
     return () => el.removeEventListener("wheel", handleWheel);
   }, [handleWheel]);
 
-  function handleNodeDragStart(nodeId: NodeId, e: React.MouseEvent) {
+  function handleNodeDragStart(nodeId: FgServingNodeId, e: React.MouseEvent) {
     if (readOnly || e.button !== 0) return;
     e.stopPropagation();
     dragMoved.current = false;
-    const n = nodes.find((x) => x.id === nodeId)!;
+    const n = canvasState.nodes.find((x) => x.id === nodeId)!;
     dragState.current = {
       nodeId,
       startMx: e.clientX,
@@ -175,11 +206,12 @@ export default function FgServingCanvasPage() {
       if (Math.abs(dx) > 2 || Math.abs(dy) > 2) {
         dragMoved.current = true;
         const { nodeId, startNx, startNy } = dragState.current;
-        setNodes((prev) =>
-          prev.map((n) =>
+        setCanvasState((prev) => ({
+          ...prev,
+          nodes: prev.nodes.map((n) =>
             n.id === nodeId ? { ...n, x: startNx + dx, y: startNy + dy } : n
-          )
-        );
+          ),
+        }));
       }
     } else if (isPanning.current) {
       setPan({
@@ -229,14 +261,8 @@ export default function FgServingCanvasPage() {
     zoomRef.current = nz;
     setZoomState(nz);
     setPan((p) => ({
-      x:
-        cx -
-        (cx - p.x) * (nz / pz) +
-        (mx - lastTouch.current!.mx),
-      y:
-        cy -
-        (cy - p.y) * (nz / pz) +
-        (my - lastTouch.current!.my),
+      x: cx - (cx - p.x) * (nz / pz) + (mx - lastTouch.current!.mx),
+      y: cy - (cy - p.y) * (nz / pz) + (my - lastTouch.current!.my),
     }));
     lastTouch.current = { dist, mx, my };
   }
@@ -249,8 +275,9 @@ export default function FgServingCanvasPage() {
     if (!containerRef.current) return;
     const { width, height } = containerRef.current.getBoundingClientRect();
     const pad = 80;
-    const xs = displayNodes.flatMap((n) => [n.x, n.x + n.w]);
-    const ys = displayNodes.flatMap((n) => [n.y, n.y + n.h]);
+    const ns = displayState.nodes;
+    const xs = ns.flatMap((n) => [n.x, n.x + n.w]);
+    const ys = ns.flatMap((n) => [n.y, n.y + n.h]);
     const minX = Math.min(...xs) - 20;
     const maxX = Math.max(...xs) + 20;
     const minY = Math.min(...ys) - 20;
@@ -282,7 +309,7 @@ export default function FgServingCanvasPage() {
   }
 
   function openHistoryRecord(rec: FgServingPublishRecord) {
-    setHistoryNodes(cloneNodes(rec.nodes));
+    setHistoryState(resolveHistoryState(rec, entitiesColumns));
     setHistoryLabel(rec.label);
     setViewMode("history");
     setHistoryOpen(false);
@@ -291,7 +318,7 @@ export default function FgServingCanvasPage() {
 
   function backToCurrent() {
     setViewMode("current");
-    setHistoryNodes(null);
+    setHistoryState(null);
     setHistoryLabel("");
     setSelectedNodeId(null);
   }
@@ -299,11 +326,12 @@ export default function FgServingCanvasPage() {
   function handlePublish() {
     if (!fg || !fgId) return;
     const ts = new Date().toISOString().slice(0, 19).replace("T", " ");
+    const snapshot = cloneFgServingState(canvasState);
     const record: FgServingPublishRecord = {
       id: `ph-${Date.now()}`,
       label: `Publish ${ts}`,
       createdAt: ts,
-      nodes: cloneNodes(nodes),
+      state: snapshot,
     };
     updateFg(fgId, (prev) => {
       const hist = [record, ...(prev.servingPublishHistory ?? [])];
@@ -312,13 +340,38 @@ export default function FgServingCanvasPage() {
       return {
         ...prev,
         servingPublishHistory: hist,
-        servingCanvasNodes: cloneNodes(nodes),
+        servingCanvasState: snapshot,
         status: nextStatus,
         updateTime: ts,
       };
     });
     navigate(`/fg/${fgId}`);
   }
+
+  const onUpdateConfig = useCallback(
+    (nodeId: FgServingNodeId, cfg: FgServingNodeConfig) => {
+      if (readOnly) return;
+      setCanvasState((prev) => ({
+        ...prev,
+        configs: { ...prev.configs, [nodeId]: cfg },
+      }));
+    },
+    [readOnly]
+  );
+
+  const selectedNode = useMemo((): FgServingNodeDef | null => {
+    if (!selectedNodeId) return null;
+    return displayState.nodes.find((n) => n.id === selectedNodeId) ?? null;
+  }, [displayState.nodes, selectedNodeId]);
+
+  const selectedConfig = useMemo(() => {
+    if (!selectedNode) return undefined;
+    return resolveServingNodeConfig(
+      displayState,
+      selectedNode,
+      entitiesColumns
+    );
+  }, [displayState, selectedNode, entitiesColumns]);
 
   if (!fgId || !fg || fg.deleted) {
     return (
@@ -480,26 +533,22 @@ export default function FgServingCanvasPage() {
               inset: 0,
               transform: `translate(${pan.x}px, ${pan.y}px) scale(${zoom})`,
               transformOrigin: "0 0",
-              width: CANVAS_W,
-              height: CANVAS_H,
+              width: FG_SERVING_CANVAS_W,
+              height: FG_SERVING_CANVAS_H,
             }}
           >
-            <CanvasEdges
-              nodes={displayNodes}
-              instanceView={instanceView}
-              nodeStatuses={
-                instanceView ? HISTORY_NODE_STATUS : undefined
-              }
+            <FgServingCanvasEdges
+              nodes={displayState.nodes}
+              edges={displayState.edges}
+              canvasW={FG_SERVING_CANVAS_W}
+              canvasH={FG_SERVING_CANVAS_H}
             />
-            {displayNodes.map((node) => (
-              <PipelineNodeCard
+            {displayState.nodes.map((node) => (
+              <FgServingNodeCard
                 key={node.id}
                 node={node}
                 selected={selectedNodeId === node.id}
-                instanceView={instanceView}
-                nodeStatus={
-                  instanceView ? HISTORY_NODE_STATUS[node.id] : undefined
-                }
+                readOnly={readOnly}
                 onDragStart={(e) => handleNodeDragStart(node.id, e)}
                 onClick={() => {
                   if (dragMoved.current) {
@@ -518,8 +567,11 @@ export default function FgServingCanvasPage() {
               onZoom={handleZoomBtn}
               onFit={fitToScreen}
             />
-            <Minimap
-              nodes={displayNodes}
+            <FgServingMinimap
+              nodes={displayState.nodes}
+              edges={displayState.edges}
+              canvasW={FG_SERVING_CANVAS_W}
+              canvasH={FG_SERVING_CANVAS_H}
               pan={pan}
               zoom={zoom}
               cw={containerSize.w}
@@ -532,6 +584,16 @@ export default function FgServingCanvasPage() {
           </div>
         </div>
       </div>
+
+      <FgServingConfigPanel
+        open={selectedNodeId !== null}
+        node={selectedNode}
+        config={selectedConfig}
+        canvasState={readOnly ? displayState : canvasState}
+        readOnly={readOnly}
+        onClose={() => setSelectedNodeId(null)}
+        onUpdateConfig={onUpdateConfig}
+      />
 
       <FgServingTestRunDrawer
         open={testOpen}

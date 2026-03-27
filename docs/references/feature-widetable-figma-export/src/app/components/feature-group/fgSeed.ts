@@ -1,3 +1,4 @@
+import type { FgServingCanvasState } from "@/data/fgServingCanvasModel";
 import type { NodeDef } from "@/data/widetableCanvasModel";
 import type { FGFormData } from "./FeatureGroupModal";
 
@@ -13,7 +14,9 @@ export interface FgServingPublishRecord {
   id: string;
   label: string;
   createdAt: string;
-  nodes: NodeDef[];
+  state?: FgServingCanvasState;
+  /** @deprecated WideTable-shaped legacy snapshots */
+  nodes?: NodeDef[];
 }
 
 export interface FeatureGroup {
@@ -28,7 +31,9 @@ export interface FeatureGroup {
   description: string;
   /** Soft delete: hidden from list; only Draft may be deleted */
   deleted?: boolean;
-  /** Current Serving canvas node layout (mock) */
+  /** Current Serving DAG + node configs (mock) */
+  servingCanvasState?: FgServingCanvasState;
+  /** @deprecated use servingCanvasState */
   servingCanvasNodes?: NodeDef[];
   /** Newest-first publish snapshots */
   servingPublishHistory?: FgServingPublishRecord[];
