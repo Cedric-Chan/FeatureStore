@@ -14,6 +14,27 @@ import {
   getSzfinRealtimeTablesForSchema,
 } from "@/data/szfinRealtimeHiveTables";
 
+// ─── Modal stack (inner modal receives Escape before outer) ───────────────────
+const modalLayerStack: number[] = [];
+let modalLayerSeq = 0;
+
+function pushModalLayer(): number {
+  modalLayerSeq += 1;
+  modalLayerStack.push(modalLayerSeq);
+  return modalLayerSeq;
+}
+
+function popModalLayer(id: number) {
+  const idx = modalLayerStack.lastIndexOf(id);
+  if (idx >= 0) modalLayerStack.splice(idx, 1);
+}
+
+function isTopModalLayer(id: number): boolean {
+  return (
+    modalLayerStack.length > 0 &&
+    modalLayerStack[modalLayerStack.length - 1] === id
+  );
+}
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 export interface ServingBlock {
@@ -132,6 +153,21 @@ interface MockTransformation {
   transformKind: "Aggregator" | "Scalar";
   versions: string[];
   outputFeaturesByVersion: Record<string, string[]>;
+}
+
+export function mockServingPairFromBlock(block: ServingBlock): {
+  featureSource: string;
+  sourceType: "HBase" | "Redis" | "gRPC" | "GraphDB";
+  dataLatency: "Online" | "Nearline" | "Offline";
+} {
+  const fs = MOCK_FEATURE_SOURCES.find((s) => s.name === block.featureSource);
+  return {
+    featureSource: block.featureSource,
+    sourceType: (fs?.sourceType ?? "HBase") as
+      "HBase" | "Redis" | "gRPC" | "GraphDB",
+    dataLatency: (fs?.dataLatency ?? "Online") as
+      "Online" | "Nearline" | "Offline",
+  };
 }
 
 const MOCK_FEATURE_SOURCES: MockFeatureSource[] = [
@@ -338,17 +374,17 @@ function isStep4MappingComputeValid(d: FGFormData) {
 }
 
 // ─── Step validators ──────────────────────────────────────────────────────────
-function isStep0Valid(d: FGFormData) {
+export function isStep0Valid(d: FGFormData) {
   return d.name.trim().length > 0 && d.region !== "" && d.module !== "" &&
     d.owners.length > 0 && d.description.trim().length > 0;
 }
-function isStep1Valid(d: FGFormData) {
+export function isStep1Valid(d: FGFormData) {
   return d.dataServer !== "" && d.tableSchema.trim().length > 0 &&
     d.tableName.trim().length > 0 && d.datePartition.trim().length > 0 &&
     d.partitionType !== "" && d.updateFrequency !== "" &&
     d.entitiesColumns.length > 0;
 }
-function isStep2ServingValid(d: FGFormData) {
+export function isStep2ServingValid(d: FGFormData) {
   if (!d.servingBlocks.length) return true;
   for (const b of d.servingBlocks) {
     if (!b.featureSource.trim() || !b.transformation.trim()) return false;
@@ -365,8 +401,23 @@ const STEP_VALIDATORS = [
   isStep4MappingValid,
 ];
 
+export function isFgTrainingComplete(
+  form: Partial<FGFormData> | undefined
+): boolean {
+  if (!form) return false;
+  return isStep1Valid(normalizeFgFormData(form));
+}
+
+export function isFgServingConfigured(
+  form: Partial<FGFormData> | undefined
+): boolean {
+  if (!form) return false;
+  const d = normalizeFgFormData(form);
+  return d.servingBlocks.length > 0 && isStep2ServingValid(d);
+}
+
 // ─── Mock training feature columns by table name ──────────────────────────────
-const MOCK_TRAINING_FEATURES: Record<string, string[]> = {
+export const MOCK_TRAINING_FEATURES: Record<string, string[]> = {
   "user_risk_score_ods":       ["risk_score", "credit_limit", "repayment_rate_30d", "default_prob", "fraud_score", "delinquency_rate", "gmv_90d"],
   "user_risk_score_v1_ods":    ["risk_score", "credit_limit", "repayment_rate_30d", "default_prob", "fraud_score", "delinquency_rate", "gmv_90d"],
   "mx_acard_realtime_ods":     ["user_risk_score", "credit_limit", "default_prob", "id_verification_status", "income_level", "risk_tier"],
@@ -375,7 +426,13 @@ const MOCK_TRAINING_FEATURES: Record<string, string[]> = {
   "user_graph_relation_ods":   ["graph_embed_dim_0", "graph_embed_dim_1", "graph_embed_dim_2", "graph_centrality", "join_user_score", "join_shop_score"],
   "mx_device_fingerprint_ods": ["mx_rt_score", "mx_risk_tier", "mx_fraud_prob", "mx_join_score", "mx_credit_feat", "device_risk_score"],
 };
-const DEFAULT_TRAINING_FEATURES = ["feature_col_1", "feature_col_2", "feature_col_3", "label", "weight"];
+export const DEFAULT_TRAINING_FEATURES = [
+  "feature_col_1",
+  "feature_col_2",
+  "feature_col_3",
+  "label",
+  "weight",
+];
 
 const SOURCE_TYPE_COLORS: Record<string, { bg: string; text: string; border: string }> = {
   HBase:   { bg: "#e6f4ff", text: "#0958d9", border: "#91caff" },
@@ -416,7 +473,7 @@ interface ModalNotification {
 }
 
 // Mock: fetch columns for a given table (simulates data-catalog schema API)
-const TABLE_COLUMNS_MOCK: Record<string, string[]> = {
+export const TABLE_COLUMNS_MOCK: Record<string, string[]> = {
   user_profile_v3:          ["user_id", "age", "gender", "country", "registration_days", "is_verified", "last_login_days", "account_level"],
   order_history_v2:         ["user_id", "order_id", "total_orders", "total_amount", "order_time", "ds"],
   user_risk_score_ods:      ["dt", "platform_user_id", "shop_id", "risk_score", "risk_level", "overdue_days_30", "create_date", "update_date", "loan_amount", "repayment_cnt"],
@@ -436,25 +493,39 @@ async function mockFetchTableColumns(tableName: string): Promise<string[]> {
 }
 
 // ─── Props ────────────────────────────────────────────────────────────────────
+export type FeatureGroupModalVariant = "full" | "basic" | "training";
+
 interface FeatureGroupModalProps {
   open: boolean;
   mode: "create" | "edit";
+  /** Narrow modal: basic info only, training step only, or full wizard. */
+  variant?: FeatureGroupModalVariant;
   initialData?: Partial<FGFormData>;
   initialStep?: number;
   editId?: string;
   modules: string[];
   originalStatus?: string;          // current status when editing a non-draft FG
   onClose: () => void;
-  onSaveDraft: (data: FGFormData, editId?: string) => void;
+  onSaveDraft?: (data: FGFormData, editId?: string) => void;
   onSubmit: (data: FGFormData, editId?: string) => void;
 }
 
 // ─── Main Modal ───────────────────────────────────────────────────────────────
 export default function FeatureGroupModal({
-  open, mode, initialData, initialStep = 0, editId, modules,
-  originalStatus, onClose, onSaveDraft, onSubmit,
+  open,
+  mode,
+  variant = "full",
+  initialData,
+  initialStep = 0,
+  editId,
+  modules,
+  originalStatus,
+  onClose,
+  onSaveDraft,
+  onSubmit,
 }: FeatureGroupModalProps) {
   const [step, setStep] = useState(initialStep);
+  const [layerId, setLayerId] = useState(0);
   const [form, setFormState] = useState<FGFormData>({ ...EMPTY_FORM, ...initialData });
   const [touched, setTouched] = useState(false);
   const [ownerInput, setOwnerInput] = useState("");
@@ -488,33 +559,54 @@ export default function FeatureGroupModal({
         }
         return merged;
       });
-      setStep(initialStep ?? 0);
+      if (variant === "basic") setStep(0);
+      else if (variant === "training") setStep(1);
+      else setStep(initialStep ?? 0);
       setTouched(false);
       setOwnerInput("");
       setSavedFeedback(false);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, variant]);
+
+  useLayoutEffect(() => {
+    if (!open) {
+      setLayerId(0);
+      return;
+    }
+    const id = pushModalLayer();
+    setLayerId(id);
+    return () => popModalLayer(id);
   }, [open]);
 
-  // ESC key
+  // ESC: only the top-stacked modal closes (capture phase)
   useEffect(() => {
-    if (!open) return;
-    const handler = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
-    document.addEventListener("keydown", handler);
-    return () => document.removeEventListener("keydown", handler);
-  }, [open, onClose]);
+    if (!open || layerId === 0) return;
+    const handler = (e: KeyboardEvent) => {
+      if (e.key !== "Escape") return;
+      if (!isTopModalLayer(layerId)) return;
+      e.preventDefault();
+      e.stopPropagation();
+      onClose();
+    };
+    document.addEventListener("keydown", handler, true);
+    return () => document.removeEventListener("keydown", handler, true);
+  }, [open, layerId, onClose]);
 
   // Cleanup timer on unmount
   useEffect(() => () => { if (feedbackTimer.current) clearTimeout(feedbackTimer.current); }, []);
 
   if (!open) return null;
 
+  const isCompact = variant === "basic" || variant === "training";
+  const displayStep = isCompact ? (variant === "basic" ? 0 : 1) : step;
+
   function setField(key: keyof FGFormData, value: any) {
     setFormState(f => ({ ...f, [key]: value }));
   }
 
   const stepsValid = STEP_VALIDATORS.map(v => v(form));
-  const isCurrentValid = stepsValid[step];
+  const isCurrentValid = stepsValid[displayStep];
   const allValid = stepsValid.every(Boolean);
 
   function handleNext() {
@@ -536,6 +628,7 @@ export default function FeatureGroupModal({
   }
 
   function handleSaveDraft() {
+    if (!onSaveDraft) return;
     onSaveDraft(finalForm(), editId);
     setSavedFeedback(true);
     feedbackTimer.current = setTimeout(() => {
@@ -547,6 +640,22 @@ export default function FeatureGroupModal({
   function handleSubmit() {
     if (!allValid) { setTouched(true); return; }
     onSubmit(finalForm(), editId);
+    onClose();
+  }
+
+  function handleCompactBasicContinue() {
+    const data = finalForm();
+    if (!isStep0Valid(data)) { setTouched(true); return; }
+    setTouched(false);
+    onSubmit(data, editId);
+    onClose();
+  }
+
+  function handleCompactTrainingSave() {
+    const data = finalForm();
+    if (!isStep1Valid(data)) { setTouched(true); return; }
+    setTouched(false);
+    onSubmit(data, editId);
     onClose();
   }
 
@@ -565,13 +674,31 @@ export default function FeatureGroupModal({
     }
   }
 
-  const isLastStep = step === STEPS.length - 1;
-  const showSaveDraft = mode === "create" || originalStatus === "Draft";
+  const isLastStep = displayStep === STEPS.length - 1;
+  const showSaveDraft =
+    variant === "full" &&
+    !!onSaveDraft &&
+    (mode === "create" || originalStatus === "Draft");
+
+  const headerTitle =
+    variant === "training"
+      ? "Training Config"
+      : variant === "basic"
+      ? mode === "create"
+        ? "Create Feature Group"
+        : "Basic Info"
+      : mode === "create"
+      ? "Create Feature Group"
+      : "Edit Feature Group";
 
   return (
     <div
-      className="fixed inset-0 z-[100] flex items-center justify-center p-4"
-      style={{ backgroundColor: "rgba(0,0,0,0.48)", backdropFilter: "blur(5px)" }}
+      className="fixed inset-0 flex items-center justify-center p-4"
+      style={{
+        zIndex: 100 + layerId,
+        backgroundColor: "rgba(0,0,0,0.48)",
+        backdropFilter: "blur(5px)",
+      }}
     >
       <div
         className="bg-white rounded-2xl flex flex-col w-full overflow-hidden relative"
@@ -618,7 +745,7 @@ export default function FeatureGroupModal({
           <div className="flex items-center gap-3">
             <div className="w-1 h-5 rounded-full" style={{ backgroundColor: "#13c2c2" }} />
             <h2 style={{ fontWeight: 700, fontSize: 17, color: "#1a1a2e" }}>
-              {mode === "create" ? "Create Feature Group" : "Edit Feature Group"}
+              {headerTitle}
             </h2>
             {mode === "edit" && (
               <span
@@ -638,14 +765,17 @@ export default function FeatureGroupModal({
             )}
           </div>
           <button
+            type="button"
             onClick={onClose}
-            className="p-1.5 rounded-lg text-gray-400 hover:bg-gray-100 hover:text-gray-600 transition-colors"
+            className="p-2 min-h-[44px] min-w-[44px] rounded-lg text-gray-400 hover:bg-gray-100 hover:text-gray-600 transition-colors flex items-center justify-center"
+            aria-label="Close dialog"
           >
             <X size={16} />
           </button>
         </div>
 
         {/* ── Steps Bar ──────────────────────────────────────────────────── */}
+        {!isCompact && (
         <div className="px-8 py-4 border-b border-gray-100 flex-shrink-0"
           style={{ background: "linear-gradient(to bottom, #f8fbfb, white)" }}
         >
@@ -718,13 +848,14 @@ export default function FeatureGroupModal({
             })}
           </div>
         </div>
+        )}
 
         {/* ── Body (scrollable) ───────────────────────────────────────────── */}
         <div
           className="flex-1 overflow-y-auto px-8 py-6 min-h-0"
           data-fg-modal-scroll
         >
-          {step === 0 && (
+          {displayStep === 0 && (
             <Step0BasicInfo
               form={form} setField={setField} modules={modules} err={touched}
               mode={mode} originalStatus={originalStatus}
@@ -732,18 +863,62 @@ export default function FeatureGroupModal({
               addOwner={addOwner} handleOwnerKeyDown={handleOwnerKeyDown}
             />
           )}
-          {step === 1 && (
+          {displayStep === 1 && (
             <Step1TrainingConfig form={form} setField={setField} err={touched} />
           )}
-          {step === 2 && (
+          {displayStep === 2 && (
             <Step2ServingBlocksConfig form={form} setField={setField} err={touched} />
           )}
-          {step === 3 && (
+          {displayStep === 3 && (
             <Step3FeatureMappingAndCompute form={form} setField={setField} err={touched} />
           )}
         </div>
 
         {/* ── Footer ─────────────────────────────────────────────────────── */}
+        {isCompact ? (
+          <div
+            className="flex items-center justify-end gap-2 px-8 py-4 border-t border-gray-100 flex-shrink-0 rounded-b-2xl"
+            style={{ backgroundColor: "#fafafa" }}
+          >
+            <button
+              type="button"
+              onClick={onClose}
+              className="inline-flex items-center gap-1.5 px-4 py-2 text-sm rounded-lg border border-gray-200 text-gray-600 hover:border-gray-300 hover:bg-gray-50 transition-all min-h-[44px]"
+              style={{ fontWeight: 500 }}
+            >
+              Cancel
+            </button>
+            {variant === "basic" ? (
+              <button
+                type="button"
+                onClick={handleCompactBasicContinue}
+                className="inline-flex items-center gap-1.5 px-5 py-2 text-sm rounded-lg text-white transition-all min-h-[44px]"
+                style={{
+                  backgroundColor: "#13c2c2",
+                  fontWeight: 500,
+                  opacity: isStep0Valid(finalForm()) ? 1 : 0.5,
+                  cursor: isStep0Valid(finalForm()) ? "pointer" : "not-allowed",
+                }}
+              >
+                Continue <ArrowRight size={13} />
+              </button>
+            ) : (
+              <button
+                type="button"
+                onClick={handleCompactTrainingSave}
+                className="inline-flex items-center gap-1.5 px-5 py-2 text-sm rounded-lg text-white transition-all min-h-[44px]"
+                style={{
+                  backgroundColor: "#13c2c2",
+                  fontWeight: 500,
+                  opacity: isStep1Valid(finalForm()) ? 1 : 0.5,
+                  cursor: isStep1Valid(finalForm()) ? "pointer" : "not-allowed",
+                }}
+              >
+                <Check size={13} /> Save
+              </button>
+            )}
+          </div>
+        ) : (
         <div
           className={`flex items-center px-8 py-4 border-t border-gray-100 flex-shrink-0 rounded-b-2xl ${
             showSaveDraft ? "justify-between" : "justify-end"
@@ -752,6 +927,7 @@ export default function FeatureGroupModal({
         >
           {showSaveDraft ? (
             <button
+              type="button"
               onClick={handleSaveDraft}
               disabled={savedFeedback}
               className="inline-flex items-center gap-1.5 px-4 py-2 text-sm rounded-lg border transition-all"
@@ -771,6 +947,7 @@ export default function FeatureGroupModal({
           <div className="flex items-center gap-2">
             {step > 0 && (
               <button
+                type="button"
                 onClick={handlePrev}
                 className="inline-flex items-center gap-1.5 px-4 py-2 text-sm rounded-lg border border-gray-200 text-gray-600 hover:border-gray-300 hover:bg-gray-50 transition-all"
                 style={{ fontWeight: 500 }}
@@ -780,6 +957,7 @@ export default function FeatureGroupModal({
             )}
             {!isLastStep ? (
               <button
+                type="button"
                 onClick={handleNext}
                 className="inline-flex items-center gap-1.5 px-5 py-2 text-sm rounded-lg text-white transition-all"
                 style={{
@@ -793,6 +971,7 @@ export default function FeatureGroupModal({
               </button>
             ) : (
               <button
+                type="button"
                 onClick={handleSubmit}
                 className="inline-flex items-center gap-1.5 px-5 py-2 text-sm rounded-lg text-white transition-all"
                 style={{
@@ -807,6 +986,7 @@ export default function FeatureGroupModal({
             )}
           </div>
         </div>
+        )}
       </div>
     </div>
   );

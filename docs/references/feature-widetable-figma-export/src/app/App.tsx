@@ -7,6 +7,7 @@ import {
   CanvasInstanceRoute,
   CanvasNewRoute,
 } from "@/app/pages/CanvasPageRoutes";
+import { FeatureGroupsLayout } from "@/app/feature-group/FeatureGroupsProvider";
 import { FeatureGroupDetailPage } from "@/app/pages/FeatureGroupDetailPage";
 import { FeatureGroupListPage } from "@/app/pages/FeatureGroupListPage";
 import { FeatureMapPage } from "@/app/pages/FeatureMapPage";
@@ -30,8 +31,10 @@ export default function App() {
         <Route path="/tf" element={<TransformationListPage />} />
         <Route path="/tf/new" element={<TransformationFormPage />} />
         <Route path="/tf/edit/:tfName/:tfVersion" element={<TransformationFormPage />} />
-        <Route path="/fg" element={<FeatureGroupListPage />} />
-        <Route path="/fg/:fgId" element={<FeatureGroupDetailPage />} />
+        <Route element={<FeatureGroupsLayout />}>
+          <Route path="/fg" element={<FeatureGroupListPage />} />
+          <Route path="/fg/:fgId" element={<FeatureGroupDetailPage />} />
+        </Route>
         <Route path="/fm" element={<FeatureMapPage />} />
         <Route path="/wt" element={<WideTableListPage />} />
         <Route path="/wt/task/:instanceId" element={<TaskMonitorPage />} />

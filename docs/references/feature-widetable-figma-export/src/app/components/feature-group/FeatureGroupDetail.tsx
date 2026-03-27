@@ -7,7 +7,6 @@ import {
   User,
   Clock,
   FileText,
-  Edit2,
   ChevronDown,
   CheckCircle2,
   AlertCircle,
@@ -30,112 +29,19 @@ import {
   Timer,
   Copy,
   Check,
+  Plus,
+  Pencil,
 } from "lucide-react";
+import { useFeatureGroups } from "@/app/feature-group/FeatureGroupsProvider";
 import type { FeatureGroup, FeatureGroupStatus } from "./FeatureGroupList";
-import { INITIAL_MODULES } from "./FeatureGroupList";
 import FeatureGroupModal, {
   type FGFormData,
   normalizeFgFormData,
-  DataLatencyTag,
+  isFgTrainingComplete,
+  isFgServingConfigured,
+  MOCK_TRAINING_FEATURES,
+  DEFAULT_TRAINING_FEATURES,
 } from "./FeatureGroupModal";
-
-// ─── Source type badge colors ─────────────────────────────────────────────────
-const SOURCE_TYPE_COLORS: Record<string, { bg: string; text: string; border: string }> = {
-  HBase:   { bg: "#e6f4ff", text: "#0958d9", border: "#91caff" },
-  Redis:   { bg: "#fff1f0", text: "#cf1322", border: "#ffa39e" },
-  gRPC:    { bg: "#f9f0ff", text: "#531dab", border: "#d3adf7" },
-  GraphDB: { bg: "#fff7e6", text: "#ad4e00", border: "#ffd591" },
-};
-function SourceTypeBadge({ sourceType }: { sourceType: string }) {
-  const c = SOURCE_TYPE_COLORS[sourceType] ?? { bg: "#f3f4f6", text: "#374151", border: "#e5e7eb" };
-  return (
-    <span className="inline-flex items-center px-2 py-0.5 rounded-md text-xs border"
-      style={{ background: c.bg, color: c.text, borderColor: c.border, fontWeight: 600 }}>
-      {sourceType}
-    </span>
-  );
-}
-
-// ─── Mocked page data ─────────────────────────────────────────────────────────
-const MOCK_DATA: FeatureGroup[] = [
-  {
-    id: "1",
-    name: "user_risk_score_fg",
-    status: "Online",
-    region: "TH",
-    module: "1",
-    owner: "cedric.chencan@seamoney.com,sankar.shyamal@seamoney.com",
-    createTime: "2026-02-14 10:00:00",
-    updateTime: "2026-02-16 08:30:00",
-    description:
-      "User risk scoring feature group for Thailand market, aggregates behavioral signals and transaction patterns.",
-  },
-  {
-    id: "2",
-    name: "mx_acard_realtime_fg",
-    status: "Online Changing",
-    region: "MX",
-    module: "53",
-    entity: ["platform_user_id", "spp_user_id"],
-    owner: "zhengyi.loh@seamoney.com",
-    createTime: "2026-02-10 14:20:00",
-    updateTime: "2026-02-15 11:00:00",
-    description:
-      "Real-time feature group for Mexico A-card model, capturing live transaction velocity and account age features.",
-  },
-  {
-    id: "3",
-    name: "th_embedding_fg_v3",
-    status: "Online",
-    region: "TH",
-    module: "53",
-    entity: ["platform_user_id", "item_id"],
-    owner: "sankar.shyamal@seamoney.com,huangwei@shopee.com,xiaochen.kuang@monee.com",
-    createTime: "2026-02-08 09:30:00",
-    updateTime: "2026-02-11 16:20:00",
-    description:
-      "Version 3 of Thailand embedding feature group, includes improved user graph embeddings and NLP-derived features.",
-  },
-  {
-    id: "4",
-    name: "dp_recommend_score_fg",
-    status: "Draft",
-    region: "SHOPEE_SG",
-    module: "1",
-    entity: ["item_id", "shop_id"],
-    owner: "huangwei@shopee.com",
-    createTime: "2026-02-16 13:45:00",
-    updateTime: "2026-02-16 13:45:00",
-    description:
-      "Draft feature group for Shopee Singapore recommendation scoring, currently under review and validation.",
-  },
-  {
-    id: "5",
-    name: "user_graph_relation_fg",
-    status: "Online",
-    region: "TH",
-    module: "1",
-    entity: ["platform_user_id", "shop_id"],
-    owner: "cedric.chencan@seamoney.com,zhengyi.loh@seamoney.com",
-    createTime: "2026-02-06 11:00:00",
-    updateTime: "2026-02-13 09:00:00",
-    description:
-      "User social graph and relation feature group, derives network-based features for fraud detection models.",
-  },
-  {
-    id: "6",
-    name: "mx_device_fingerprint_fg",
-    status: "Online Changing",
-    region: "MX",
-    module: "53",
-    entity: ["spp_user_id", "platform_user_id"],
-    owner: "xiaochen.kuang@monee.com",
-    createTime: "2026-01-28 15:30:00",
-    updateTime: "2026-02-15 20:00:00",
-    description:
-      "Device fingerprint feature group for Mexico, tracks device identity signals and cross-device behavior patterns.",
-  },
-];
 
 // ─── Status config ────────────────────────────────────────────────────────────
 const STATUS_CONFIG: Record<
@@ -224,23 +130,34 @@ interface FeatureRow {
   dataLatency?: "Online" | "Nearline" | "Offline"; // only when serving=true
 }
 
-const DEFAULT_FEATURES: FeatureRow[] = [
-  { name: "risk_score",           servingName: "user_risk_score",  dataType: "FLOAT",   partition: true,  training: true,  serving: true,  dataLatency: "Online"   },
-  { name: "risk_level",                                            dataType: "STRING",  partition: false, training: true,  serving: true,  dataLatency: "Nearline" },
-  { name: "overdue_days_30",                                       dataType: "INT",     partition: false, training: true,  serving: false },
-  { name: "last_login_ts",                                         dataType: "LONG",    partition: false, training: true,  serving: true,  dataLatency: "Online"   },
-  { name: "transaction_count_7d", servingName: "tx_count_7d",      dataType: "INT",     partition: false, training: true,  serving: true,  dataLatency: "Nearline" },
-  { name: "avg_order_value",                                       dataType: "FLOAT",   partition: false, training: true,  serving: false },
-  { name: "device_model_hash",                                     dataType: "STRING",  partition: false, training: false, serving: true,  dataLatency: "Offline"  },
-  { name: "is_verified",                                           dataType: "BOOLEAN", partition: false, training: true,  serving: true,  dataLatency: "Online"   },
-  { name: "kyc_level",                                             dataType: "INT",     partition: true,  training: true,  serving: true,  dataLatency: "Nearline" },
-  { name: "credit_score_raw",     servingName: "credit_score",     dataType: "FLOAT",   partition: false, training: true,  serving: true,  dataLatency: "Online"   },
-  { name: "account_age_days",                                      dataType: "INT",     partition: false, training: true,  serving: false },
-  { name: "geo_region_code",                                       dataType: "STRING",  partition: true,  training: true,  serving: true,  dataLatency: "Offline"  },
-  { name: "repayment_rate_90d",   servingName: "repayment_rate",   dataType: "FLOAT",   partition: false, training: true,  serving: true,  dataLatency: "Nearline" },
-  { name: "has_overdue",                                           dataType: "BOOLEAN", partition: false, training: true,  serving: false },
-  { name: "session_count_14d",                                     dataType: "INT",     partition: false, training: true,  serving: true,  dataLatency: "Online"   },
-];
+function guessFeatureColumnType(col: string): string {
+  const l = col.toLowerCase();
+  if (l.includes("_id") || l.endsWith("id")) return "STRING";
+  if (l.includes("cnt") || l.includes("count")) return "INT";
+  if (l.includes("score") || l.includes("prob") || l.includes("rate")) {
+    return "FLOAT";
+  }
+  if (l.includes("time") || l.includes("_ts") || l.includes("date")) {
+    return "LONG";
+  }
+  return "DOUBLE";
+}
+
+function buildFeatureRowsFromFg(fg: FeatureGroup): FeatureRow[] {
+  const fd = normalizeFgFormData(fg._formData ?? {});
+  if (!isFgTrainingComplete(fg._formData)) return [];
+  const names =
+    MOCK_TRAINING_FEATURES[fd.tableName] ?? DEFAULT_TRAINING_FEATURES;
+  const hasServing = isFgServingConfigured(fg._formData);
+  return names.map((name) => ({
+    name,
+    dataType: guessFeatureColumnType(name),
+    partition: false,
+    training: true,
+    serving: hasServing,
+    dataLatency: hasServing ? ("Online" as const) : undefined,
+  }));
+}
 
 // ─── Version History mock data ────────────────────────────────────────────────
 interface VersionConfig {
@@ -313,121 +230,71 @@ const DEFAULT_VERSIONS: VersionRow[] = [
   },
 ];
 
-// ─── Extended config mock ─────────────────────────────────────────────────────
-type ServingPairRow = {
-  featureSource: string;
-  sourceType: "HBase" | "Redis" | "gRPC" | "GraphDB";
-  dataLatency: "Online" | "Nearline" | "Offline";
-};
-
-interface DetailConfig {
-  module: string;
-  dataLatency: "Online" | "Nearline" | "Offline";
-  dataServer: "reg_sg_hive" | "reg_us_hive";
-  tableSchema: string;
-  tableName: string;
-  datePartition: string;
-  partitionType: "Full Data" | "Incremental Data";
-  updateFrequency: string;
-  entitiesColumns: string[];
-  filter: string;
-  featureSource: string;
-  sourceType: "HBase" | "Redis" | "gRPC" | "GraphDB";
-  fsInputParams: string[];
-  transformation: string;
-  /** When set, Serving Config shows one row per pair; else derived from flat fields. */
-  servingPairs?: ServingPairRow[];
-}
-
-const DETAIL_CONFIG: Record<string, DetailConfig> = {
-  "1": {
-    module: "Credit Buyer Behavior", dataLatency: "Online", dataServer: "reg_sg_hive",
-    tableSchema: "risk_db", tableName: "user_risk_score_ods", datePartition: "dt",
-    partitionType: "Incremental Data", updateFrequency: "Daily",
-    entitiesColumns: ["platform_user_id"], filter: "dt='2026-02-16'",
-    featureSource: "riskfeat_hbase_sg", sourceType: "HBase",
-    fsInputParams: ["platform_user_id"], transformation: "QueryAAICache@V2",
-    servingPairs: [
-      { featureSource: "riskfeat_hbase_sg", sourceType: "HBase", dataLatency: "Online" },
-      { featureSource: "th_redis_realtime", sourceType: "Redis", dataLatency: "Nearline" },
-    ],
-  },
-  "2": { module: "External Data",         dataLatency: "Nearline", dataServer: "reg_us_hive", tableSchema: "acard_db",      tableName: "mx_acard_realtime_ods",    datePartition: "event_date",    partitionType: "Full Data",        updateFrequency: "Weekly",   entitiesColumns: ["platform_user_id"],      filter: "",                featureSource: "acard_redis_mx",       sourceType: "Redis",   fsInputParams: ["platform_user_id", "id_card_no"], transformation: "QueryAAICache@V2" },
-  "3": {
-    module: "External Data", dataLatency: "Online", dataServer: "reg_sg_hive",
-    tableSchema: "embedding_db", tableName: "th_embedding_v3_ods", datePartition: "pt",
-    partitionType: "Full Data", updateFrequency: "Daily",
-    entitiesColumns: ["platform_user_id", "item_id"], filter: "",
-    featureSource: "embed_grpc_th", sourceType: "gRPC",
-    fsInputParams: ["platform_user_id", "item_id"], transformation: "QueryAAICache@V2",
-    servingPairs: [
-      { featureSource: "embed_grpc_th", sourceType: "gRPC", dataLatency: "Online" },
-      { featureSource: "th_graph_relation", sourceType: "GraphDB", dataLatency: "Offline" },
-    ],
-  },
-  "4": { module: "Credit Buyer Behavior", dataLatency: "Offline",  dataServer: "reg_sg_hive", tableSchema: "recommend_db",  tableName: "dp_recommend_score_ods",   datePartition: "dt",            partitionType: "Incremental Data", updateFrequency: "Monthly",  entitiesColumns: ["platform_user_id"],      filter: "",                featureSource: "recommend_graphdb_sg", sourceType: "GraphDB", fsInputParams: ["platform_user_id", "shop_id"],    transformation: "QueryAAICache@V2" },
-  "5": { module: "Credit Buyer Behavior", dataLatency: "Online",   dataServer: "reg_sg_hive", tableSchema: "graph_db",      tableName: "user_graph_relation_ods",  datePartition: "stat_date",     partitionType: "Incremental Data", updateFrequency: "Daily",    entitiesColumns: ["platform_user_id", "shop_id"], filter: "is_active=true",  featureSource: "graphrel_hbase_th",    sourceType: "HBase",   fsInputParams: ["platform_user_id", "shop_id"],    transformation: "QueryAAICache@V2" },
-  "6": { module: "External Data",         dataLatency: "Nearline", dataServer: "reg_us_hive", tableSchema: "device_db",     tableName: "mx_device_fingerprint_ods",datePartition: "data_date",     partitionType: "Full Data",        updateFrequency: "Daily",    entitiesColumns: ["spp_user_id", "device_id"], filter: "",                featureSource: "devfp_redis_mx",       sourceType: "Redis",   fsInputParams: ["spp_user_id", "device_id"],       transformation: "QueryAAICache@V2" },
-};
-
-const DEFAULT_CONFIG: DetailConfig = {
-  module: "External Data", dataLatency: "Online", dataServer: "reg_sg_hive",
-  tableSchema: "default_db", tableName: "default_table",
-  datePartition: "dt", partitionType: "Full Data",
-  updateFrequency: "Daily", entitiesColumns: ["platform_user_id"], filter: "",
-  featureSource: "default_hbase", sourceType: "HBase",
-  fsInputParams: ["platform_user_id"],
-  transformation: "QueryAAICache@V2",
-};
+const SYNC_ARIA =
+  "Manually refresh latest Training Config metadata";
 
 // ─── Main page component ──────────────────────────────────────────────────────
 export default function FeatureGroupDetail() {
   const { fgId } = useParams<{ fgId: string }>();
-  const id = fgId;
   const navigate = useNavigate();
-  const staticFg = MOCK_DATA.find((f) => f.id === id);
-  const ext = (id && DETAIL_CONFIG[id]) ?? DEFAULT_CONFIG;
+  const { getFg, updateFg, syncFgMetadata, modules } = useFeatureGroups();
 
-  const [localFg, setLocalFg] = useState<FeatureGroup | undefined>(staticFg);
-  const [modalOpen, setModalOpen] = useState(false);
+  const fg = fgId ? getFg(fgId) : undefined;
+  const fd = normalizeFgFormData(fg?._formData ?? {});
 
-  const fg = localFg;
+  const [basicModalOpen, setBasicModalOpen] = useState(false);
+  const [trainingModalOpen, setTrainingModalOpen] = useState(false);
 
-  const trainingFeatureCount = DEFAULT_FEATURES.filter(f => f.training).length;
-  const servingFeatureCount  = DEFAULT_FEATURES.filter(f => f.serving).length;
-  const mappedFeatureCount = DEFAULT_FEATURES.filter(f => f.training && f.serving).length;
+  const trainingDone = fg ? isFgTrainingComplete(fg._formData) : false;
 
-  const servingPairsForView: ServingPairRow[] = ext.servingPairs ?? [
-    {
-      featureSource: ext.featureSource,
-      sourceType: ext.sourceType,
-      dataLatency: ext.dataLatency,
-    },
-  ];
+  const featureRows = fg ? buildFeatureRowsFromFg(fg) : [];
+  const trainingFeatureCount = featureRows.filter((r) => r.training).length;
+  const servingFeatureCount = featureRows.filter((r) => r.serving).length;
+  const mappedFeatureCount = featureRows.filter(
+    (r) => r.training && r.serving
+  ).length;
 
-  const prefillFormData: Partial<FGFormData> = fg
-    ? normalizeFgFormData({
-        name: fg.name,
-        region: fg.region,
-        module: ext.module,
-        owners: fg.owner.split(",").map(o => o.trim()),
-        description: fg.description,
-        dataServer: ext.dataServer,
-        tableSchema: ext.tableSchema,
-        tableName: ext.tableName,
-        datePartition: ext.datePartition,
-        partitionType: ext.partitionType,
-        updateFrequency: ext.updateFrequency,
-        entitiesColumns: ext.entitiesColumns,
-        filter: ext.filter,
-        featureMapping: {},
-        computeFeatures: [],
-        featureSource: ext.featureSource,
-        sourceType: ext.sourceType,
-        fsInputParams: ext.fsInputParams ?? [],
-        transformation: ext.transformation,
-      } as Partial<FGFormData> & Record<string, unknown>)
-    : {};
+  function handleBasicSave(data: FGFormData) {
+    if (!fg) return;
+    const now = new Date().toISOString().slice(0, 19).replace("T", " ");
+    const merged = normalizeFgFormData({
+      ...(fg._formData ?? {}),
+      name: data.name,
+      region: data.region,
+      module: data.module,
+      owners: data.owners,
+      description: data.description,
+    } as Partial<FGFormData> & Record<string, unknown>);
+    updateFg(fg.id, (prev) => ({
+      ...prev,
+      name: merged.name || prev.name,
+      region: merged.region || prev.region,
+      module: merged.module || prev.module,
+      owner: merged.owners.join(",") || prev.owner,
+      description: merged.description,
+      updateTime: now,
+      _formData: merged,
+    }));
+  }
+
+  function handleTrainingSave(data: FGFormData) {
+    if (!fg) return;
+    const now = new Date().toISOString().slice(0, 19).replace("T", " ");
+    const merged = normalizeFgFormData({
+      ...(fg._formData ?? {}),
+      ...data,
+    } as Partial<FGFormData> & Record<string, unknown>);
+    updateFg(fg.id, (prev) => ({
+      ...prev,
+      name: merged.name || prev.name,
+      region: merged.region || prev.region,
+      module: merged.module || prev.module,
+      owner: merged.owners.join(",") || prev.owner,
+      description: merged.description,
+      updateTime: now,
+      _formData: merged,
+    }));
+  }
 
   if (!fg) {
     return (
@@ -495,30 +362,40 @@ export default function FeatureGroupDetail() {
             </div>
             <div className="flex items-center gap-2 flex-shrink-0">
               <button
-                onClick={fg.status === "Online Changing" || fg.status === "Disable" ? undefined : () => setModalOpen(true)}
-                disabled={fg.status === "Online Changing" || fg.status === "Disable"}
-                className={`flex items-center gap-1.5 px-4 py-2 text-sm rounded-lg border transition-all ${
+                type="button"
+                onClick={
+                  fg.status === "Online Changing" || fg.status === "Disable"
+                    ? undefined
+                    : () => void syncFgMetadata(fg.id)
+                }
+                disabled={
+                  fg.status === "Online Changing" || fg.status === "Disable"
+                }
+                className={`flex items-center gap-1.5 px-4 py-2 text-sm rounded-lg border transition-all min-h-[44px] ${
                   fg.status === "Online Changing" || fg.status === "Disable"
                     ? "border-gray-100 text-gray-300 bg-gray-50 cursor-not-allowed"
                     : "border-gray-200 text-gray-600 hover:border-teal-300 hover:text-teal-600 hover:bg-teal-50"
                 }`}
                 style={{ fontWeight: 500 }}
                 title={
-                  fg.status === "Online Changing" ? "Cannot edit while a change is pending"
-                  : fg.status === "Disable" ? "Cannot edit a disabled feature group"
-                  : undefined
+                  fg.status === "Online Changing"
+                    ? "Cannot sync while a change is pending"
+                    : fg.status === "Disable"
+                    ? "Cannot sync a disabled feature group"
+                    : SYNC_ARIA
                 }
+                aria-label={SYNC_ARIA}
               >
-                <Edit2 size={14} />
-                Edit
+                <RefreshCw size={14} />
+                Sync
               </button>
               <ManageDropdown
                 status={fg.status}
                 onAction={(action) => {
                   if (action === "online" || action === "revoke") {
-                    setLocalFg(f => f ? { ...f, status: "Online" } : f);
+                    updateFg(fg.id, (f) => ({ ...f, status: "Online" }));
                   } else if (action === "disable") {
-                    setLocalFg(f => f ? { ...f, status: "Disable" } : f);
+                    updateFg(fg.id, (f) => ({ ...f, status: "Disable" }));
                   }
                 }}
               />
@@ -529,15 +406,34 @@ export default function FeatureGroupDetail() {
 
       {/* Content */}
       <div className="max-w-7xl mx-auto px-6 sm:px-8 py-5 space-y-5">
-        {/* ─── Three config panels ─── */}
-        <div className="grid grid-cols-3 gap-5">
-          {/* Basic Info */}
-          <ConfigPanel title="Basic Info" icon={<Info size={11} />}>
+        <div className="grid grid-cols-1 gap-5">
+          <ConfigPanel
+            title="Basic Info"
+            icon={<Info size={11} />}
+            headerRight={
+              <button
+                type="button"
+                onClick={() => setBasicModalOpen(true)}
+                disabled={
+                  fg.status === "Online Changing" || fg.status === "Disable"
+                }
+                className={`p-2 rounded-lg border transition-all min-h-[44px] min-w-[44px] flex items-center justify-center ${
+                  fg.status === "Online Changing" || fg.status === "Disable"
+                    ? "border-gray-100 text-gray-300 cursor-not-allowed"
+                    : "border-gray-200 text-gray-500 hover:border-teal-300 hover:text-teal-600"
+                }`}
+                title="Edit basic info"
+                aria-label="Edit basic info"
+              >
+                <Pencil size={14} />
+              </button>
+            }
+          >
             <FieldRow label="Region">
               <GrayBadge>{fg.region}</GrayBadge>
             </FieldRow>
             <FieldRow label="Module">
-              <PlainVal>{ext.module}</PlainVal>
+              <PlainVal>{fd.module}</PlainVal>
             </FieldRow>
             <FieldRow label="Owner">
               <div className="flex flex-wrap gap-1">
@@ -553,61 +449,97 @@ export default function FeatureGroupDetail() {
               <PlainVal>{fg.updateTime}</PlainVal>
             </FieldRow>
           </ConfigPanel>
+        </div>
 
-          {/* Training Config */}
-          <ConfigPanel title="Training Config" icon={<Database size={11} />}>
-            <FieldRow label="Data Server">
-              <GrayBadge>{ext.dataServer}</GrayBadge>
-            </FieldRow>
-            <FieldRow label="Table Name">
-              <PlainVal mono>{ext.tableSchema}.{ext.tableName}</PlainVal>
-            </FieldRow>
-            <FieldRow label="Date Partition">
-              <PlainVal mono>{ext.datePartition}</PlainVal>
-            </FieldRow>
-            <FieldRow label="Partition Type">
-              <GrayBadge>{ext.partitionType}</GrayBadge>
-            </FieldRow>
-            <FieldRow label="Update Freq.">
-              <GrayBadge>{ext.updateFrequency}</GrayBadge>
-            </FieldRow>
-            <FieldRow label="Entities">
-              {ext.entitiesColumns.length > 0
-                ? <PlainVal mono>{ext.entitiesColumns.join(", ")}</PlainVal>
-                : <span className="text-gray-300 text-xs">—</span>
-              }
-            </FieldRow>
-            <FieldRow label="Custom Filter">
-              {ext.filter
-                ? <PlainVal mono>{ext.filter}</PlainVal>
-                : <span className="text-gray-300 text-xs">—</span>
-              }
-            </FieldRow>
-            <FieldRow label="Training Fts">
-              <PlainVal>{String(trainingFeatureCount)}</PlainVal>
-            </FieldRow>
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-5 items-stretch">
+          <ConfigPanel
+            title="Training Config"
+            icon={<Database size={11} />}
+            headerRight={
+              trainingDone ? (
+                <button
+                  type="button"
+                  onClick={() => setTrainingModalOpen(true)}
+                  disabled={
+                    fg.status === "Online Changing" || fg.status === "Disable"
+                  }
+                  className={`p-2 rounded-lg border transition-all min-h-[44px] min-w-[44px] flex items-center justify-center ${
+                    fg.status === "Online Changing" || fg.status === "Disable"
+                      ? "border-gray-100 text-gray-300 cursor-not-allowed"
+                      : "border-gray-200 text-gray-500 hover:border-teal-300 hover:text-teal-600"
+                  }`}
+                  title="Edit training config"
+                  aria-label="Edit training config"
+                >
+                  <Pencil size={14} />
+                </button>
+              ) : null
+            }
+          >
+            {trainingDone ? (
+              <>
+                <FieldRow label="Data Server">
+                  <GrayBadge>{fd.dataServer}</GrayBadge>
+                </FieldRow>
+                <FieldRow label="Table Name">
+                  <PlainVal mono>{fd.tableSchema}.{fd.tableName}</PlainVal>
+                </FieldRow>
+                <FieldRow label="Date Partition">
+                  <PlainVal mono>{fd.datePartition}</PlainVal>
+                </FieldRow>
+                <FieldRow label="Partition Type">
+                  <GrayBadge>{fd.partitionType}</GrayBadge>
+                </FieldRow>
+                <FieldRow label="Update Freq.">
+                  <GrayBadge>{fd.updateFrequency}</GrayBadge>
+                </FieldRow>
+                <FieldRow label="Entities">
+                  {fd.entitiesColumns.length > 0 ? (
+                    <PlainVal mono>{fd.entitiesColumns.join(", ")}</PlainVal>
+                  ) : (
+                    <span className="text-gray-300 text-xs">—</span>
+                  )}
+                </FieldRow>
+                <FieldRow label="Custom Filter">
+                  {fd.filter ? (
+                    <PlainVal mono>{fd.filter}</PlainVal>
+                  ) : (
+                    <span className="text-gray-300 text-xs">—</span>
+                  )}
+                </FieldRow>
+                <FieldRow label="Training Fts">
+                  <PlainVal>{String(trainingFeatureCount)}</PlainVal>
+                </FieldRow>
+              </>
+            ) : (
+              <p className="text-sm text-gray-400 py-6 text-center px-2">
+                No training configuration yet. Use the + control to add
+                training.
+              </p>
+            )}
           </ConfigPanel>
 
-          {/* Serving Config */}
+          <div className="flex items-center justify-center min-h-[120px]">
+            {!trainingDone && (
+              <button
+                type="button"
+                onClick={() => setTrainingModalOpen(true)}
+                disabled={
+                  fg.status === "Online Changing" || fg.status === "Disable"
+                }
+                className="inline-flex items-center justify-center w-14 h-14 rounded-full border-2 border-dashed border-teal-300 text-teal-600 hover:bg-teal-50 transition-colors disabled:opacity-40 disabled:cursor-not-allowed min-h-[44px] min-w-[44px]"
+                title="Add training configuration"
+                aria-label="Add training configuration"
+              >
+                <Plus size={24} />
+              </button>
+            )}
+          </div>
+
           <ConfigPanel title="Serving Config" icon={<Zap size={11} />}>
-            <FieldRow label="Feature Source">
-              <div className="space-y-2 w-full min-w-0">
-                {servingPairsForView.map((pair, idx) => (
-                  <div
-                    key={`${pair.featureSource}-${idx}`}
-                    className={`flex flex-wrap items-center gap-2 min-w-0 ${
-                      idx < servingPairsForView.length - 1
-                        ? "pb-2 border-b border-gray-50"
-                        : ""
-                    }`}
-                  >
-                    <PlainVal mono>{pair.featureSource}</PlainVal>
-                    <SourceTypeBadge sourceType={pair.sourceType} />
-                    <DataLatencyTag latency={pair.dataLatency} />
-                  </div>
-                ))}
-              </div>
-            </FieldRow>
+            <p className="text-sm text-gray-400 py-4 text-center px-2">
+              Serving configuration UI is planned for a follow-up release.
+            </p>
             <FieldRow label="Serving Fts">
               <PlainVal>{String(servingFeatureCount)}</PlainVal>
             </FieldRow>
@@ -617,25 +549,30 @@ export default function FeatureGroupDetail() {
           </ConfigPanel>
         </div>
 
-        {/* Tab section */}
         <DetailTabSection fg={fg} />
       </div>
 
-      {/* Edit Modal */}
       <FeatureGroupModal
-        open={modalOpen}
+        open={basicModalOpen}
         mode="edit"
-        initialData={prefillFormData}
-        initialStep={0}
+        variant="basic"
         editId={fg.id}
-        modules={INITIAL_MODULES}
+        initialData={fd}
+        modules={modules}
         originalStatus={fg.status}
-        onClose={() => setModalOpen(false)}
-        onSaveDraft={() => setModalOpen(false)}
-        onSubmit={() => {
-          setLocalFg(f => f ? { ...f, status: "Online Changing" } : f);
-          setModalOpen(false);
-        }}
+        onClose={() => setBasicModalOpen(false)}
+        onSubmit={(data) => handleBasicSave(data)}
+      />
+      <FeatureGroupModal
+        open={trainingModalOpen}
+        mode="edit"
+        variant="training"
+        editId={fg.id}
+        initialData={fd}
+        modules={modules}
+        originalStatus={fg.status}
+        onClose={() => setTrainingModalOpen(false)}
+        onSubmit={(data) => handleTrainingSave(data)}
       />
     </div>
   );
@@ -643,10 +580,14 @@ export default function FeatureGroupDetail() {
 
 // ─── ConfigPanel ──────────────────────────────────────────────────────────────
 function ConfigPanel({
-  title, icon, children,
+  title,
+  icon,
+  headerRight,
+  children,
 }: {
   title: string;
   icon: React.ReactNode;
+  headerRight?: React.ReactNode;
   children: React.ReactNode;
 }) {
   return (
@@ -656,13 +597,16 @@ function ConfigPanel({
     >
       {/* Panel header */}
       <div
-        className="flex items-center gap-1.5 px-4 py-2.5 border-b border-gray-100"
+        className="flex items-center justify-between gap-2 px-4 py-2.5 border-b border-gray-100"
         style={{ background: "linear-gradient(to right, rgba(19,194,194,0.04), transparent)" }}
       >
-        <span style={{ color: "#13c2c2" }}>{icon}</span>
-        <span className="text-xs" style={{ fontWeight: 700, color: "#0e9494", letterSpacing: "0.03em", textTransform: "uppercase" }}>
-          {title}
-        </span>
+        <div className="flex items-center gap-1.5 min-w-0">
+          <span style={{ color: "#13c2c2" }}>{icon}</span>
+          <span className="text-xs" style={{ fontWeight: 700, color: "#0e9494", letterSpacing: "0.03em", textTransform: "uppercase" }}>
+            {title}
+          </span>
+        </div>
+        {headerRight}
       </div>
       {/* Fields */}
       <div className="px-4 py-2 divide-y divide-gray-50">
@@ -871,7 +815,7 @@ function FeatureListTab({ fg }: { fg: FeatureGroup }) {
   const [page, setPage] = useState(1);
   const PAGE_SIZE = 20;
 
-  const features = DEFAULT_FEATURES;
+  const features = buildFeatureRowsFromFg(fg);
 
   function handleSort(col: string) {
     if (sortCol === col) {

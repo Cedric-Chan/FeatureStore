@@ -1,7 +1,15 @@
 import { useState, useRef, useEffect } from "react";
 import { useNavigate } from "react-router";
+import { useFeatureGroups } from "@/app/feature-group/FeatureGroupsProvider";
 import { FEATURE_GROUP_HTML } from "./featureGroupHtml";
-import FeatureGroupModal, { type FGFormData } from "./FeatureGroupModal";
+import FeatureGroupModal, {
+  type FGFormData,
+  normalizeFgFormData,
+} from "./FeatureGroupModal";
+import type { FeatureGroup, FeatureGroupStatus } from "./fgSeed";
+
+export type { FeatureGroup, FeatureGroupStatus } from "./fgSeed";
+export { INITIAL_FG_LIST_SEED, INITIAL_MODULES } from "./fgSeed";
 import {
   MapPin,
   Layers,
@@ -13,7 +21,6 @@ import {
   Settings,
   ChevronRight,
   ChevronDown,
-  Edit2,
   Search,
   CheckCircle2,
   Ban,
@@ -27,192 +34,6 @@ import {
   Zap,
   Copy,
 } from "lucide-react";
-
-export type FeatureGroupStatus = "Online" | "Online Changing" | "Draft" | "Disable" | "Offline";
-
-export interface FeatureGroup {
-  id: string;
-  name: string;
-  status: FeatureGroupStatus;
-  region: string;
-  module: string;
-  owner: string;
-  createTime: string;
-  updateTime: string;
-  description: string;
-  /** Internal: form data preserved for draft editing */
-  _formData?: Partial<FGFormData>;
-  /** Internal: last saved step index */
-  _savedStep?: number;
-}
-
-// ─── Initial mock data ────────────────────────────────────────────────────────
-const INITIAL_MOCK: FeatureGroup[] = [
-  {
-    id: "1",
-    name: "user_risk_score_fg",
-    status: "Online",
-    region: "TH",
-    module: "Credit Buyer Behavior",
-    owner: "cedric.chencan@seamoney.com,sankar.shyamal@seamoney.com",
-    createTime: "2026-02-14 10:00:00",
-    updateTime: "2026-02-16 08:30:00",
-    description: "User risk scoring feature group for Thailand market, aggregates behavioral signals and transaction patterns.",
-    _formData: {
-      name: "user_risk_score_fg", region: "TH", module: "Credit Buyer Behavior",
-      owners: ["cedric.chencan@seamoney.com", "sankar.shyamal@seamoney.com"],
-      description: "User risk scoring feature group for Thailand market, aggregates behavioral signals and transaction patterns.",
-      dataServer: "reg_sg_hive", tableSchema: "risk_db", tableName: "user_risk_score_ods",
-      datePartition: "dt", partitionType: "Incremental Data", updateFrequency: "Daily",
-      entitiesColumns: ["platform_user_id"], filter: "dt='2026-02-16'",
-      servingBlocks: [
-        { id: "sb_list_1", featureSource: "riskfeat_hbase_th", transformation: "QueryAaiCache@V2" },
-      ],
-      featureMapping: {},
-      computeFeatures: [],
-    },
-  },
-  {
-    id: "2",
-    name: "mx_acard_realtime_fg",
-    status: "Online Changing",
-    region: "MX",
-    module: "External Data",
-    owner: "zhengyi.loh@seamoney.com",
-    createTime: "2026-02-10 14:20:00",
-    updateTime: "2026-02-15 11:00:00",
-    description: "Real-time feature group for Mexico A-card model, capturing live transaction velocity and account age features.",
-    _formData: {
-      name: "mx_acard_realtime_fg", region: "MX", module: "External Data",
-      owners: ["zhengyi.loh@seamoney.com"],
-      description: "Real-time feature group for Mexico A-card model, capturing live transaction velocity and account age features.",
-      dataServer: "reg_us_hive", tableSchema: "acard_db", tableName: "mx_acard_realtime_ods",
-      datePartition: "event_date", partitionType: "Full Data", updateFrequency: "Weekly",
-      entitiesColumns: ["platform_user_id"], filter: "",
-      servingBlocks: [
-        { id: "sb_list_2", featureSource: "mx_redis_cache", transformation: "QueryAaiCache@V2" },
-      ],
-      featureMapping: {},
-      computeFeatures: [],
-    },
-  },
-  {
-    id: "3",
-    name: "th_embedding_fg_v3",
-    status: "Online",
-    region: "TH",
-    module: "External Data",
-    owner: "sankar.shyamal@seamoney.com",
-    createTime: "2026-02-08 09:30:00",
-    updateTime: "2026-02-11 16:20:00",
-    description: "Version 3 of Thailand embedding feature group, includes improved user graph embeddings and NLP-derived features.",
-    _formData: {
-      name: "th_embedding_fg_v3", region: "TH", module: "External Data",
-      owners: ["sankar.shyamal@seamoney.com", "huangwei@shopee.com"],
-      description: "Version 3 of Thailand embedding feature group, includes improved user graph embeddings and NLP-derived features.",
-      dataServer: "reg_sg_hive", tableSchema: "embedding_db", tableName: "th_embedding_v3_ods",
-      datePartition: "pt", partitionType: "Full Data", updateFrequency: "Daily",
-      entitiesColumns: ["platform_user_id", "item_id"], filter: "",
-      servingBlocks: [
-        { id: "sb_list_3", featureSource: "riskfeat_hbase_th", transformation: "OfflineFeatureJoin@V2" },
-      ],
-      featureMapping: {},
-      computeFeatures: [],
-    },
-  },
-  {
-    id: "4",
-    name: "dp_recommend_score_fg",
-    status: "Draft",
-    region: "SHOPEE_SG",
-    module: "Credit Buyer Behavior",
-    owner: "huangwei@shopee.com",
-    createTime: "2026-02-16 13:45:00",
-    updateTime: "2026-02-16 13:45:00",
-    description: "Draft feature group for Shopee Singapore recommendation scoring, currently under review and validation.",
-    _formData: {
-      name: "dp_recommend_score_fg",
-      region: "SHOPEE_SG",
-      module: "Credit Buyer Behavior",
-      owners: ["huangwei@shopee.com"],
-      description: "Draft feature group for Shopee Singapore recommendation scoring, currently under review and validation.",
-      dataServer: "reg_sg_hive",
-      tableSchema: "recommend_db",
-      tableName: "dp_recommend_score_ods",
-      datePartition: "dt", partitionType: "Incremental Data", updateFrequency: "Monthly",
-      entitiesColumns: ["platform_user_id"], filter: "",
-      servingBlocks: [],
-      featureMapping: {},
-      computeFeatures: [],
-    },
-    _savedStep: 1,
-  },
-  {
-    id: "5",
-    name: "user_graph_relation_fg",
-    status: "Online",
-    region: "TH",
-    module: "Credit Buyer Behavior",
-    owner: "cedric.chencan@seamoney.com",
-    createTime: "2026-02-06 11:00:00",
-    updateTime: "2026-02-13 09:00:00",
-    description: "User social graph and relation feature group, derives network-based features for fraud detection models.",
-    _formData: {
-      name: "user_graph_relation_fg", region: "TH", module: "Credit Buyer Behavior",
-      owners: ["cedric.chencan@seamoney.com", "zhengyi.loh@seamoney.com"],
-      description: "User social graph and relation feature group, derives network-based features for fraud detection models.",
-      dataServer: "reg_sg_hive", tableSchema: "graph_db", tableName: "user_graph_relation_ods",
-      datePartition: "stat_date", partitionType: "Incremental Data", updateFrequency: "Daily",
-      entitiesColumns: ["platform_user_id", "shop_id"], filter: "is_active=true",
-      servingBlocks: [
-        { id: "sb_list_5", featureSource: "th_graph_relation", transformation: "QueryAaiCache@V3" },
-      ],
-      featureMapping: {},
-      computeFeatures: [],
-    },
-  },
-  {
-    id: "6",
-    name: "mx_device_fingerprint_fg",
-    status: "Online Changing",
-    region: "MX",
-    module: "External Data",
-    owner: "xiaochen.kuang@monee.com",
-    createTime: "2026-01-28 15:30:00",
-    updateTime: "2026-02-15 20:00:00",
-    description: "Device fingerprint feature group for Mexico, tracks device identity signals and cross-device behavior patterns.",
-    _formData: {
-      name: "mx_device_fingerprint_fg", region: "MX", module: "External Data",
-      owners: ["xiaochen.kuang@monee.com"],
-      description: "Device fingerprint feature group for Mexico, tracks device identity signals and cross-device behavior patterns.",
-      dataServer: "reg_us_hive", tableSchema: "device_db", tableName: "mx_device_fingerprint_ods",
-      datePartition: "data_date", partitionType: "Full Data", updateFrequency: "Daily",
-      entitiesColumns: ["spp_user_id", "device_id"], filter: "",
-      servingBlocks: [
-        { id: "sb_list_6", featureSource: "mx_redis_cache", transformation: "MxRealtimeScore@V1" },
-      ],
-      featureMapping: {},
-      computeFeatures: [],
-    },
-  },
-];
-
-// ─── Module directory ───────────────────────────────────────────────────────
-export const INITIAL_MODULES = [
-  "System",
-  "Credit Buyer Behavior",
-  "Credit Seller Behavior",
-  "E-Commerce Buyer Behavior",
-  "E-Commerce Seller Behavior",
-  "Offline Seller Service",
-  "Shopee Pay",
-  "Shopee Food",
-  "Data Point",
-  "Linked Features",
-  "Phone",
-  "Application",
-  "External Data",
-];
 
 // ─── Status config ────────────────────────────────────────────────────────────
 const STATUS_CONFIG: Record<
@@ -308,9 +129,11 @@ export default function FeatureGroupList() {
   const navigate = useNavigate();
 
   // Core list state (lifted so modal can mutate it)
-  const [fgList, setFgList] = useState<FeatureGroup[]>(INITIAL_MOCK);
-  // Module dir state (lifted so modal can read it)
-  const [modules, setModules] = useState<string[]>(INITIAL_MODULES);
+  const { fgList, setFgList, syncFgMetadata, modules, setModules } =
+    useFeatureGroups();
+
+  const SYNC_ARIA =
+    "Manually refresh latest Training Config metadata";
 
   // UI state
   const [search, setSearch] = useState("");
@@ -320,122 +143,49 @@ export default function FeatureGroupList() {
   const [showModuleDir, setShowModuleDir] = useState(false);
   const moduleDirWrapRef = useRef<HTMLDivElement>(null);
 
-  // Modal state
-  const [modalOpen, setModalOpen]       = useState(false);
-  const [modalMode, setModalMode]       = useState<"create" | "edit">("create");
-  const [modalEditId, setModalEditId]   = useState<string | undefined>();
-  const [modalInitData, setModalInitData] = useState<Partial<FGFormData> | undefined>();
-  const [modalInitStep, setModalInitStep] = useState(0);
-  const [modalOrigStatus, setModalOrigStatus] = useState<string | undefined>();
+  const [modalOpen, setModalOpen] = useState(false);
+  const [modalInitData, setModalInitData] = useState<
+    Partial<FGFormData> | undefined
+  >();
 
   function openCreateModal() {
-    setModalMode("create");
-    setModalEditId(undefined);
     setModalInitData(undefined);
-    setModalInitStep(0);
-    setModalOrigStatus(undefined);
-    setModalOpen(true);
-  }
-
-  function openEditModal(fg: FeatureGroup) {
-    setModalMode("edit");
-    setModalEditId(fg.id);
-    setModalInitData(fg._formData ?? {});
-    setModalInitStep(fg.status === "Draft" ? (fg._savedStep ?? 0) : 0);
-    setModalOrigStatus(fg.status);
     setModalOpen(true);
   }
 
   function openCopyModal(fg: FeatureGroup) {
-    // Create mode, but pre-fill with the source FG's latest config.
-    // Clear the name so the user must give it a new one.
     const prefill = { ...(fg._formData ?? {}), name: "" };
-    setModalMode("create");
-    setModalEditId(undefined);
     setModalInitData(prefill);
-    setModalInitStep(0);
-    setModalOrigStatus(undefined);
     setModalOpen(true);
   }
 
+  function handleBasicModalSubmit(data: FGFormData) {
+    const now = new Date().toISOString().slice(0, 19).replace("T", " ");
+    const full = normalizeFgFormData(
+      data as Partial<FGFormData> & Record<string, unknown>
+    );
+    const newId = `draft_${Date.now()}`;
+    const newFg: FeatureGroup = {
+      id: newId,
+      name: full.name || "(Untitled Draft)",
+      status: "Draft",
+      region: full.region || "—",
+      module: full.module || "—",
+      owner: full.owners.join(",") || "—",
+      createTime: now,
+      updateTime: now,
+      description: full.description || "",
+      _formData: full,
+    };
+    setFgList((list) => [newFg, ...list]);
+    setModalOpen(false);
+    navigate(`/fg/${newId}`);
+  }
+
   function setFgStatus(id: string, status: FeatureGroupStatus) {
-    setFgList(list => list.map(fg => fg.id === id ? { ...fg, status } : fg));
-  }
-
-  function handleSaveDraft(data: FGFormData, editId?: string) {
-    const now = new Date().toISOString().slice(0, 19).replace("T", " ");
-    if (editId) {
-      setFgList(list =>
-        list.map(fg =>
-          fg.id === editId
-            ? {
-                ...fg,
-                name: data.name || fg.name,
-                region: data.region || fg.region,
-                module: data.module || fg.module,
-                owner: data.owners.join(",") || fg.owner,
-                description: data.description,
-                updateTime: now,
-                status: "Draft" as FeatureGroupStatus,
-                _formData: data,
-              }
-            : fg
-        )
-      );
-    } else {
-      const newFg: FeatureGroup = {
-        id: `draft_${Date.now()}`,
-        name: data.name || "(Untitled Draft)",
-        status: "Draft",
-        region: data.region || "—",
-        module: data.module || "—",
-        owner: data.owners.join(",") || "—",
-        createTime: now,
-        updateTime: now,
-        description: data.description || "",
-        _formData: data,
-        _savedStep: 0,
-      };
-      setFgList(list => [newFg, ...list]);
-    }
-  }
-
-  function handleSubmit(data: FGFormData, editId?: string) {
-    const now = new Date().toISOString().slice(0, 19).replace("T", " ");
-    if (editId) {
-      setFgList(list =>
-        list.map(fg =>
-          fg.id === editId
-            ? {
-                ...fg,
-                name: data.name,
-                region: data.region,
-                module: data.module,
-                owner: data.owners.join(","),
-                description: data.description,
-                updateTime: now,
-                status: "Online Changing" as FeatureGroupStatus,
-                _formData: data,       // keep for future re-edits
-                _savedStep: undefined,
-              }
-            : fg
-        )
-      );
-    } else {
-      const newFg: FeatureGroup = {
-        id: `fg_${Date.now()}`,
-        name: data.name,
-        status: "Online Changing",
-        region: data.region,
-        module: data.module,
-        owner: data.owners.join(","),
-        createTime: now,
-        updateTime: now,
-        description: data.description || "",
-        _formData: data,
-      };
-      setFgList(list => [newFg, ...list]);
-    }
+    setFgList((list) =>
+      list.map((fg) => (fg.id === id ? { ...fg, status } : fg))
+    );
   }
 
   function deleteFg(id: string) {
@@ -573,8 +323,9 @@ export default function FeatureGroupList() {
             key={fg.id}
             fg={fg}
             index={(currentPage - 1) * pageSize + idx}
-            onNavigate={fg.status === "Draft" ? undefined : () => navigate(`/fg/${fg.id}`)}
-            onEdit={() => openEditModal(fg)}
+            onNavigate={() => navigate(`/fg/${fg.id}`)}
+            onSync={() => void syncFgMetadata(fg.id)}
+            syncTitle={SYNC_ARIA}
             onCopy={() => openCopyModal(fg)}
             onDelete={() => deleteFg(fg.id)}
             onManageAction={(action) => {
@@ -636,15 +387,12 @@ export default function FeatureGroupList() {
       {/* Create / Edit Modal */}
       <FeatureGroupModal
         open={modalOpen}
-        mode={modalMode}
+        mode="create"
+        variant="basic"
         initialData={modalInitData}
-        initialStep={modalInitStep}
-        editId={modalEditId}
         modules={modules}
-        originalStatus={modalOrigStatus}
         onClose={() => setModalOpen(false)}
-        onSaveDraft={handleSaveDraft}
-        onSubmit={handleSubmit}
+        onSubmit={(data) => handleBasicModalSubmit(data)}
       />
     </div>
   );
@@ -806,12 +554,20 @@ function MenuItem({
 
 // ─── Feature Group Card ───────────────────────────────────────────────────────
 function FeatureGroupCard({
-  fg, index, onNavigate, onEdit, onCopy, onDelete, onManageAction,
+  fg,
+  index,
+  onNavigate,
+  onSync,
+  syncTitle,
+  onCopy,
+  onDelete,
+  onManageAction,
 }: {
   fg: FeatureGroup;
   index: number;
-  onNavigate?: () => void;
-  onEdit: () => void;
+  onNavigate: () => void;
+  onSync: () => void;
+  syncTitle: string;
   onCopy: () => void;
   onDelete: () => void;
   onManageAction: (action: ManageAction) => void;
@@ -848,45 +604,38 @@ function FeatureGroupCard({
           <div className="flex items-start justify-between gap-4">
             <div className="flex items-center gap-3 flex-wrap min-w-0">
               {/* FG Name */}
-              {isDraft ? (
+              <button
+                type="button"
+                onClick={onNavigate}
+                className="text-left group flex items-center gap-1.5 min-w-0"
+                title={
+                  isDraft
+                    ? "Open draft detail"
+                    : "Open feature group detail"
+                }
+              >
                 <span
-                  className="flex items-center gap-1.5 min-w-0"
-                  title="Draft — not published. Click Edit to continue."
+                  className="transition-colors group-hover:underline"
+                  style={{
+                    fontWeight: 700,
+                    fontSize: 17,
+                    color: isDraft
+                      ? "#64748b"
+                      : hovered
+                      ? "#13c2c2"
+                      : "#1a1a2e",
+                    fontFamily: "monospace",
+                    letterSpacing: "-0.01em",
+                  }}
                 >
-                  <span
-                    className="text-gray-400"
-                    style={{
-                      fontWeight: 700,
-                      fontSize: 17,
-                      fontFamily: "monospace",
-                      letterSpacing: "-0.01em",
-                      cursor: "default",
-                    }}
-                  >
-                    {fg.name}
-                  </span>
+                  {fg.name}
                 </span>
-              ) : (
-                <button onClick={onNavigate} className="text-left group flex items-center gap-1.5 min-w-0">
-                  <span
-                    className="transition-colors group-hover:underline"
-                    style={{
-                      fontWeight: 700,
-                      fontSize: 17,
-                      color: hovered ? "#13c2c2" : "#1a1a2e",
-                      fontFamily: "monospace",
-                      letterSpacing: "-0.01em",
-                    }}
-                  >
-                    {fg.name}
-                  </span>
-                  <ChevronRight
-                    size={15}
-                    className="flex-shrink-0 transition-all opacity-0 group-hover:opacity-100 group-hover:translate-x-0.5"
-                    style={{ color: "#13c2c2" }}
-                  />
-                </button>
-              )}
+                <ChevronRight
+                  size={15}
+                  className="flex-shrink-0 transition-all opacity-0 group-hover:opacity-100 group-hover:translate-x-0.5"
+                  style={{ color: "#13c2c2" }}
+                />
+              </button>
               <StatusTag status={fg.status} />
               {MOCK_FT_COUNTS[fg.id] && (
                 <>
@@ -899,24 +648,30 @@ function FeatureGroupCard({
             {/* Action buttons */}
             <div className="flex items-center gap-2 flex-shrink-0">
               <button
-                onClick={fg.status === "Online Changing" || fg.status === "Disable" ? undefined : onEdit}
+                type="button"
+                onClick={
+                  fg.status === "Online Changing" || fg.status === "Disable"
+                    ? undefined
+                    : onSync
+                }
                 disabled={fg.status === "Online Changing" || fg.status === "Disable"}
-                className={`flex items-center gap-1.5 px-3 py-1.5 text-xs rounded-lg border transition-all ${
-                  isDraft
-                    ? "border-teal-400 text-teal-600 bg-teal-50 hover:bg-teal-100"
-                    : fg.status === "Online Changing" || fg.status === "Disable"
+                className={`flex items-center gap-1.5 px-3 py-1.5 text-xs rounded-lg border transition-all min-h-[44px] ${
+                  fg.status === "Online Changing" || fg.status === "Disable"
                     ? "border-gray-100 text-gray-300 bg-gray-50 cursor-not-allowed"
                     : "border-gray-200 text-gray-600 hover:border-teal-300 hover:text-teal-600 hover:bg-teal-50"
                 }`}
                 style={{ fontWeight: 500 }}
                 title={
-                  fg.status === "Online Changing" ? "Cannot edit while a change is pending"
-                  : fg.status === "Disable" ? "Cannot edit a disabled feature group"
-                  : undefined
+                  fg.status === "Online Changing"
+                    ? "Cannot sync while a change is pending"
+                    : fg.status === "Disable"
+                    ? "Cannot sync a disabled feature group"
+                    : syncTitle
                 }
+                aria-label={syncTitle}
               >
-                <Edit2 size={12} />
-                Edit
+                <RefreshCw size={12} />
+                Sync
               </button>
 
               {/* Copy button */}
