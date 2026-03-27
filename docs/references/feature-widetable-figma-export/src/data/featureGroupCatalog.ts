@@ -10,7 +10,6 @@ export interface FGDef {
   dataServer: string;
   schema: string;
   table: string;
-  marker: string;
   filter: string;
   entityCols: string[];
   eventTimeCols: string[];
@@ -23,7 +22,6 @@ export const FG_CATALOG: FGDef[] = [
     dataServer: "reg_sg_hive",
     schema: "feature_store",
     table: "user_profile_v3",
-    marker: "user_profile_v3",
     filter: "—",
     entityCols: ["user_id"],
     eventTimeCols: ["last_login_days"],
@@ -42,7 +40,6 @@ export const FG_CATALOG: FGDef[] = [
     dataServer: "reg_sg_hive",
     schema: "feature_store",
     table: "order_history_v2",
-    marker: "order_history_v2",
     filter: "ds >= '2024-01-01'",
     entityCols: ["user_id", "order_id"],
     eventTimeCols: ["order_time", "ds"],
@@ -62,7 +59,6 @@ export const FG_CATALOG: FGDef[] = [
     dataServer: "reg_us_hive",
     schema: "risk_store",
     table: "credit_behavior_v1",
-    marker: "credit_behavior_v1",
     filter: "—",
     entityCols: ["user_id"],
     eventTimeCols: ["event_time"],

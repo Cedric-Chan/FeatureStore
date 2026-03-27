@@ -990,8 +990,8 @@ function FeatureGroupPanel({
                               { label: "Data Server", value: fg.dataServer },
                               { label: "Schema",      value: fg.schema     },
                               { label: "Table",       value: fg.table      },
-                              { label: "Marker",      value: fg.marker     },
-                              { label: "Filter",      value: fg.filter     },
+                              { label: "Entities Column(s)", value: fg.entityCols.join(", ") },
+                              { label: "Custom Filter", value: fg.filter },
                             ].map(({label,value}) => (
                               <div key={label} className="flex items-start gap-2">
                                 <span className="text-xs text-gray-400 w-20 shrink-0">{label}</span>

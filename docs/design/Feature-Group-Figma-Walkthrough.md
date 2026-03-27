@@ -25,7 +25,7 @@
 
 - [x] 三步：Basic Info、Training Config、Serving Config
 - [x] Basic：`name`、`region`、`module`、`owners`（多选 chips）、`description`
-- [x] Training：`dataServer`、`tableSchema`、`tableName`、`datePartition`、`partitionType`、`marker`、`filter`
+- [x] Training：`dataServer`；`tableSchema` / `tableName`（下拉，仅 **Project Table Access List**）；`datePartition` 与 `partitionType` 同一行；`updateFrequency`（Daily / Weekly / Monthly / ONCE）；`entitiesColumns`（多选必填）；`filter`（界面文案 **Custom Filter**）
 - [x] Serving：`dataLatency`、`featureSource`、`sourceType`、`fsInputParams`、`transformation`、`featureMapping`（按 transformation 输出动态校验）
 - [x] Save Draft、Next、Back、Test、Submit；步骤校验
 

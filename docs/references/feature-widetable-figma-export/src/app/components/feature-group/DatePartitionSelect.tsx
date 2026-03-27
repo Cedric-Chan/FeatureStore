@@ -2,7 +2,7 @@ import { useState, useEffect, useRef } from "react";
 import { ChevronDown, Check, CheckCircle2, Loader2 } from "lucide-react";
 
 export function DatePartitionSelect({
-  value, onChange, columns, loading, disabled, hasError,
+  value, onChange, columns, loading, disabled, hasError, className,
 }: {
   value: string;
   onChange: (v: string) => void;
@@ -10,6 +10,8 @@ export function DatePartitionSelect({
   loading: boolean;
   disabled: boolean;
   hasError?: boolean;
+  /** Optional class on the outer wrapper (e.g. max width). */
+  className?: string;
 }) {
   const [inputVal, setInputVal] = useState(value);
   const [open, setOpen] = useState(false);
@@ -30,6 +32,15 @@ export function DatePartitionSelect({
     return () => document.removeEventListener("mousedown", handler);
   }, [open]);
 
+  useEffect(() => {
+    if (!open) return;
+    function onKey(e: KeyboardEvent) {
+      if (e.key === "Escape") setOpen(false);
+    }
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [open]);
+
   function select(col: string) {
     onChange(col);
     setInputVal(col);
@@ -37,7 +48,7 @@ export function DatePartitionSelect({
   }
 
   return (
-    <div className="relative" ref={ref}>
+    <div className={className ? `relative ${className}` : "relative"} ref={ref}>
       <div className="relative">
         <input
           type="text"

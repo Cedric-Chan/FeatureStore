@@ -4,6 +4,11 @@ import {
   AlertCircle, CheckCircle2, Loader2, Lock, Zap, Link2,
 } from "lucide-react";
 import { DatePartitionSelect } from "./DatePartitionSelect";
+import { EntitiesColumnMultiSelect } from "./EntitiesColumnMultiSelect";
+import {
+  getSzfinRealtimeSchemaNames,
+  getSzfinRealtimeTablesForSchema,
+} from "@/data/szfinRealtimeHiveTables";
 
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -18,7 +23,9 @@ export interface FGFormData {
   tableName: string;
   datePartition: string;
   partitionType: string;
-  marker: string;
+  updateFrequency: string;
+  /** Entity key columns from the training table (required, multi-select). */
+  entitiesColumns: string[];
   filter: string;
   dataLatency: string;
   featureSource: string;
@@ -30,7 +37,8 @@ export interface FGFormData {
 
 export const EMPTY_FORM: FGFormData = {
   name: "", region: "", module: "", owners: [], description: "",
-  dataServer: "", tableSchema: "", tableName: "", datePartition: "", partitionType: "", marker: "", filter: "",
+  dataServer: "", tableSchema: "", tableName: "", datePartition: "", partitionType: "",
+  updateFrequency: "", entitiesColumns: [], filter: "",
   dataLatency: "", featureSource: "", sourceType: "", fsInputParams: [], transformation: "",
   featureMapping: {},
 };
@@ -39,6 +47,7 @@ export const EMPTY_FORM: FGFormData = {
 const REGIONS = ["TH", "MX", "SG", "SHOPEE_SG", "MY", "VN", "PH", "ID"];
 const DATA_SERVERS = ["reg_sg_hive", "reg_us_hive"];
 const DATA_LATENCIES = ["Online", "Nearline", "Offline"];
+const UPDATE_FREQUENCIES = ["Daily", "Weekly", "Monthly", "ONCE"];
 
 const STEPS = [
   { key: "basic",    label: "Basic Info"       },
@@ -54,7 +63,8 @@ function isStep0Valid(d: FGFormData) {
 function isStep1Valid(d: FGFormData) {
   return d.dataServer !== "" && d.tableSchema.trim().length > 0 &&
     d.tableName.trim().length > 0 && d.datePartition.trim().length > 0 &&
-    d.partitionType !== "";
+    d.partitionType !== "" && d.updateFrequency !== "" &&
+    d.entitiesColumns.length > 0;
 }
 function isStep2Valid(d: FGFormData) {
   if (!d.dataLatency || !d.featureSource.trim() || !d.transformation.trim()) return false;
@@ -199,6 +209,7 @@ const MOCK_TRANSFORMATIONS: MockTransformation[] = [
 // ─── Mock training feature columns by table name ──────────────────────────────
 const MOCK_TRAINING_FEATURES: Record<string, string[]> = {
   "user_risk_score_ods":       ["risk_score", "credit_limit", "repayment_rate_30d", "default_prob", "fraud_score", "delinquency_rate", "gmv_90d"],
+  "user_risk_score_v1_ods":    ["risk_score", "credit_limit", "repayment_rate_30d", "default_prob", "fraud_score", "delinquency_rate", "gmv_90d"],
   "mx_acard_realtime_ods":     ["user_risk_score", "credit_limit", "default_prob", "id_verification_status", "income_level", "risk_tier"],
   "th_embedding_v3_ods":       ["item_embed_0", "item_embed_1", "item_embed_2", "user_item_affinity", "click_through_rate", "conversion_rate"],
   "dp_recommend_score_ods":    ["rec_score", "shop_affinity", "item_click_prob", "graph_rank_score", "shop_rank", "item_rank_score"],
@@ -227,43 +238,18 @@ interface ModalNotification {
   type: "error" | "warning" | "info";
 }
 
-// Mock: fetch table metadata (simulates a data-catalog permission check)
-async function mockFetchTableMeta(
-  tableName: string
-): Promise<{ ok: boolean; error?: string }> {
-  await new Promise(r => setTimeout(r, 900));
-  // Succeed for table names that look like valid ODS/DW/FT tables
-  if (tableName.length >= 6 && tableName.includes("_")) {
-    return { ok: true };
-  }
-  return {
-    ok: false,
-    error: `需给 szfin_realtime project 授予 "${tableName}" 的表读取权限，请联系数据平台申请`,
-  };
-}
-
-// Mock: fetch marker info
-async function mockFetchMarkerInfo(
-  marker: string
-): Promise<{ ok: boolean; error?: string }> {
-  await new Promise(r => setTimeout(r, 700));
-  if (marker.length >= 6 && marker.includes("_")) {
-    return { ok: true };
-  }
-  return {
-    ok: false,
-    error: `Marker "${marker}" 不存在或当前账号无访问权限，请检查配置后重试`,
-  };
-}
-
 // Mock: fetch columns for a given table (simulates data-catalog schema API)
 const TABLE_COLUMNS_MOCK: Record<string, string[]> = {
+  user_profile_v3:          ["user_id", "age", "gender", "country", "registration_days", "is_verified", "last_login_days", "account_level"],
+  order_history_v2:         ["user_id", "order_id", "total_orders", "total_amount", "order_time", "ds"],
   user_risk_score_ods:      ["dt", "platform_user_id", "shop_id", "risk_score", "risk_level", "overdue_days_30", "create_date", "update_date", "loan_amount", "repayment_cnt"],
+  user_risk_score_v1_ods:   ["dt", "platform_user_id", "shop_id", "risk_score", "risk_level", "overdue_days_30", "create_date", "update_date", "loan_amount", "repayment_cnt"],
   mx_acard_realtime_ods:    ["event_date", "platform_user_id", "id_card_no", "acard_score", "tx_velocity_7d", "tx_amt_30d", "device_cnt", "is_new_user", "login_region"],
   th_embedding_v3_ods:      ["pt", "platform_user_id", "item_id", "user_emb_128", "item_emb_64", "cross_score", "embedding_version", "model_tag"],
   dp_recommend_score_ods:   ["dt", "platform_user_id", "shop_id", "rec_score", "exposure_cnt_7d", "click_cnt_7d", "ctr_7d", "model_version", "segment"],
   user_graph_relation_ods:  ["stat_date", "platform_user_id", "shop_id", "relation_type", "edge_weight", "is_active", "community_id", "hop_cnt"],
   mx_device_fingerprint_ods:["data_date", "spp_user_id", "device_id", "device_model", "os_version", "ip_hash", "risk_tag", "fp_version"],
+  credit_behavior_v1:       ["user_id", "credit_score", "overdue_cnt", "loan_amount", "repay_ratio", "event_time", "risk_label", "delinquency_days"],
 };
 const DEFAULT_COLUMNS = ["dt", "id", "create_time", "update_time", "status", "amount", "region_code"];
 
@@ -314,7 +300,14 @@ export default function FeatureGroupModal({
   // Reset form whenever the modal opens
   useEffect(() => {
     if (open) {
-      setFormState({ ...EMPTY_FORM, ...(initialData ?? {}) });
+      setFormState(() => {
+        const merged: FGFormData = { ...EMPTY_FORM, ...(initialData ?? {}) };
+        const legacy = initialData as { marker?: string } | undefined;
+        if (legacy?.marker && merged.entitiesColumns.length === 0) {
+          merged.entitiesColumns = [legacy.marker];
+        }
+        return merged;
+      });
       setStep(initialStep ?? 0);
       setTouched(false);
       setOwnerInput("");
@@ -556,7 +549,7 @@ export default function FeatureGroupModal({
             />
           )}
           {step === 1 && (
-            <Step1TrainingConfig form={form} setField={setField} err={touched} onNotify={addNotification} />
+            <Step1TrainingConfig form={form} setField={setField} err={touched} />
           )}
           {step === 2 && (
             <Step2ServingConfig form={form} setField={setField} err={touched} />
@@ -899,41 +892,23 @@ function Step0BasicInfo({
 }
 
 // ─── Step 1: Training Config ──────────────────────────────────────────────────
-type AsyncStatus = "idle" | "loading" | "success" | "error";
 
 function Step1TrainingConfig({
-  form, setField, err, onNotify,
+  form, setField, err,
 }: {
   form: FGFormData;
   setField: (k: keyof FGFormData, v: any) => void;
   err: boolean;
-  onNotify: (msg: string, type?: "error" | "warning" | "info") => void;
 }) {
-  const [tableNameStatus, setTableNameStatus] = useState<AsyncStatus>("idle");
-  const [markerStatus, setMarkerStatus]       = useState<AsyncStatus>("idle");
-  const [columns, setColumns]                 = useState<string[]>([]);
-  const [columnsLoading, setColumnsLoading]   = useState(false);
-  const tableCheckRef  = useRef<string>("");
-  const markerCheckRef = useRef<string>("");
-  const columnsKeyRef  = useRef<string>("");
+  const [columns, setColumns]               = useState<string[]>([]);
+  const [columnsLoading, setColumnsLoading] = useState(false);
+  const columnsKeyRef = useRef<string>("");
 
-  async function checkTableName() {
-    const val = form.tableName.trim();
-    if (!val || val === tableCheckRef.current) return;
-    tableCheckRef.current = val;
-    setTableNameStatus("loading");
-    const result = await mockFetchTableMeta(val);
-    if (tableCheckRef.current !== val) return;
-    if (result.ok) {
-      setTableNameStatus("success");
-      // also fetch columns for Date Partition autocomplete
-      fetchColumns(form.tableName.trim());
-    } else {
-      setTableNameStatus("error");
-      setColumns([]);
-      onNotify(result.error ?? "获取 Table Metadata 失败", "error");
-    }
-  }
+  const schemaOptions = getSzfinRealtimeSchemaNames().map(s => ({ label: s, value: s }));
+  const tableOptions = getSzfinRealtimeTablesForSchema(form.tableSchema).map(t => ({
+    label: t,
+    value: t,
+  }));
 
   async function fetchColumns(tn: string) {
     const key = tn;
@@ -946,34 +921,26 @@ function Step1TrainingConfig({
     setColumnsLoading(false);
   }
 
-  async function checkMarker() {
-    const val = form.marker.trim();
-    if (!val || val === markerCheckRef.current) return;
-    markerCheckRef.current = val;
-    setMarkerStatus("loading");
-    const result = await mockFetchMarkerInfo(val);
-    if (markerCheckRef.current !== val) return;
-    if (result.ok) {
-      setMarkerStatus("success");
-    } else {
-      setMarkerStatus("error");
-      onNotify(result.error ?? "获取 Marker 信息失败", "error");
-    }
+  function onSchemaChange(schema: string) {
+    setField("tableSchema", schema);
+    setField("tableName", "");
+    setField("datePartition", "");
+    setField("partitionType", "");
+    setField("entitiesColumns", []);
+    setColumns([]);
+    columnsKeyRef.current = "";
   }
 
-  function tableNameSuffix() {
-    if (tableNameStatus === "loading") return <Loader2 size={13} className="animate-spin text-gray-400" />;
-    if (tableNameStatus === "success") return <CheckCircle2 size={13} style={{ color: "#52c41a" }} />;
-    return null;
+  function onTableChange(table: string) {
+    setField("tableName", table);
+    setField("datePartition", "");
+    setField("partitionType", "");
+    setField("entitiesColumns", []);
+    setColumns([]);
+    columnsKeyRef.current = "";
+    if (table.trim()) fetchColumns(table.trim());
   }
 
-  function markerSuffix() {
-    if (markerStatus === "loading") return <Loader2 size={13} className="animate-spin text-gray-400" />;
-    if (markerStatus === "success") return <CheckCircle2 size={13} style={{ color: "#52c41a" }} />;
-    return null;
-  }
-
-  // When form already has tableName (edit/copy mode), auto-load columns
   useEffect(() => {
     if (form.tableName.trim() && columns.length === 0 && !columnsLoading) {
       fetchColumns(form.tableName.trim());
@@ -1001,100 +968,116 @@ function Step1TrainingConfig({
         <FormGroup
           label="Table Schema"
           required
-          hint="Database name"
+          hint="From Project Table Access List"
           error={err && !form.tableSchema.trim() ? "Table Schema is required" : undefined}
         >
-          <StyledInput
+          <StyledSelect
             value={form.tableSchema}
-            onChange={v => setField("tableSchema", v)}
-            placeholder="e.g. risk_db"
-            mono
+            onChange={v => onSchemaChange(v)}
+            options={schemaOptions}
+            placeholder="Select schema"
             hasError={err && !form.tableSchema.trim()}
           />
         </FormGroup>
         <FormGroup
           label="Table Name"
           required
-          hint="Table name"
+          hint="From Project Table Access List"
           error={err && !form.tableName.trim() ? "Table Name is required" : undefined}
         >
-          <StyledInput
+          <StyledSelect
             value={form.tableName}
-            onChange={v => {
-              setField("tableName", v);
-              setTableNameStatus("idle");
-              tableCheckRef.current = "";
-              setColumns([]);
-              columnsKeyRef.current = "";
-              // reset dependent fields
-              setField("datePartition", "");
-              setField("partitionType", "");
-            }}
-            onBlur={checkTableName}
-            placeholder="e.g. user_risk_score_ods"
-            mono
+            onChange={v => onTableChange(v)}
+            options={tableOptions}
+            placeholder={form.tableSchema.trim() ? "Select table" : "Select schema first"}
             hasError={err && !form.tableName.trim()}
-            suffix={tableNameSuffix()}
+            disabled={!form.tableSchema.trim()}
           />
         </FormGroup>
       </div>
 
-      {/* Date Partition — autocomplete from table columns */}
+      <div className="flex flex-wrap gap-4 items-start">
+        <div className="min-w-0 flex-1 max-w-md">
+          <FormGroup
+            label="Date Partition"
+            required
+            hint="Partition column"
+            error={err && !form.datePartition.trim() ? "Date Partition is required" : undefined}
+          >
+            <DatePartitionSelect
+              className="max-w-full"
+              value={form.datePartition}
+              onChange={v => setField("datePartition", v)}
+              columns={columns}
+              loading={columnsLoading}
+              disabled={!form.tableName.trim()}
+              hasError={err && !form.datePartition.trim()}
+            />
+          </FormGroup>
+        </div>
+        <div className="w-full sm:w-44 shrink-0">
+          <FormGroup
+            label="Partition Type"
+            required
+            error={err && !form.partitionType ? "Partition Type is required" : undefined}
+          >
+            <StyledSelect
+              value={form.partitionType}
+              onChange={v => setField("partitionType", v)}
+              options={[
+                { label: "Full Data",        value: "Full Data"        },
+                { label: "Incremental Data", value: "Incremental Data" },
+              ]}
+              placeholder="Select partition type"
+              hasError={err && !form.partitionType}
+              disabled={!form.datePartition.trim()}
+            />
+          </FormGroup>
+        </div>
+      </div>
+
       <FormGroup
-        label="Date Partition"
+        label="Update Frequency"
         required
-        hint="Select the date partition column from the table"
-        error={err && !form.datePartition.trim() ? "Date Partition is required" : undefined}
+        error={err && !form.updateFrequency ? "Update Frequency is required" : undefined}
       >
-        <DatePartitionSelect
-          value={form.datePartition}
-          onChange={v => setField("datePartition", v)}
+        <StyledSelect
+          value={form.updateFrequency}
+          onChange={v => setField("updateFrequency", v)}
+          options={UPDATE_FREQUENCIES.map(u => ({ label: u, value: u }))}
+          placeholder="Select update frequency"
+          hasError={err && !form.updateFrequency}
+        />
+      </FormGroup>
+
+      <FormGroup
+        label="Entities Column"
+        required
+        hint="One or more entity key columns"
+        error={
+          err && form.entitiesColumns.length === 0
+            ? "Select at least one entity column"
+            : undefined
+        }
+      >
+        <EntitiesColumnMultiSelect
+          value={form.entitiesColumns}
+          onChange={v => setField("entitiesColumns", v)}
           columns={columns}
           loading={columnsLoading}
           disabled={!form.tableName.trim()}
-          hasError={err && !form.datePartition.trim()}
+          hasError={err && form.entitiesColumns.length === 0}
         />
       </FormGroup>
 
-      {/* Partition Type — only enabled after Date Partition selected */}
-      <FormGroup
-        label="Partition Type"
-        required
-        error={err && !form.partitionType ? "Partition Type is required" : undefined}
-      >
-        <StyledSelect
-          value={form.partitionType}
-          onChange={v => setField("partitionType", v)}
-          options={[
-            { label: "Full Data",        value: "Full Data"        },
-            { label: "Incremental Data", value: "Incremental Data" },
-          ]}
-          placeholder="Select partition type"
-          hasError={err && !form.partitionType}
-          disabled={!form.datePartition.trim()}
+      <FormGroup label="Custom Filter" hint="Optional">
+        <StyledInput
+          value={form.filter}
+          onChange={v => setField("filter", v)}
+          placeholder="Please Input SQL After 'WHERE'"
+          mono
         />
       </FormGroup>
-
-      <div className="grid grid-cols-2 gap-4">
-        <FormGroup label="Marker" hint="Optional">
-          <StyledInput
-            value={form.marker}
-            onChange={v => { setField("marker", v); setMarkerStatus("idle"); markerCheckRef.current = ""; }}
-            onBlur={checkMarker}
-            placeholder="e.g. user_risk_score_ods"
-            mono
-            suffix={markerSuffix()}
-          />
-        </FormGroup>
-        <FormGroup label="Filter" hint="Optional">
-          <StyledInput
-            value={form.filter}
-            onChange={v => setField("filter", v)}
-            placeholder="Please enter filter SQL after 'WHERE'"
-            mono
-          />
-        </FormGroup>
-      </div>
     </div>
   );
 }

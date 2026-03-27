@@ -243,7 +243,10 @@ interface VersionConfig {
   dataServer: string;
   tableSchema: string;
   tableName: string;
-  marker: string;
+  datePartition: string;
+  partitionType: string;
+  updateFrequency: string;
+  entitiesColumns: string[];
   filter: string;
   dataLatency: string;
   featureSource: string;
@@ -271,7 +274,8 @@ const DEFAULT_VERSIONS: VersionRow[] = [
     isCurrent: true,
     config: {
       dataServer: "reg_sg_hive", tableSchema: "risk_db", tableName: "user_risk_score_ods",
-      marker: "user_risk_score_ods", filter: "dt='2026-02-16'",
+      datePartition: "dt", partitionType: "Incremental Data", updateFrequency: "Daily",
+      entitiesColumns: ["platform_user_id"], filter: "dt='2026-02-16'",
       dataLatency: "Online", featureSource: "riskfeat_hbase_th", sourceType: "HBase", transformation: "QueryAaiCache@V2",
     },
   },
@@ -284,7 +288,8 @@ const DEFAULT_VERSIONS: VersionRow[] = [
     isCurrent: false,
     config: {
       dataServer: "reg_sg_hive", tableSchema: "risk_db", tableName: "user_risk_score_ods",
-      marker: "user_risk_score_ods", filter: "",
+      datePartition: "dt", partitionType: "Incremental Data", updateFrequency: "Daily",
+      entitiesColumns: ["platform_user_id"], filter: "",
       dataLatency: "Nearline", featureSource: "riskfeat_hbase_th", sourceType: "HBase", transformation: "QueryAaiCache@V1",
     },
   },
@@ -297,7 +302,8 @@ const DEFAULT_VERSIONS: VersionRow[] = [
     isCurrent: false,
     config: {
       dataServer: "reg_sg_hive", tableSchema: "risk_db", tableName: "user_risk_score_v1_ods",
-      marker: "user_risk_score_v1_ods", filter: "",
+      datePartition: "dt", partitionType: "Incremental Data", updateFrequency: "Daily",
+      entitiesColumns: ["platform_user_id"], filter: "",
       dataLatency: "Offline", featureSource: "riskfeat_hbase_th", sourceType: "HBase", transformation: "OfflineFeatureJoin@V1",
     },
   },
@@ -312,7 +318,8 @@ interface DetailConfig {
   tableName: string;
   datePartition: string;
   partitionType: "Full Data" | "Incremental Data";
-  marker: string;
+  updateFrequency: string;
+  entitiesColumns: string[];
   filter: string;
   featureSource: string;
   sourceType: "HBase" | "Redis" | "gRPC" | "GraphDB";
@@ -321,19 +328,19 @@ interface DetailConfig {
 }
 
 const DETAIL_CONFIG: Record<string, DetailConfig> = {
-  "1": { module: "Credit Buyer Behavior", dataLatency: "Online",   dataServer: "reg_sg_hive", tableSchema: "risk_db",       tableName: "user_risk_score_ods",      datePartition: "dt",            partitionType: "Incremental Data", marker: "user_risk_score_ods",      filter: "dt='2026-02-16'",  featureSource: "riskfeat_hbase_sg",    sourceType: "HBase",   fsInputParams: ["platform_user_id"],               transformation: "QueryAAICache@V2" },
-  "2": { module: "External Data",         dataLatency: "Nearline", dataServer: "reg_us_hive", tableSchema: "acard_db",      tableName: "mx_acard_realtime_ods",    datePartition: "event_date",    partitionType: "Full Data",        marker: "mx_acard_realtime_ods",    filter: "",                featureSource: "acard_redis_mx",       sourceType: "Redis",   fsInputParams: ["platform_user_id", "id_card_no"], transformation: "QueryAAICache@V2" },
-  "3": { module: "External Data",         dataLatency: "Online",   dataServer: "reg_sg_hive", tableSchema: "embedding_db",  tableName: "th_embedding_v3_ods",      datePartition: "pt",            partitionType: "Full Data",        marker: "th_embedding_v3_ods",      filter: "",                featureSource: "embed_grpc_th",        sourceType: "gRPC",    fsInputParams: ["platform_user_id", "item_id"],    transformation: "QueryAAICache@V2" },
-  "4": { module: "Credit Buyer Behavior", dataLatency: "Offline",  dataServer: "reg_sg_hive", tableSchema: "recommend_db",  tableName: "dp_recommend_score_ods",   datePartition: "dt",            partitionType: "Incremental Data", marker: "dp_recommend_score_ods",   filter: "",                featureSource: "recommend_graphdb_sg", sourceType: "GraphDB", fsInputParams: ["platform_user_id", "shop_id"],    transformation: "QueryAAICache@V2" },
-  "5": { module: "Credit Buyer Behavior", dataLatency: "Online",   dataServer: "reg_sg_hive", tableSchema: "graph_db",      tableName: "user_graph_relation_ods",  datePartition: "stat_date",     partitionType: "Incremental Data", marker: "user_graph_relation_ods",  filter: "is_active=true",  featureSource: "graphrel_hbase_th",    sourceType: "HBase",   fsInputParams: ["platform_user_id", "shop_id"],    transformation: "QueryAAICache@V2" },
-  "6": { module: "External Data",         dataLatency: "Nearline", dataServer: "reg_us_hive", tableSchema: "device_db",     tableName: "mx_device_fingerprint_ods",datePartition: "data_date",     partitionType: "Full Data",        marker: "mx_device_fingerprint_ods",filter: "",                featureSource: "devfp_redis_mx",       sourceType: "Redis",   fsInputParams: ["spp_user_id", "device_id"],       transformation: "QueryAAICache@V2" },
+  "1": { module: "Credit Buyer Behavior", dataLatency: "Online",   dataServer: "reg_sg_hive", tableSchema: "risk_db",       tableName: "user_risk_score_ods",      datePartition: "dt",            partitionType: "Incremental Data", updateFrequency: "Daily",    entitiesColumns: ["platform_user_id"],      filter: "dt='2026-02-16'",  featureSource: "riskfeat_hbase_sg",    sourceType: "HBase",   fsInputParams: ["platform_user_id"],               transformation: "QueryAAICache@V2" },
+  "2": { module: "External Data",         dataLatency: "Nearline", dataServer: "reg_us_hive", tableSchema: "acard_db",      tableName: "mx_acard_realtime_ods",    datePartition: "event_date",    partitionType: "Full Data",        updateFrequency: "Weekly",   entitiesColumns: ["platform_user_id"],      filter: "",                featureSource: "acard_redis_mx",       sourceType: "Redis",   fsInputParams: ["platform_user_id", "id_card_no"], transformation: "QueryAAICache@V2" },
+  "3": { module: "External Data",         dataLatency: "Online",   dataServer: "reg_sg_hive", tableSchema: "embedding_db",  tableName: "th_embedding_v3_ods",      datePartition: "pt",            partitionType: "Full Data",        updateFrequency: "Daily",    entitiesColumns: ["platform_user_id", "item_id"], filter: "",                featureSource: "embed_grpc_th",        sourceType: "gRPC",    fsInputParams: ["platform_user_id", "item_id"],    transformation: "QueryAAICache@V2" },
+  "4": { module: "Credit Buyer Behavior", dataLatency: "Offline",  dataServer: "reg_sg_hive", tableSchema: "recommend_db",  tableName: "dp_recommend_score_ods",   datePartition: "dt",            partitionType: "Incremental Data", updateFrequency: "Monthly",  entitiesColumns: ["platform_user_id"],      filter: "",                featureSource: "recommend_graphdb_sg", sourceType: "GraphDB", fsInputParams: ["platform_user_id", "shop_id"],    transformation: "QueryAAICache@V2" },
+  "5": { module: "Credit Buyer Behavior", dataLatency: "Online",   dataServer: "reg_sg_hive", tableSchema: "graph_db",      tableName: "user_graph_relation_ods",  datePartition: "stat_date",     partitionType: "Incremental Data", updateFrequency: "Daily",    entitiesColumns: ["platform_user_id", "shop_id"], filter: "is_active=true",  featureSource: "graphrel_hbase_th",    sourceType: "HBase",   fsInputParams: ["platform_user_id", "shop_id"],    transformation: "QueryAAICache@V2" },
+  "6": { module: "External Data",         dataLatency: "Nearline", dataServer: "reg_us_hive", tableSchema: "device_db",     tableName: "mx_device_fingerprint_ods",datePartition: "data_date",     partitionType: "Full Data",        updateFrequency: "Daily",    entitiesColumns: ["spp_user_id", "device_id"], filter: "",                featureSource: "devfp_redis_mx",       sourceType: "Redis",   fsInputParams: ["spp_user_id", "device_id"],       transformation: "QueryAAICache@V2" },
 };
 
 const DEFAULT_CONFIG: DetailConfig = {
   module: "External Data", dataLatency: "Online", dataServer: "reg_sg_hive",
   tableSchema: "default_db", tableName: "default_table",
   datePartition: "dt", partitionType: "Full Data",
-  marker: "default_table", filter: "",
+  updateFrequency: "Daily", entitiesColumns: ["platform_user_id"], filter: "",
   featureSource: "default_hbase", sourceType: "HBase",
   fsInputParams: ["platform_user_id"],
   transformation: "QueryAAICache@V2",
@@ -360,7 +367,8 @@ export default function FeatureGroupDetail() {
     owners: fg.owner.split(",").map(o => o.trim()),
     description: fg.description,
     dataServer: ext.dataServer, tableSchema: ext.tableSchema, tableName: ext.tableName,
-    marker: ext.marker, filter: ext.filter,
+    datePartition: ext.datePartition, partitionType: ext.partitionType,
+    updateFrequency: ext.updateFrequency, entitiesColumns: ext.entitiesColumns, filter: ext.filter,
     dataLatency: ext.dataLatency, featureSource: ext.featureSource,
     sourceType: ext.sourceType, fsInputParams: ext.fsInputParams ?? [], transformation: ext.transformation,
     featureMapping: {},
@@ -505,13 +513,16 @@ export default function FeatureGroupDetail() {
             <FieldRow label="Partition Type">
               <GrayBadge>{ext.partitionType}</GrayBadge>
             </FieldRow>
-            <FieldRow label="Marker">
-              {ext.marker
-                ? <PlainVal mono>{ext.marker}</PlainVal>
+            <FieldRow label="Update Frequency">
+              <GrayBadge>{ext.updateFrequency}</GrayBadge>
+            </FieldRow>
+            <FieldRow label="Entities Column">
+              {ext.entitiesColumns.length > 0
+                ? <PlainVal mono>{ext.entitiesColumns.join(", ")}</PlainVal>
                 : <span className="text-gray-300 text-xs">—</span>
               }
             </FieldRow>
-            <FieldRow label="Filter">
+            <FieldRow label="Custom Filter">
               {ext.filter
                 ? <PlainVal mono>{ext.filter}</PlainVal>
                 : <span className="text-gray-300 text-xs">—</span>
@@ -1142,7 +1153,10 @@ function VersionHistoryTab() {
   const [copied, setCopied] = useState<string | null>(null);
   const hideTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  const TRAINING_KEYS: (keyof VersionConfig)[] = ["dataServer", "tableSchema", "tableName", "marker", "filter"];
+  const TRAINING_KEYS: (keyof VersionConfig)[] = [
+    "dataServer", "tableSchema", "tableName", "datePartition", "partitionType",
+    "updateFrequency", "entitiesColumns", "filter",
+  ];
   const SERVING_KEYS:  (keyof VersionConfig)[] = ["dataLatency", "featureSource", "sourceType", "transformation"];
 
   function showTooltip(version: string) {
