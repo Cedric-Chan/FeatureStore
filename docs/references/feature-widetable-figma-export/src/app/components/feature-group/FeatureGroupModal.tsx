@@ -396,7 +396,7 @@ const DATA_LATENCY_TAG_STYLE: Record<string, { bg: string; text: string; border:
   Offline:  { bg: "#f3f4f6", text: "#4b5563", border: "#e5e7eb" },
 };
 
-function DataLatencyTag({ latency }: { latency: string }) {
+export function DataLatencyTag({ latency }: { latency: string }) {
   const st = DATA_LATENCY_TAG_STYLE[latency] ?? DATA_LATENCY_TAG_STYLE.Offline;
   return (
     <span
