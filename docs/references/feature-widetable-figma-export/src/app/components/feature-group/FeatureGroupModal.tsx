@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect } from "react";
 import {
   X, Check, ChevronDown, ChevronRight, Save, ArrowRight, ArrowLeft, Send,
-  AlertCircle, CheckCircle2, Loader2, Lock, Zap, Link2,
+  AlertCircle, CheckCircle2, Loader2, Lock, Zap, Link2, Plus, Trash2,
 } from "lucide-react";
 import { DatePartitionSelect } from "./DatePartitionSelect";
 import { EntitiesColumnMultiSelect } from "./EntitiesColumnMultiSelect";
@@ -12,6 +12,20 @@ import {
 
 
 // ─── Types ────────────────────────────────────────────────────────────────────
+export interface ServingBlock {
+  id: string;
+  featureSource: string;
+  /** Transformation as Name@Version (mock resolves latest enabled version on pick). */
+  transformation: string;
+}
+
+export interface ComputeFeatureRow {
+  id: string;
+  name: string;
+  sql: string;
+  dataType: string;
+}
+
 export interface FGFormData {
   name: string;
   region: string;
@@ -27,57 +41,70 @@ export interface FGFormData {
   /** Entity key columns from the training table (required, multi-select). */
   entitiesColumns: string[];
   filter: string;
-  dataLatency: string;
-  featureSource: string;
-  sourceType: string;
-  fsInputParams: string[];
-  transformation: string;
+  /** Optional serving: empty = training-only FG. */
+  servingBlocks: ServingBlock[];
   featureMapping: Record<string, string>;
+  computeFeatures: ComputeFeatureRow[];
 }
 
 export const EMPTY_FORM: FGFormData = {
   name: "", region: "", module: "", owners: [], description: "",
   dataServer: "", tableSchema: "", tableName: "", datePartition: "", partitionType: "",
   updateFrequency: "", entitiesColumns: [], filter: "",
-  dataLatency: "", featureSource: "", sourceType: "", fsInputParams: [], transformation: "",
+  servingBlocks: [],
   featureMapping: {},
+  computeFeatures: [],
 };
+
+function newBlockId(): string {
+  return `sb_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`;
+}
+
+function newComputeId(): string {
+  return `cf_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`;
+}
+
+/** Migrate list/detail payloads that used flat serving fields. */
+export function normalizeFgFormData(input: Partial<FGFormData> & Record<string, unknown>): FGFormData {
+  const base: FGFormData = { ...EMPTY_FORM, ...input } as FGFormData;
+  const legacyFs = input.featureSource as string | undefined;
+  const legacyTf = input.transformation as string | undefined;
+  if (
+    (!base.servingBlocks || base.servingBlocks.length === 0) &&
+    typeof legacyFs === "string" && legacyFs.trim() &&
+    typeof legacyTf === "string" && legacyTf.trim()
+  ) {
+    base.servingBlocks = [
+      { id: newBlockId(), featureSource: legacyFs.trim(), transformation: legacyTf.trim() },
+    ];
+  }
+  if (!base.servingBlocks) base.servingBlocks = [];
+  if (!base.featureMapping) base.featureMapping = {};
+  if (!base.computeFeatures) base.computeFeatures = [];
+  return base;
+}
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 const REGIONS = ["TH", "MX", "SG", "SHOPEE_SG", "MY", "VN", "PH", "ID"];
 const DATA_SERVERS = ["reg_sg_hive", "reg_us_hive"];
-const DATA_LATENCIES = ["Online", "Nearline", "Offline"];
 const UPDATE_FREQUENCIES = ["Daily", "Weekly", "Monthly", "ONCE"];
+const COMPUTE_DATA_TYPES = ["DOUBLE", "FLOAT", "INT", "LONG", "STRING", "BOOLEAN"];
 
 const STEPS = [
-  { key: "basic",    label: "Basic Info"       },
-  { key: "training", label: "Training Config"  },
-  { key: "serving",  label: "Serving Config"   },
+  { key: "basic",    label: "Basic Info"        },
+  { key: "training", label: "Training Config"   },
+  { key: "serving",  label: "Serving Config"    },
+  { key: "mapping",  label: "Feature Mapping"   },
 ];
 
-// ─── Step validators ──────────────────────────────────────────────────────────
-function isStep0Valid(d: FGFormData) {
-  return d.name.trim().length > 0 && d.region !== "" && d.module !== "" &&
-    d.owners.length > 0 && d.description.trim().length > 0;
-}
-function isStep1Valid(d: FGFormData) {
-  return d.dataServer !== "" && d.tableSchema.trim().length > 0 &&
-    d.tableName.trim().length > 0 && d.datePartition.trim().length > 0 &&
-    d.partitionType !== "" && d.updateFrequency !== "" &&
-    d.entitiesColumns.length > 0;
-}
-function isStep2Valid(d: FGFormData) {
-  if (!d.dataLatency || !d.featureSource.trim() || !d.transformation.trim()) return false;
-  // If transformation exposes output features, require at least one mapping
-  const atIdx = d.transformation.lastIndexOf("@");
-  const tName = atIdx > -1 ? d.transformation.slice(0, atIdx) : d.transformation;
-  const tVer  = atIdx > -1 ? d.transformation.slice(atIdx + 1) : "";
-  const t = MOCK_TRANSFORMATIONS.find(x => x.name === tName);
-  const outputFeats = (t?.outputFeaturesByVersion ?? {})[tVer] ?? [];
-  if (outputFeats.length > 0) return Object.keys(d.featureMapping ?? {}).length > 0;
-  return true;
-}
-const STEP_VALIDATORS = [isStep0Valid, isStep1Valid, isStep2Valid];
+const SQL_IDENTIFIER_KEYWORDS = new Set([
+  "and", "or", "not", "null", "true", "false", "case", "when", "then", "else", "end",
+  "select", "from", "where", "as", "on", "join", "left", "right", "inner", "outer",
+  "union", "all", "distinct", "group", "by", "having", "order", "limit", "offset",
+  "between", "in", "is", "like", "cast", "coalesce", "if", "abs", "sum", "avg", "max",
+  "min", "count", "round", "floor", "ceil", "concat", "substring", "trim", "upper",
+  "lower",
+]);
 
 // ─── Mock catalog data ────────────────────────────────────────────────────────
 interface MockFeatureSource {
@@ -87,6 +114,9 @@ interface MockFeatureSource {
   status: "Connected" | "Disconnected" | "Deprecated";
   sourceType: "HBase" | "Redis" | "gRPC" | "GraphDB";
   inputParams: string[];
+  dataLatency: "Online" | "Nearline" | "Offline";
+  /** Mock enabled publish versions for this source; newest = latest. */
+  enabledFsVersions: string[];
 }
 
 interface MockTransformation {
@@ -99,24 +129,24 @@ interface MockTransformation {
 }
 
 const MOCK_FEATURE_SOURCES: MockFeatureSource[] = [
-  { id: "fs1",  name: "riskfeat_hbase_th",   region: "TH",        status: "Connected",    sourceType: "HBase",   inputParams: ["platform_user_id"] },
-  { id: "fs2",  name: "th_redis_realtime",    region: "TH",        status: "Connected",    sourceType: "Redis",   inputParams: ["platform_user_id"] },
-  { id: "fs3",  name: "th_graph_relation",    region: "TH",        status: "Connected",    sourceType: "GraphDB", inputParams: ["platform_user_id", "shop_id"] },
-  { id: "fs4",  name: "th_grpc_external",     region: "TH",        status: "Disconnected", sourceType: "gRPC",    inputParams: ["platform_user_id", "item_id"] },
-  { id: "fs5",  name: "mx_hbase_main",        region: "MX",        status: "Connected",    sourceType: "HBase",   inputParams: ["platform_user_id"] },
-  { id: "fs6",  name: "mx_redis_cache",       region: "MX",        status: "Connected",    sourceType: "Redis",   inputParams: ["platform_user_id", "id_card_no"] },
-  { id: "fs7",  name: "mx_grpc_aml",          region: "MX",        status: "Disconnected", sourceType: "gRPC",    inputParams: ["platform_user_id", "id_card_no"] },
-  { id: "fs8",  name: "sg_hbase_core",        region: "SG",        status: "Connected",    sourceType: "HBase",   inputParams: ["platform_user_id"] },
-  { id: "fs9",  name: "sg_redis_session",     region: "SG",        status: "Connected",    sourceType: "Redis",   inputParams: ["spp_user_id"] },
-  { id: "fs10", name: "sg_grpc_service",      region: "SG",        status: "Connected",    sourceType: "gRPC",    inputParams: ["platform_user_id", "item_id"] },
-  { id: "fs11", name: "shopee_sg_hbase",      region: "SHOPEE_SG", status: "Connected",    sourceType: "HBase",   inputParams: ["platform_user_id"] },
-  { id: "fs12", name: "shopee_sg_redis",      region: "SHOPEE_SG", status: "Connected",    sourceType: "Redis",   inputParams: ["platform_user_id", "shop_id"] },
-  { id: "fs13", name: "shopee_sg_graph",      region: "SHOPEE_SG", status: "Connected",    sourceType: "GraphDB", inputParams: ["platform_user_id", "shop_id"] },
-  { id: "fs14", name: "my_hbase_main",        region: "MY",        status: "Connected",    sourceType: "HBase",   inputParams: ["platform_user_id"] },
-  { id: "fs15", name: "vn_hbase_main",        region: "VN",        status: "Connected",    sourceType: "HBase",   inputParams: ["platform_user_id"] },
-  { id: "fs16", name: "ph_hbase_main",        region: "PH",        status: "Connected",    sourceType: "HBase",   inputParams: ["platform_user_id"] },
-  { id: "fs17", name: "id_hbase_main",        region: "ID",        status: "Connected",    sourceType: "HBase",   inputParams: ["platform_user_id"] },
-  { id: "fs18", name: "id_redis_session",     region: "ID",        status: "Connected",    sourceType: "Redis",   inputParams: ["spp_user_id", "device_id"] },
+  { id: "fs1",  name: "riskfeat_hbase_th",   region: "TH",        status: "Connected",    sourceType: "HBase",   inputParams: ["platform_user_id"], dataLatency: "Online",   enabledFsVersions: ["2024.03", "2024.12"] },
+  { id: "fs2",  name: "th_redis_realtime",    region: "TH",        status: "Connected",    sourceType: "Redis",   inputParams: ["platform_user_id"], dataLatency: "Nearline", enabledFsVersions: ["2024.06", "2025.01"] },
+  { id: "fs3",  name: "th_graph_relation",    region: "TH",        status: "Connected",    sourceType: "GraphDB", inputParams: ["platform_user_id", "shop_id"], dataLatency: "Offline", enabledFsVersions: ["2024.01", "2024.09"] },
+  { id: "fs4",  name: "th_grpc_external",     region: "TH",        status: "Disconnected", sourceType: "gRPC",    inputParams: ["platform_user_id", "item_id"], dataLatency: "Online", enabledFsVersions: ["2023.11"] },
+  { id: "fs5",  name: "mx_hbase_main",        region: "MX",        status: "Connected",    sourceType: "HBase",   inputParams: ["platform_user_id"], dataLatency: "Online",   enabledFsVersions: ["2024.04", "2024.11"] },
+  { id: "fs6",  name: "mx_redis_cache",       region: "MX",        status: "Connected",    sourceType: "Redis",   inputParams: ["platform_user_id", "id_card_no"], dataLatency: "Nearline", enabledFsVersions: ["2024.08"] },
+  { id: "fs7",  name: "mx_grpc_aml",          region: "MX",        status: "Disconnected", sourceType: "gRPC",    inputParams: ["platform_user_id", "id_card_no"], dataLatency: "Online", enabledFsVersions: ["2024.02"] },
+  { id: "fs8",  name: "sg_hbase_core",        region: "SG",        status: "Connected",    sourceType: "HBase",   inputParams: ["platform_user_id"], dataLatency: "Online",   enabledFsVersions: ["2024.05", "2025.02"] },
+  { id: "fs9",  name: "sg_redis_session",     region: "SG",        status: "Connected",    sourceType: "Redis",   inputParams: ["spp_user_id"], dataLatency: "Nearline", enabledFsVersions: ["2024.07"] },
+  { id: "fs10", name: "sg_grpc_service",      region: "SG",        status: "Connected",    sourceType: "gRPC",    inputParams: ["platform_user_id", "item_id"], dataLatency: "Online", enabledFsVersions: ["2024.10"] },
+  { id: "fs11", name: "shopee_sg_hbase",      region: "SHOPEE_SG", status: "Connected",    sourceType: "HBase",   inputParams: ["platform_user_id"], dataLatency: "Online",   enabledFsVersions: ["2024.06", "2024.12"] },
+  { id: "fs12", name: "shopee_sg_redis",      region: "SHOPEE_SG", status: "Connected",    sourceType: "Redis",   inputParams: ["platform_user_id", "shop_id"], dataLatency: "Nearline", enabledFsVersions: ["2024.09"] },
+  { id: "fs13", name: "shopee_sg_graph",      region: "SHOPEE_SG", status: "Connected",    sourceType: "GraphDB", inputParams: ["platform_user_id", "shop_id"], dataLatency: "Offline", enabledFsVersions: ["2024.04"] },
+  { id: "fs14", name: "my_hbase_main",        region: "MY",        status: "Connected",    sourceType: "HBase",   inputParams: ["platform_user_id"], dataLatency: "Online",   enabledFsVersions: ["2024.03"] },
+  { id: "fs15", name: "vn_hbase_main",        region: "VN",        status: "Connected",    sourceType: "HBase",   inputParams: ["platform_user_id"], dataLatency: "Online",   enabledFsVersions: ["2024.05"] },
+  { id: "fs16", name: "ph_hbase_main",        region: "PH",        status: "Connected",    sourceType: "HBase",   inputParams: ["platform_user_id"], dataLatency: "Online",   enabledFsVersions: ["2024.04"] },
+  { id: "fs17", name: "id_hbase_main",        region: "ID",        status: "Connected",    sourceType: "HBase",   inputParams: ["platform_user_id"], dataLatency: "Online",   enabledFsVersions: ["2024.08", "2025.01"] },
+  { id: "fs18", name: "id_redis_session",     region: "ID",        status: "Connected",    sourceType: "Redis",   inputParams: ["spp_user_id", "device_id"], dataLatency: "Nearline", enabledFsVersions: ["2024.11"] },
 ];
 
 const MOCK_TRANSFORMATIONS: MockTransformation[] = [
@@ -206,6 +236,105 @@ const MOCK_TRANSFORMATIONS: MockTransformation[] = [
     }},
 ];
 
+function resolveLatestEnabledTransformVersion(t: MockTransformation): string {
+  const vers = t.versions;
+  return vers[vers.length - 1] ?? "";
+}
+
+/** Pick Name@LatestEnabledVersion for mock (versions ordered oldest→newest). */
+function transformationPickLatest(region: string, transformName: string): string {
+  const t = MOCK_TRANSFORMATIONS.find(
+    x => x.name === transformName && x.region === region && x.status !== "Deprecated",
+  );
+  if (!t) return transformName;
+  const v = resolveLatestEnabledTransformVersion(t);
+  return v ? `${transformName}@${v}` : transformName;
+}
+
+function resolveFsVersionTag(s: MockFeatureSource): string {
+  const v = s.enabledFsVersions;
+  return v.length ? v[v.length - 1] : "live";
+}
+
+function getBlockOutputFeatureNames(b: ServingBlock, region: string): string[] {
+  const atIdx = b.transformation.lastIndexOf("@");
+  const tName = atIdx > -1 ? b.transformation.slice(0, atIdx) : b.transformation;
+  const tVer = atIdx > -1 ? b.transformation.slice(atIdx + 1) : "";
+  const t = MOCK_TRANSFORMATIONS.find(x => x.name === tName && x.region === region);
+  return (t?.outputFeaturesByVersion ?? {})[tVer] ?? [];
+}
+
+function unionServingOutputFeatures(blocks: ServingBlock[], region: string): string[] {
+  const out: string[] = [];
+  for (const b of blocks) {
+    out.push(...getBlockOutputFeatureNames(b, region));
+  }
+  return out;
+}
+
+function servingOutputNamesHaveDuplicates(blocks: ServingBlock[], region: string): boolean {
+  const all = unionServingOutputFeatures(blocks, region);
+  return new Set(all).size !== all.length;
+}
+
+/** Identifier tokens in SQL that are not SQL keywords and not in allowedFeatures. */
+function computeSqlUnknownIdentifiers(sql: string, allowedFeatures: Set<string>): string[] {
+  const tokens = sql.match(/\b[a-zA-Z_][a-zA-Z0-9_]*\b/g) ?? [];
+  const bad: string[] = [];
+  const seen = new Set<string>();
+  for (const tok of tokens) {
+    if (SQL_IDENTIFIER_KEYWORDS.has(tok.toLowerCase())) continue;
+    if (allowedFeatures.has(tok)) continue;
+    if (!seen.has(tok)) {
+      seen.add(tok);
+      bad.push(tok);
+    }
+  }
+  return bad;
+}
+
+function isStep4MappingComputeValid(d: FGFormData) {
+  const servingSet = new Set(unionServingOutputFeatures(d.servingBlocks, d.region));
+  const namesSeen = new Set<string>();
+  for (const c of d.computeFeatures) {
+    if (!c.name.trim() || !c.sql.trim() || !c.dataType.trim()) return false;
+    if (namesSeen.has(c.name.trim())) return false;
+    namesSeen.add(c.name.trim());
+    if (servingSet.size === 0) return false;
+    const unknown = computeSqlUnknownIdentifiers(c.sql, servingSet);
+    if (unknown.length > 0) return false;
+  }
+  return true;
+}
+
+// ─── Step validators ──────────────────────────────────────────────────────────
+function isStep0Valid(d: FGFormData) {
+  return d.name.trim().length > 0 && d.region !== "" && d.module !== "" &&
+    d.owners.length > 0 && d.description.trim().length > 0;
+}
+function isStep1Valid(d: FGFormData) {
+  return d.dataServer !== "" && d.tableSchema.trim().length > 0 &&
+    d.tableName.trim().length > 0 && d.datePartition.trim().length > 0 &&
+    d.partitionType !== "" && d.updateFrequency !== "" &&
+    d.entitiesColumns.length > 0;
+}
+function isStep2ServingValid(d: FGFormData) {
+  if (!d.servingBlocks.length) return true;
+  for (const b of d.servingBlocks) {
+    if (!b.featureSource.trim() || !b.transformation.trim()) return false;
+  }
+  return !servingOutputNamesHaveDuplicates(d.servingBlocks, d.region);
+}
+function isStep4MappingValid(d: FGFormData) {
+  return isStep4MappingComputeValid(d);
+}
+const STEP_VALIDATORS = [
+  isStep0Valid,
+  isStep1Valid,
+  isStep2ServingValid,
+  isStep4MappingValid,
+];
+
 // ─── Mock training feature columns by table name ──────────────────────────────
 const MOCK_TRAINING_FEATURES: Record<string, string[]> = {
   "user_risk_score_ods":       ["risk_score", "credit_limit", "repayment_rate_30d", "default_prob", "fraud_score", "delinquency_rate", "gmv_90d"],
@@ -230,6 +359,24 @@ const TRANSFORM_STATUS_STYLE: Record<string, { bg: string; text: string }> = {
   Beta:       { bg: "#e6f4ff", text: "#0958d9" },
   Deprecated: { bg: "#f5f5f5", text: "#8c8c8c" },
 };
+
+const DATA_LATENCY_TAG_STYLE: Record<string, { bg: string; text: string; border: string }> = {
+  Online:   { bg: "#e6fffb", text: "#08979c", border: "#87e8de" },
+  Nearline: { bg: "#fff7e6", text: "#ad4e00", border: "#ffd591" },
+  Offline:  { bg: "#f3f4f6", text: "#4b5563", border: "#e5e7eb" },
+};
+
+function DataLatencyTag({ latency }: { latency: string }) {
+  const st = DATA_LATENCY_TAG_STYLE[latency] ?? DATA_LATENCY_TAG_STYLE.Offline;
+  return (
+    <span
+      className="inline-flex items-center px-2 py-0.5 rounded-full text-xs border"
+      style={{ background: st.bg, color: st.text, borderColor: st.border, fontWeight: 600 }}
+    >
+      {latency}
+    </span>
+  );
+}
 
 // ─── Notification helpers ─────────────────────────────────────────────────────
 interface ModalNotification {
@@ -301,7 +448,10 @@ export default function FeatureGroupModal({
   useEffect(() => {
     if (open) {
       setFormState(() => {
-        const merged: FGFormData = { ...EMPTY_FORM, ...(initialData ?? {}) };
+        const merged = normalizeFgFormData({
+          ...EMPTY_FORM,
+          ...(initialData ?? {}),
+        } as Partial<FGFormData> & Record<string, unknown>);
         const legacy = initialData as { marker?: string } | undefined;
         if (legacy?.marker && merged.entitiesColumns.length === 0) {
           merged.entitiesColumns = [legacy.marker];
@@ -555,7 +705,10 @@ export default function FeatureGroupModal({
             <Step1TrainingConfig form={form} setField={setField} err={touched} />
           )}
           {step === 2 && (
-            <Step2ServingConfig form={form} setField={setField} err={touched} />
+            <Step2ServingBlocksConfig form={form} setField={setField} err={touched} />
+          )}
+          {step === 3 && (
+            <Step3FeatureMappingAndCompute form={form} setField={setField} err={touched} />
           )}
         </div>
 
@@ -1518,145 +1671,335 @@ function FeatureMappingTable({ outputFeatures, trainingFeatures, mapping, onChan
   );
 }
 
-// ─── Step 2: Serving Config ───────────────────────────────────────────────────
-function Step2ServingConfig({
-  form, setField, err,
+// ─── LatestTransformationSelect (Name only → Name@LatestEnabledVersion) ─────
+function LatestTransformationSelect({
+  value,
+  onChange,
+  transformations,
+  region,
+  hasError,
+}: {
+  value: string;
+  onChange: (combined: string) => void;
+  transformations: MockTransformation[];
+  region: string;
+  hasError?: boolean;
+}) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    const handler = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+    };
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, [open]);
+
+  const atIdx = value.lastIndexOf("@");
+  const verTag = atIdx > -1 ? value.slice(atIdx + 1) : "";
+
+  return (
+    <div className="relative" ref={ref}>
+      <button
+        type="button"
+        onClick={() => setOpen(o => !o)}
+        className={`w-full flex items-center justify-between px-3 py-2 text-sm rounded-lg border transition-colors text-left ${
+          hasError ? "border-red-300 bg-red-50" : "border-gray-200 bg-white hover:border-[#13c2c2]"
+        }`}
+      >
+        <span style={{ fontFamily: "monospace", color: value ? "#1a1a2e" : "#9ca3af", fontSize: 13 }}>
+          {value ? value.split("@")[0] : "Select transformation…"}
+        </span>
+        <ChevronDown size={13} className={`text-gray-400 flex-shrink-0 ml-2 ${open ? "rotate-180" : ""}`} />
+      </button>
+      {verTag && (
+        <p className="mt-1.5 text-xs text-gray-400 flex items-center gap-2 flex-wrap">
+          <span className="inline-flex items-center px-2 py-0.5 rounded-full border text-[11px]"
+            style={{ background: "#f0fdfa", color: "#0e9494", borderColor: "#99f6e4", fontWeight: 600 }}>
+            TF {verTag}
+          </span>
+          <span className="text-gray-400">Latest enabled for {region}</span>
+        </p>
+      )}
+      {open && (
+        <div
+          className="absolute top-full mt-1 left-0 z-[130] bg-white border border-gray-200 rounded-lg shadow-xl overflow-hidden"
+          style={{ minWidth: "100%", maxHeight: 240 }}
+        >
+          <div className="overflow-y-auto" style={{ maxHeight: 240 }}>
+            {transformations.length === 0 ? (
+              <div className="px-3 py-5 text-xs text-gray-400 text-center">No transformations for this region</div>
+            ) : (
+              transformations.map(t => {
+                const combined = transformationPickLatest(region, t.name);
+                const isSelected = value === combined || value.split("@")[0] === t.name;
+                const st = TRANSFORM_STATUS_STYLE[t.status] ?? TRANSFORM_STATUS_STYLE.Active;
+                return (
+                  <button
+                    key={t.id}
+                    type="button"
+                    onClick={() => {
+                      onChange(combined);
+                      setOpen(false);
+                    }}
+                    className={`w-full flex items-center justify-between px-3 py-2.5 text-xs text-left transition-colors ${
+                      isSelected ? "bg-teal-50" : "hover:bg-gray-50"
+                    }`}
+                  >
+                    <span style={{ fontWeight: isSelected ? 700 : 500, color: isSelected ? "#0e9494" : "#374151" }}>
+                      {t.name}
+                    </span>
+                    <span className="text-xs px-1.5 py-0.5 rounded" style={{ background: st.bg, color: st.text }}>
+                      {t.status}
+                    </span>
+                  </button>
+                );
+              })
+            )}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─── Step 3: Serving Config (repeatable blocks) ───────────────────────────────
+function Step2ServingBlocksConfig({
+  form,
+  setField,
+  err,
 }: {
   form: FGFormData;
   setField: (k: keyof FGFormData, v: any) => void;
   err: boolean;
 }) {
   const filteredSources = MOCK_FEATURE_SOURCES.filter(
-    s => s.region === form.region && s.status === "Connected"
+    s => s.region === form.region && s.status === "Connected",
   );
   const filteredTransforms = MOCK_TRANSFORMATIONS.filter(
-    t => t.region === form.region && t.status !== "Deprecated"
+    t => t.region === form.region && t.status !== "Deprecated",
   );
-  const selectedSource = MOCK_FEATURE_SOURCES.find(s => s.name === form.featureSource);
+  const dupOutputs = form.servingBlocks.length > 0 &&
+    servingOutputNamesHaveDuplicates(form.servingBlocks, form.region);
 
-  // Parse "Name@Version" → detect output features
-  const atIdx = form.transformation.lastIndexOf("@");
-  const transformName    = atIdx > -1 ? form.transformation.slice(0, atIdx) : form.transformation;
-  const transformVersion = atIdx > -1 ? form.transformation.slice(atIdx + 1) : "";
-  const selectedTransform = MOCK_TRANSFORMATIONS.find(t => t.name === transformName && t.region === form.region);
-  const outputFeatures    = (selectedTransform?.outputFeaturesByVersion ?? {})[transformVersion] ?? [];
-
-  // Training feature columns from the configured table (Step 1)
-  const trainingFeatures = MOCK_TRAINING_FEATURES[form.tableName] ?? DEFAULT_TRAINING_FEATURES;
-
-  // When transformation changes → reset mapping + auto-match by exact name
-  const prevTransformRef = useRef(form.transformation);
-  useEffect(() => {
-    if (prevTransformRef.current === form.transformation) return;
-    prevTransformRef.current = form.transformation;
-    const autoMap: Record<string, string> = {};
-    const feats = (MOCK_TRANSFORMATIONS.find(t => t.name === transformName && t.region === form.region)
-      ?.outputFeaturesByVersion ?? {})[transformVersion] ?? [];
-    const cols  = MOCK_TRAINING_FEATURES[form.tableName] ?? DEFAULT_TRAINING_FEATURES;
-    feats.forEach(sf => { if (cols.includes(sf)) autoMap[sf] = sf; });
-    setField("featureMapping", autoMap);
-  }, [form.transformation]); // eslint-disable-line
-
-  function handleFeatureSourceChange(name: string, sourceType: string, inputParams: string[]) {
-    setField("featureSource", name);
-    setField("sourceType", sourceType);
-    setField("fsInputParams", inputParams);
+  function patchBlocks(next: ServingBlock[]) {
+    setField("servingBlocks", next);
   }
 
-  function handleAutoMatchAll() {
-    const next = { ...form.featureMapping };
-    outputFeatures.forEach(sf => { if (!next[sf] && trainingFeatures.includes(sf)) next[sf] = sf; });
-    setField("featureMapping", next);
+  function patchBlock(id: string, patch: Partial<ServingBlock>) {
+    patchBlocks(form.servingBlocks.map(b => (b.id === id ? { ...b, ...patch } : b)));
   }
 
   return (
     <div className="space-y-5">
-      {/* Row 1: Data Latency + Feature Source */}
-      <div className="grid grid-cols-2 gap-4">
-        <FormGroup
-          label="Data Latency"
-          required
-          error={err && !form.dataLatency ? "Data Latency is required" : undefined}
-        >
-          <StyledSelect
-            value={form.dataLatency}
-            onChange={v => setField("dataLatency", v)}
-            options={DATA_LATENCIES.map(l => ({ label: l, value: l }))}
-            placeholder="Select latency"
-            hasError={err && !form.dataLatency}
-          />
-        </FormGroup>
+      <p className="text-xs text-gray-500" style={{ fontWeight: 500 }}>
+        Add one block per Feature Source + Transformation pair. Leave empty if this feature group has no online
+        serving path. Duplicate serving feature names across blocks are not allowed.
+      </p>
 
-        <FormGroup
-          label="Feature Source"
-          required
-          hint={form.region ? `Region: ${form.region} · Connected` : "Select region first"}
-          error={err && !form.featureSource.trim() ? "Feature Source is required" : undefined}
-        >
-          <FeatureSourceSelect
-            value={form.featureSource}
-            onChange={handleFeatureSourceChange}
-            sources={filteredSources}
-            hasError={err && !form.featureSource.trim()}
-          />
-        </FormGroup>
-      </div>
-
-      {/* Auto-detected: Source Type + Input Params */}
-      {selectedSource && (
+      {err && dupOutputs && (
         <div
-          className="rounded-lg border px-4 py-3 space-y-2.5"
-          style={{ borderColor: "rgba(19,194,194,0.20)", background: "rgba(19,194,194,0.03)" }}
+          role="alert"
+          className="rounded-lg border px-3 py-2 text-xs flex items-center gap-2"
+          style={{ background: "#fff1f0", borderColor: "#ffa39e", color: "#cf1322", fontWeight: 500 }}
         >
-          <p className="text-xs flex items-center gap-1.5" style={{ color: "#0e9494", fontWeight: 600 }}>
-            <span className="w-1.5 h-1.5 rounded-full bg-teal-400 flex-shrink-0" />
-            Auto-detected from Feature Source
-          </p>
-          <div className="flex items-center gap-3">
-            <span className="text-xs text-gray-400 flex-shrink-0" style={{ fontWeight: 500, width: 96 }}>Source Type</span>
-            <SourceTypeBadge sourceType={selectedSource.sourceType} />
-          </div>
-          <div className="flex items-center gap-3">
-            <span className="text-xs text-gray-400 flex-shrink-0" style={{ fontWeight: 500, width: 96 }}>Input Params</span>
-            <div className="flex flex-wrap gap-1">
-              {selectedSource.inputParams.map(p => (
-                <span key={p} className="inline-flex items-center px-2 py-0.5 rounded-md text-xs"
-                  style={{ background: "#f3f4f6", color: "#374151", border: "1px solid #e5e7eb", fontFamily: "monospace", fontWeight: 500 }}>
-                  {p}
-                </span>
-              ))}
-            </div>
-          </div>
+          <AlertCircle size={14} className="flex-shrink-0" />
+          Duplicate serving output feature names across blocks. Change a transformation or remove a block.
         </div>
       )}
 
-      {/* Transformation selector */}
-      <FormGroup
-        label="Transformation"
-        required
-        hint={form.region ? `Region: ${form.region} · Active / Beta` : "Select region first"}
-        error={err && !form.transformation.trim() ? "Transformation is required" : undefined}
-      >
-        <CascadingTransformSelect
-          value={form.transformation}
-          onChange={v => setField("transformation", v)}
-          transformations={filteredTransforms}
-          hasError={err && !form.transformation.trim()}
-        />
-        {form.transformation && (
-          <p className="mt-1.5 text-xs text-gray-400 flex items-center gap-1">
-            <span className="w-1.5 h-1.5 rounded-full bg-teal-400 flex-shrink-0" />
-            Will be applied as:
-            <code className="px-1.5 py-0.5 rounded"
-              style={{ background: "rgba(19,194,194,0.08)", color: "#0e9494", fontFamily: "monospace", fontWeight: 600 }}>
-              {form.transformation}
-            </code>
-          </p>
-        )}
-      </FormGroup>
+      {form.servingBlocks.map((b, idx) => {
+        const src = MOCK_FEATURE_SOURCES.find(s => s.name === b.featureSource);
+        const fsVer = src ? resolveFsVersionTag(src) : "";
+        return (
+          <div
+            key={b.id}
+            className="rounded-xl border border-gray-200 p-4 space-y-4"
+            style={{ background: "#fafafa" }}
+          >
+            <div className="flex items-center justify-between gap-2">
+              <span className="text-xs font-semibold text-gray-700">
+                Serving pair {idx + 1}
+              </span>
+              <button
+                type="button"
+                onClick={() => patchBlocks(form.servingBlocks.filter(x => x.id !== b.id))}
+                className="inline-flex items-center gap-1 px-2 py-1 rounded-md text-xs text-red-600 hover:bg-red-50 border border-transparent hover:border-red-100"
+                aria-label={`Remove serving block ${idx + 1}`}
+              >
+                <Trash2 size={12} /> Remove
+              </button>
+            </div>
 
-      {/* ── Training–Serving Feature Mapping ───────────────────────────────── */}
-      {outputFeatures.length > 0 ? (
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <FormGroup
+                label="Feature Source"
+                required
+                hint={form.region ? `Region: ${form.region}` : "Select region in Basic Info"}
+                error={err && !b.featureSource.trim() ? "Feature Source is required" : undefined}
+              >
+                <div className="flex flex-col gap-2">
+                  <FeatureSourceSelect
+                    value={b.featureSource}
+                    onChange={name => {
+                      patchBlock(b.id, { featureSource: name, transformation: "" });
+                    }}
+                    sources={filteredSources}
+                    hasError={err && !b.featureSource.trim()}
+                  />
+                  {src && (
+                    <div className="flex flex-wrap items-center gap-2">
+                      <DataLatencyTag latency={src.dataLatency} />
+                      <span
+                        className="inline-flex items-center px-2 py-0.5 rounded-full border text-[11px]"
+                        style={{ background: "#f0f9ff", color: "#0369a1", borderColor: "#bae6fd", fontWeight: 600 }}
+                      >
+                        FS {fsVer}
+                      </span>
+                    </div>
+                  )}
+                </div>
+              </FormGroup>
+
+              <FormGroup
+                label="Transformation"
+                required
+                hint="Uses latest enabled version for this region"
+                error={err && !b.transformation.trim() ? "Transformation is required" : undefined}
+              >
+                <LatestTransformationSelect
+                  value={b.transformation}
+                  onChange={v => patchBlock(b.id, { transformation: v })}
+                  transformations={filteredTransforms}
+                  region={form.region}
+                  hasError={err && !b.transformation.trim()}
+                />
+              </FormGroup>
+            </div>
+
+            {src && (
+              <div
+                className="rounded-lg border px-4 py-3 space-y-2.5"
+                style={{ borderColor: "rgba(19,194,194,0.20)", background: "rgba(19,194,194,0.03)" }}
+              >
+                <p className="text-xs flex items-center gap-1.5" style={{ color: "#0e9494", fontWeight: 600 }}>
+                  <span className="w-1.5 h-1.5 rounded-full bg-teal-400 flex-shrink-0" />
+                  From Feature Source
+                </p>
+                <div className="flex items-center gap-3">
+                  <span className="text-xs text-gray-400 flex-shrink-0" style={{ fontWeight: 500, width: 96 }}>
+                    Source Type
+                  </span>
+                  <SourceTypeBadge sourceType={src.sourceType} />
+                </div>
+                <div className="flex items-center gap-3">
+                  <span className="text-xs text-gray-400 flex-shrink-0" style={{ fontWeight: 500, width: 96 }}>
+                    Input Params
+                  </span>
+                  <div className="flex flex-wrap gap-1">
+                    {src.inputParams.map(p => (
+                      <span
+                        key={p}
+                        className="inline-flex items-center px-2 py-0.5 rounded-md text-xs"
+                        style={{
+                          background: "#f3f4f6",
+                          color: "#374151",
+                          border: "1px solid #e5e7eb",
+                          fontFamily: "monospace",
+                          fontWeight: 500,
+                        }}
+                      >
+                        {p}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+        );
+      })}
+
+      <button
+        type="button"
+        onClick={() =>
+          patchBlocks([
+            ...form.servingBlocks,
+            { id: newBlockId(), featureSource: "", transformation: "" },
+          ])
+        }
+        className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg border border-dashed border-gray-300 text-xs text-gray-600 hover:border-[#13c2c2] hover:text-[#0e9494] transition-colors"
+        style={{ fontWeight: 600 }}
+      >
+        <Plus size={14} /> Add serving block
+      </button>
+    </div>
+  );
+}
+
+// ─── Step 4: Feature Mapping + Compute Features ────────────────────────────────
+function Step3FeatureMappingAndCompute({
+  form,
+  setField,
+  err,
+}: {
+  form: FGFormData;
+  setField: (k: keyof FGFormData, v: any) => void;
+  err: boolean;
+}) {
+  const outputFeatures = unionServingOutputFeatures(form.servingBlocks, form.region);
+  const trainingFeatures = MOCK_TRAINING_FEATURES[form.tableName] ?? DEFAULT_TRAINING_FEATURES;
+  const servingSet = new Set(outputFeatures);
+
+  useEffect(() => {
+    const prev = form.featureMapping;
+    const next: Record<string, string> = {};
+    for (const k of outputFeatures) {
+      if (prev[k] !== undefined) next[k] = prev[k];
+      else if (trainingFeatures.includes(k)) next[k] = k;
+    }
+    if (JSON.stringify(next) === JSON.stringify(prev)) return;
+    setField("featureMapping", next);
+  }, [JSON.stringify(form.servingBlocks), form.region, form.tableName]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  function handleAutoMatchAll() {
+    const next = { ...form.featureMapping };
+    outputFeatures.forEach(sf => {
+      if (!next[sf] && trainingFeatures.includes(sf)) next[sf] = sf;
+    });
+    setField("featureMapping", next);
+  }
+
+  function patchCompute(id: string, patch: Partial<ComputeFeatureRow>) {
+    setField(
+      "computeFeatures",
+      form.computeFeatures.map(c => (c.id === id ? { ...c, ...patch } : c)),
+    );
+  }
+
+  function removeCompute(id: string) {
+    setField(
+      "computeFeatures",
+      form.computeFeatures.filter(c => c.id !== id),
+    );
+  }
+
+  return (
+    <div className="space-y-6">
+      {outputFeatures.length === 0 ? (
+        <div
+          className="rounded-lg border border-dashed px-4 py-8 flex flex-col items-center justify-center gap-2"
+          style={{ borderColor: "#e5e7eb", background: "#fafafa" }}
+        >
+          <Link2 size={18} className="text-gray-300" />
+          <p className="text-xs text-gray-500 text-center" style={{ fontWeight: 500 }}>
+            No serving outputs (add Serving blocks in the previous step). Mapping and compute features need serving
+            feature names.
+          </p>
+        </div>
+      ) : (
         <FeatureMappingTable
           outputFeatures={outputFeatures}
           trainingFeatures={trainingFeatures}
@@ -1664,25 +2007,107 @@ function Step2ServingConfig({
           onChange={m => setField("featureMapping", m)}
           onAutoMatchAll={handleAutoMatchAll}
         />
-      ) : form.transformation ? (
-        /* Transformation selected but version has no outputs yet */
-        <div className="rounded-lg border border-dashed px-4 py-5 flex items-center justify-center gap-2"
-          style={{ borderColor: "#e5e7eb", background: "#fafafa" }}>
-          <span className="text-xs text-gray-400" style={{ fontWeight: 500 }}>
-            Select a version to load serving features and configure feature mapping
-          </span>
-        </div>
-      ) : (
-        /* No transformation selected yet */
-        <div className="rounded-lg border border-dashed px-4 py-6 flex flex-col items-center justify-center gap-2"
-          style={{ borderColor: "#e5e7eb", background: "#fafafa" }}>
-          <Link2 size={18} className="text-gray-300" />
-          <p className="text-xs text-gray-400" style={{ fontWeight: 500 }}>
-            Select a Transformation above to detect serving features and configure feature mapping
-          </p>
-        </div>
       )}
+
+      <div className="space-y-3">
+        <div className="flex items-center justify-between gap-2">
+          <h3 className="text-sm font-semibold text-gray-800">Compute features (real-time SQL)</h3>
+          <button
+            type="button"
+            disabled={outputFeatures.length === 0}
+            onClick={() =>
+              setField("computeFeatures", [
+                ...form.computeFeatures,
+                { id: newComputeId(), name: "", sql: "", dataType: "DOUBLE" },
+              ])
+            }
+            className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs border transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+            style={{ fontWeight: 600, borderColor: "#e5e7eb", color: "#374151" }}
+          >
+            <Plus size={12} /> Add compute feature
+          </button>
+        </div>
+        <p className="text-xs text-gray-500">
+          SQL may only reference serving output names listed above ({outputFeatures.length ? outputFeatures.join(", ") : "—"}).
+        </p>
+
+        <div aria-live="polite" className="sr-only">
+          {err && form.computeFeatures.some(c => c.sql.trim()) ? "Compute SQL validation messages shown inline." : ""}
+        </div>
+
+        {form.computeFeatures.map((c, i) => {
+          const unknown =
+            outputFeatures.length > 0 && c.sql.trim()
+              ? computeSqlUnknownIdentifiers(c.sql, servingSet)
+              : [];
+          const sqlInvalid = err && (unknown.length > 0 || !c.sql.trim());
+          const rowInvalid =
+            err && (!c.name.trim() || !c.sql.trim() || !c.dataType.trim() || unknown.length > 0);
+
+          return (
+            <div
+              key={c.id}
+              className="rounded-lg border p-3 space-y-3"
+              style={{ borderColor: rowInvalid ? "#ffa39e" : "#e5e7eb", background: "white" }}
+            >
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-semibold text-gray-600">Compute {i + 1}</span>
+                <button
+                  type="button"
+                  onClick={() => removeCompute(c.id)}
+                  className="text-xs text-red-600 hover:underline"
+                  aria-label={`Remove compute feature ${i + 1}`}
+                >
+                  Remove
+                </button>
+              </div>
+              <FormGroup label="Feature name" required error={err && !c.name.trim() ? "Name is required" : undefined}>
+                <StyledInput
+                  value={c.name}
+                  onChange={v => patchCompute(c.id, { name: v })}
+                  placeholder="e.g. risk_score_adjusted"
+                  mono
+                />
+              </FormGroup>
+              <FormGroup
+                label="Data type"
+                required
+                error={err && !c.dataType ? "Data type is required" : undefined}
+              >
+                <StyledSelect
+                  value={c.dataType}
+                  onChange={v => patchCompute(c.id, { dataType: v })}
+                  options={COMPUTE_DATA_TYPES.map(dt => ({ label: dt, value: dt }))}
+                  placeholder="Type"
+                  hasError={err && !c.dataType}
+                />
+              </FormGroup>
+              <div>
+                <label className="text-sm text-gray-700 mb-1.5 block" style={{ fontWeight: 600 }}>
+                  SQL expression
+                  <span className="text-red-500 ml-0.5">*</span>
+                </label>
+                <textarea
+                  value={c.sql}
+                  onChange={e => patchCompute(c.id, { sql: e.target.value })}
+                  rows={3}
+                  aria-invalid={sqlInvalid}
+                  aria-describedby={unknown.length ? `cf-sql-err-${c.id}` : undefined}
+                  className={`w-full text-xs px-3 py-2 rounded-lg border outline-none transition-colors font-mono ${
+                    sqlInvalid ? "border-red-300 bg-red-50" : "border-gray-200"
+                  }`}
+                  placeholder="e.g. user_risk_score * 1.1"
+                />
+                {unknown.length > 0 && (
+                  <p id={`cf-sql-err-${c.id}`} className="mt-1 text-xs text-red-500" role="alert">
+                    Unknown identifiers (not in serving outputs): {unknown.join(", ")}
+                  </p>
+                )}
+              </div>
+            </div>
+          );
+        })}
+      </div>
     </div>
   );
 }
-

@@ -33,7 +33,7 @@ import {
 } from "lucide-react";
 import type { FeatureGroup, FeatureGroupStatus } from "./FeatureGroupList";
 import { INITIAL_MODULES } from "./FeatureGroupList";
-import FeatureGroupModal, { type FGFormData } from "./FeatureGroupModal";
+import FeatureGroupModal, { type FGFormData, normalizeFgFormData } from "./FeatureGroupModal";
 
 // ─── Source type badge colors ─────────────────────────────────────────────────
 const SOURCE_TYPE_COLORS: Record<string, { bg: string; text: string; border: string }> = {
@@ -362,17 +362,29 @@ export default function FeatureGroupDetail() {
   const trainingFeatureCount = DEFAULT_FEATURES.filter(f => f.training).length;
   const servingFeatureCount  = DEFAULT_FEATURES.filter(f => f.serving).length;
 
-  const prefillFormData: Partial<FGFormData> = fg ? {
-    name: fg.name, region: fg.region, module: ext.module,
-    owners: fg.owner.split(",").map(o => o.trim()),
-    description: fg.description,
-    dataServer: ext.dataServer, tableSchema: ext.tableSchema, tableName: ext.tableName,
-    datePartition: ext.datePartition, partitionType: ext.partitionType,
-    updateFrequency: ext.updateFrequency, entitiesColumns: ext.entitiesColumns, filter: ext.filter,
-    dataLatency: ext.dataLatency, featureSource: ext.featureSource,
-    sourceType: ext.sourceType, fsInputParams: ext.fsInputParams ?? [], transformation: ext.transformation,
-    featureMapping: {},
-  } : {};
+  const prefillFormData: Partial<FGFormData> = fg
+    ? normalizeFgFormData({
+        name: fg.name,
+        region: fg.region,
+        module: ext.module,
+        owners: fg.owner.split(",").map(o => o.trim()),
+        description: fg.description,
+        dataServer: ext.dataServer,
+        tableSchema: ext.tableSchema,
+        tableName: ext.tableName,
+        datePartition: ext.datePartition,
+        partitionType: ext.partitionType,
+        updateFrequency: ext.updateFrequency,
+        entitiesColumns: ext.entitiesColumns,
+        filter: ext.filter,
+        featureMapping: {},
+        computeFeatures: [],
+        featureSource: ext.featureSource,
+        sourceType: ext.sourceType,
+        fsInputParams: ext.fsInputParams ?? [],
+        transformation: ext.transformation,
+      } as Partial<FGFormData> & Record<string, unknown>)
+    : {};
 
   if (!fg) {
     return (

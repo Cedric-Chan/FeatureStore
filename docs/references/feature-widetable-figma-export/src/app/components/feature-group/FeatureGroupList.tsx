@@ -65,7 +65,11 @@ const INITIAL_MOCK: FeatureGroup[] = [
       dataServer: "reg_sg_hive", tableSchema: "risk_db", tableName: "user_risk_score_ods",
       datePartition: "dt", partitionType: "Incremental Data", updateFrequency: "Daily",
       entitiesColumns: ["platform_user_id"], filter: "dt='2026-02-16'",
-      dataLatency: "Online", featureSource: "riskfeat_hbase_th", sourceType: "HBase", transformation: "QueryAaiCache@V2",
+      servingBlocks: [
+        { id: "sb_list_1", featureSource: "riskfeat_hbase_th", transformation: "QueryAaiCache@V2" },
+      ],
+      featureMapping: {},
+      computeFeatures: [],
     },
   },
   {
@@ -85,7 +89,11 @@ const INITIAL_MOCK: FeatureGroup[] = [
       dataServer: "reg_us_hive", tableSchema: "acard_db", tableName: "mx_acard_realtime_ods",
       datePartition: "event_date", partitionType: "Full Data", updateFrequency: "Weekly",
       entitiesColumns: ["platform_user_id"], filter: "",
-      dataLatency: "Nearline", featureSource: "mx_redis_cache", sourceType: "Redis", transformation: "QueryAaiCache@V2",
+      servingBlocks: [
+        { id: "sb_list_2", featureSource: "mx_redis_cache", transformation: "QueryAaiCache@V2" },
+      ],
+      featureMapping: {},
+      computeFeatures: [],
     },
   },
   {
@@ -105,7 +113,11 @@ const INITIAL_MOCK: FeatureGroup[] = [
       dataServer: "reg_sg_hive", tableSchema: "embedding_db", tableName: "th_embedding_v3_ods",
       datePartition: "pt", partitionType: "Full Data", updateFrequency: "Daily",
       entitiesColumns: ["platform_user_id", "item_id"], filter: "",
-      dataLatency: "Online", featureSource: "riskfeat_hbase_th", sourceType: "HBase", transformation: "OfflineFeatureJoin@V2",
+      servingBlocks: [
+        { id: "sb_list_3", featureSource: "riskfeat_hbase_th", transformation: "OfflineFeatureJoin@V2" },
+      ],
+      featureMapping: {},
+      computeFeatures: [],
     },
   },
   {
@@ -129,10 +141,9 @@ const INITIAL_MOCK: FeatureGroup[] = [
       tableName: "dp_recommend_score_ods",
       datePartition: "dt", partitionType: "Incremental Data", updateFrequency: "Monthly",
       entitiesColumns: ["platform_user_id"], filter: "",
-      dataLatency: "",
-      featureSource: "",
-      sourceType: "",
-      transformation: "",
+      servingBlocks: [],
+      featureMapping: {},
+      computeFeatures: [],
     },
     _savedStep: 1,
   },
@@ -153,7 +164,11 @@ const INITIAL_MOCK: FeatureGroup[] = [
       dataServer: "reg_sg_hive", tableSchema: "graph_db", tableName: "user_graph_relation_ods",
       datePartition: "stat_date", partitionType: "Incremental Data", updateFrequency: "Daily",
       entitiesColumns: ["platform_user_id", "shop_id"], filter: "is_active=true",
-      dataLatency: "Online", featureSource: "th_graph_relation", sourceType: "GraphDB", transformation: "QueryAaiCache@V3",
+      servingBlocks: [
+        { id: "sb_list_5", featureSource: "th_graph_relation", transformation: "QueryAaiCache@V3" },
+      ],
+      featureMapping: {},
+      computeFeatures: [],
     },
   },
   {
@@ -173,7 +188,11 @@ const INITIAL_MOCK: FeatureGroup[] = [
       dataServer: "reg_us_hive", tableSchema: "device_db", tableName: "mx_device_fingerprint_ods",
       datePartition: "data_date", partitionType: "Full Data", updateFrequency: "Daily",
       entitiesColumns: ["spp_user_id", "device_id"], filter: "",
-      dataLatency: "Nearline", featureSource: "mx_redis_cache", sourceType: "Redis", transformation: "MxRealtimeScore@V1",
+      servingBlocks: [
+        { id: "sb_list_6", featureSource: "mx_redis_cache", transformation: "MxRealtimeScore@V1" },
+      ],
+      featureMapping: {},
+      computeFeatures: [],
     },
   },
 ];

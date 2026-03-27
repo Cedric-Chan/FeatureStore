@@ -5,7 +5,7 @@
 ## A. 参考包完整性
 
 - [x] `docs/references/feature-group-figma-export` 存在且可 `npm i && npm run dev` 对照像素
-- [x] `FGFormData` / 三步 Wizard 与 `FeatureGroupModal.tsx` 中 `EMPTY_FORM`、`STEPS` 一致（`FEATURE_STORE.html` FG Modal 对齐）
+- [x] `FGFormData` / 四步 Wizard 与 `FeatureGroupModal.tsx` 中 `EMPTY_FORM`、`STEPS` 一致（`FEATURE_STORE.html` FG Modal 对齐）
 
 ## B. FG 列表页（vs `FeatureGroupList.tsx`）
 
@@ -23,11 +23,12 @@
 
 ## D. FG Modal（vs `FeatureGroupModal.tsx`）
 
-- [x] 三步：Basic Info、Training Config、Serving Config
+- [x] 四步：Basic Info、Training Config、Serving Config、Feature Mapping
 - [x] Basic：`name`、`region`、`module`、`owners`（多选 chips）、`description`
 - [x] Training：`dataServer`；`tableSchema` / `tableName`（下拉，仅 **Project Table Access List**）；`datePartition` 与 `partitionType` 同一行；`updateFrequency`（Daily / Weekly / Monthly / ONCE）；`entitiesColumns`（多选必填）；`filter`（界面文案 **Custom Filter**）
-- [x] Serving：`dataLatency`、`featureSource`、`sourceType`、`fsInputParams`、`transformation`、`featureMapping`（按 transformation 输出动态校验）
-- [x] Save Draft、Next、Back、Test、Submit；步骤校验
+- [x] Serving：`servingBlocks[]` — 可增删；每块 **Feature Source** + **Transformation**（mock 默认绑定 Region 下最新 enabled 版本）；**Data Latency** 与 **FS / TF 版本** 为 Feature Source / 解析结果的只读 Tag；Source Type、Input Params 回显；**允许 0 块**（仅 Training）；**跨块 Serving 输出名禁止重复**
+- [x] Feature Mapping：Serving 输出并集 → Training 列（可选、Auto Match）；其下 **Compute features**（Name、SQL、DataType），SQL 标识符须属于上述 Serving 输出集合
+- [x] Save Draft、Next、Back、Submit；步骤校验
 
 ## E. WideTable 画布 C/D/E（vs `FeatureGroupPanel`）
 
