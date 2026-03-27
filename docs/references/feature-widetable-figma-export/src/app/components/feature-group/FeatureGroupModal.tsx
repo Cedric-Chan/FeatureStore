@@ -1,7 +1,11 @@
-import { useState, useRef, useEffect } from "react";
+import {
+  useState, useRef, useEffect, useLayoutEffect, useCallback,
+} from "react";
+import { createPortal } from "react-dom";
 import {
   X, Check, ChevronDown, ChevronRight, Save, ArrowRight, ArrowLeft, Send,
   AlertCircle, CheckCircle2, Loader2, Lock, Zap, Link2, Plus, Trash2,
+  Pencil, Copy,
 } from "lucide-react";
 import { DatePartitionSelect } from "./DatePartitionSelect";
 import { EntitiesColumnMultiSelect } from "./EntitiesColumnMultiSelect";
@@ -124,6 +128,8 @@ interface MockTransformation {
   name: string;
   region: string;
   status: "Active" | "Beta" | "Deprecated";
+  /** Mock: Aggregator vs Scalar for Serving meta panel. */
+  transformKind: "Aggregator" | "Scalar";
   versions: string[];
   outputFeaturesByVersion: Record<string, string[]>;
 }
@@ -150,87 +156,104 @@ const MOCK_FEATURE_SOURCES: MockFeatureSource[] = [
 ];
 
 const MOCK_TRANSFORMATIONS: MockTransformation[] = [
-  { id: "t1",  name: "QueryAaiCache",      region: "TH",        status: "Active",     versions: ["V1", "V2", "V3"],
+  { id: "t1",  name: "QueryAaiCache",      region: "TH",        status: "Active",     transformKind: "Scalar",
+    versions: ["V1", "V2", "V3"],
     outputFeaturesByVersion: {
       V1: ["user_risk_score", "credit_limit", "repayment_rate_30d"],
       V2: ["user_risk_score", "credit_limit", "repayment_rate_30d", "default_prob"],
       V3: ["user_risk_score", "credit_limit", "repayment_rate_30d", "default_prob", "fraud_score"],
     }},
-  { id: "t2",  name: "OfflineFeatureJoin", region: "TH",        status: "Active",     versions: ["V1", "V2"],
+  { id: "t2",  name: "OfflineFeatureJoin", region: "TH",        status: "Active",     transformKind: "Aggregator",
+    versions: ["V1", "V2"],
     outputFeaturesByVersion: {
       V1: ["join_user_score", "join_shop_score"],
       V2: ["join_user_score", "join_shop_score", "join_cross_feat"],
     }},
-  { id: "t3",  name: "RealtimeAggr",       region: "TH",        status: "Beta",       versions: ["V1"],
+  { id: "t3",  name: "RealtimeAggr",       region: "TH",        status: "Beta",       transformKind: "Aggregator",
+    versions: ["V1"],
     outputFeaturesByVersion: {
       V1: ["rt_click_cnt_7d", "rt_order_cnt_7d", "rt_gmv_7d"],
     }},
-  { id: "t4",  name: "UserGraphEmbed",     region: "TH",        status: "Deprecated", versions: ["V1", "V2"],
+  { id: "t4",  name: "UserGraphEmbed",     region: "TH",        status: "Deprecated", transformKind: "Scalar",
+    versions: ["V1", "V2"],
     outputFeaturesByVersion: {
       V1: ["graph_embed_dim_0", "graph_embed_dim_1", "graph_embed_dim_2"],
       V2: ["graph_embed_dim_0", "graph_embed_dim_1", "graph_embed_dim_2", "graph_centrality"],
     }},
-  { id: "t5",  name: "QueryAaiCache",      region: "MX",        status: "Active",     versions: ["V1", "V2"],
+  { id: "t5",  name: "QueryAaiCache",      region: "MX",        status: "Active",     transformKind: "Scalar",
+    versions: ["V1", "V2"],
     outputFeaturesByVersion: {
       V1: ["user_risk_score", "credit_limit"],
       V2: ["user_risk_score", "credit_limit", "default_prob"],
     }},
-  { id: "t6",  name: "MxOfflineJoin",      region: "MX",        status: "Active",     versions: ["V1"],
+  { id: "t6",  name: "MxOfflineJoin",      region: "MX",        status: "Active",     transformKind: "Aggregator",
+    versions: ["V1"],
     outputFeaturesByVersion: {
       V1: ["mx_join_score", "mx_credit_feat"],
     }},
-  { id: "t7",  name: "MxRealtimeScore",    region: "MX",        status: "Beta",       versions: ["V1", "V2"],
+  { id: "t7",  name: "MxRealtimeScore",    region: "MX",        status: "Beta",       transformKind: "Scalar",
+    versions: ["V1", "V2"],
     outputFeaturesByVersion: {
       V1: ["mx_rt_score", "mx_risk_tier"],
       V2: ["mx_rt_score", "mx_risk_tier", "mx_fraud_prob"],
     }},
-  { id: "t8",  name: "QueryAaiCache",      region: "SG",        status: "Active",     versions: ["V2", "V3"],
+  { id: "t8",  name: "QueryAaiCache",      region: "SG",        status: "Active",     transformKind: "Scalar",
+    versions: ["V2", "V3"],
     outputFeaturesByVersion: {
       V2: ["user_risk_score", "credit_limit", "repayment_rate_30d", "default_prob"],
       V3: ["user_risk_score", "credit_limit", "repayment_rate_30d", "default_prob", "fraud_score"],
     }},
-  { id: "t9",  name: "SgRtTransform",      region: "SG",        status: "Active",     versions: ["V1", "V2"],
+  { id: "t9",  name: "SgRtTransform",      region: "SG",        status: "Active",     transformKind: "Scalar",
+    versions: ["V1", "V2"],
     outputFeaturesByVersion: {
       V1: ["sg_rt_score", "sg_click_rate"],
       V2: ["sg_rt_score", "sg_click_rate", "sg_conversion_rate"],
     }},
-  { id: "t10", name: "QueryAaiCache",      region: "SHOPEE_SG", status: "Active",     versions: ["V1", "V2", "V3"],
+  { id: "t10", name: "QueryAaiCache",      region: "SHOPEE_SG", status: "Active",     transformKind: "Scalar",
+    versions: ["V1", "V2", "V3"],
     outputFeaturesByVersion: {
       V1: ["user_risk_score", "credit_limit"],
       V2: ["user_risk_score", "credit_limit", "repayment_rate_30d", "default_prob"],
       V3: ["user_risk_score", "credit_limit", "repayment_rate_30d", "default_prob", "fraud_score"],
     }},
-  { id: "t11", name: "ShopeeRecommend",    region: "SHOPEE_SG", status: "Active",     versions: ["V1"],
+  { id: "t11", name: "ShopeeRecommend",    region: "SHOPEE_SG", status: "Active",     transformKind: "Scalar",
+    versions: ["V1"],
     outputFeaturesByVersion: {
       V1: ["rec_score", "shop_affinity", "item_click_prob"],
     }},
-  { id: "t12", name: "ShopeeGraphRank",    region: "SHOPEE_SG", status: "Beta",       versions: ["V1", "V2"],
+  { id: "t12", name: "ShopeeGraphRank",    region: "SHOPEE_SG", status: "Beta",       transformKind: "Aggregator",
+    versions: ["V1", "V2"],
     outputFeaturesByVersion: {
       V1: ["graph_rank_score", "shop_rank"],
       V2: ["graph_rank_score", "shop_rank", "item_rank_score"],
     }},
-  { id: "t13", name: "QueryAaiCache",      region: "MY",        status: "Active",     versions: ["V1", "V2"],
+  { id: "t13", name: "QueryAaiCache",      region: "MY",        status: "Active",     transformKind: "Scalar",
+    versions: ["V1", "V2"],
     outputFeaturesByVersion: {
       V1: ["user_risk_score", "credit_limit"],
       V2: ["user_risk_score", "credit_limit", "default_prob"],
     }},
-  { id: "t14", name: "QueryAaiCache",      region: "VN",        status: "Active",     versions: ["V1", "V2"],
+  { id: "t14", name: "QueryAaiCache",      region: "VN",        status: "Active",     transformKind: "Scalar",
+    versions: ["V1", "V2"],
     outputFeaturesByVersion: {
       V1: ["user_risk_score", "credit_limit"],
       V2: ["user_risk_score", "credit_limit", "repayment_rate_30d"],
     }},
-  { id: "t15", name: "QueryAaiCache",      region: "PH",        status: "Active",     versions: ["V1", "V2"],
+  { id: "t15", name: "QueryAaiCache",      region: "PH",        status: "Active",     transformKind: "Scalar",
+    versions: ["V1", "V2"],
     outputFeaturesByVersion: {
       V1: ["user_risk_score", "credit_limit"],
       V2: ["user_risk_score", "credit_limit", "default_prob"],
     }},
-  { id: "t16", name: "QueryAaiCache",      region: "ID",        status: "Active",     versions: ["V1", "V2", "V3"],
+  { id: "t16", name: "QueryAaiCache",      region: "ID",        status: "Active",     transformKind: "Scalar",
+    versions: ["V1", "V2", "V3"],
     outputFeaturesByVersion: {
       V1: ["user_risk_score", "credit_limit"],
       V2: ["user_risk_score", "credit_limit", "default_prob"],
       V3: ["user_risk_score", "credit_limit", "default_prob", "fraud_score"],
     }},
-  { id: "t17", name: "IdOfflineTransform", region: "ID",        status: "Active",     versions: ["V1"],
+  { id: "t17", name: "IdOfflineTransform", region: "ID",        status: "Active",     transformKind: "Scalar",
+    versions: ["V1"],
     outputFeaturesByVersion: {
       V1: ["id_user_score", "id_device_feat"],
     }},
@@ -262,6 +285,13 @@ function getBlockOutputFeatureNames(b: ServingBlock, region: string): string[] {
   const tVer = atIdx > -1 ? b.transformation.slice(atIdx + 1) : "";
   const t = MOCK_TRANSFORMATIONS.find(x => x.name === tName && x.region === region);
   return (t?.outputFeaturesByVersion ?? {})[tVer] ?? [];
+}
+
+function findMockTransformationForBlock(b: ServingBlock, region: string): MockTransformation | undefined {
+  const atIdx = b.transformation.lastIndexOf("@");
+  const tName = atIdx > -1 ? b.transformation.slice(0, atIdx) : b.transformation;
+  if (!tName.trim()) return undefined;
+  return MOCK_TRANSFORMATIONS.find(x => x.name === tName && x.region === region);
 }
 
 function unionServingOutputFeatures(blocks: ServingBlock[], region: string): string[] {
@@ -536,6 +566,7 @@ export default function FeatureGroupModal({
   }
 
   const isLastStep = step === STEPS.length - 1;
+  const showSaveDraft = mode === "create" || originalStatus === "Draft";
 
   return (
     <div
@@ -714,27 +745,29 @@ export default function FeatureGroupModal({
 
         {/* ── Footer ─────────────────────────────────────────────────────── */}
         <div
-          className="flex items-center justify-between px-8 py-4 border-t border-gray-100 flex-shrink-0 rounded-b-2xl"
+          className={`flex items-center px-8 py-4 border-t border-gray-100 flex-shrink-0 rounded-b-2xl ${
+            showSaveDraft ? "justify-between" : "justify-end"
+          }`}
           style={{ backgroundColor: "#fafafa" }}
         >
-          {/* Save Draft */}
-          <button
-            onClick={handleSaveDraft}
-            disabled={savedFeedback}
-            className="inline-flex items-center gap-1.5 px-4 py-2 text-sm rounded-lg border transition-all"
-            style={
-              savedFeedback
-                ? { borderColor: "#13c2c2", color: "#13c2c2", backgroundColor: "rgba(19,194,194,0.05)", fontWeight: 500 }
-                : { borderColor: "#e5e7eb", color: "#4b5563", backgroundColor: "white", fontWeight: 500 }
-            }
-          >
-            {savedFeedback
-              ? <><Check size={13} /> Saved!</>
-              : <><Save size={13} /> Save Draft</>
-            }
-          </button>
+          {showSaveDraft ? (
+            <button
+              onClick={handleSaveDraft}
+              disabled={savedFeedback}
+              className="inline-flex items-center gap-1.5 px-4 py-2 text-sm rounded-lg border transition-all"
+              style={
+                savedFeedback
+                  ? { borderColor: "#13c2c2", color: "#13c2c2", backgroundColor: "rgba(19,194,194,0.05)", fontWeight: 500 }
+                  : { borderColor: "#e5e7eb", color: "#4b5563", backgroundColor: "white", fontWeight: 500 }
+              }
+            >
+              {savedFeedback
+                ? <><Check size={13} /> Saved!</>
+                : <><Save size={13} /> Save Draft</>
+              }
+            </button>
+          ) : null}
 
-          {/* Navigation */}
           <div className="flex items-center gap-2">
             {step > 0 && (
               <button
@@ -1701,29 +1734,21 @@ function LatestTransformationSelect({
   const verTag = atIdx > -1 ? value.slice(atIdx + 1) : "";
 
   return (
-    <div className="relative" ref={ref}>
-      <button
-        type="button"
-        onClick={() => setOpen(o => !o)}
-        className={`w-full flex items-center justify-between px-3 py-2 text-sm rounded-lg border transition-colors text-left ${
-          hasError ? "border-red-300 bg-red-50" : "border-gray-200 bg-white hover:border-[#13c2c2]"
-        }`}
-      >
-        <span style={{ fontFamily: "monospace", color: value ? "#1a1a2e" : "#9ca3af", fontSize: 13 }}>
-          {value ? value.split("@")[0] : "Select transformation…"}
-        </span>
-        <ChevronDown size={13} className={`text-gray-400 flex-shrink-0 ml-2 ${open ? "rotate-180" : ""}`} />
-      </button>
-      {verTag && (
-        <p className="mt-1.5 text-xs text-gray-400 flex items-center gap-2 flex-wrap">
-          <span className="inline-flex items-center px-2 py-0.5 rounded-full border text-[11px]"
-            style={{ background: "#f0fdfa", color: "#0e9494", borderColor: "#99f6e4", fontWeight: 600 }}>
-            TF {verTag}
+    <div className="flex items-center gap-2 min-w-0 w-full" ref={ref}>
+      <div className="relative flex-1 min-w-0">
+        <button
+          type="button"
+          onClick={() => setOpen(o => !o)}
+          className={`w-full flex items-center justify-between px-3 py-2 text-sm rounded-lg border transition-colors text-left ${
+            hasError ? "border-red-300 bg-red-50" : "border-gray-200 bg-white hover:border-[#13c2c2]"
+          }`}
+        >
+          <span style={{ fontFamily: "monospace", color: value ? "#1a1a2e" : "#9ca3af", fontSize: 13 }}>
+            {value ? value.split("@")[0] : "Select transformation…"}
           </span>
-          <span className="text-gray-400">Latest enabled for {region}</span>
-        </p>
-      )}
-      {open && (
+          <ChevronDown size={13} className={`text-gray-400 flex-shrink-0 ml-2 ${open ? "rotate-180" : ""}`} />
+        </button>
+        {open && (
         <div
           className="absolute top-full mt-1 left-0 z-[130] bg-white border border-gray-200 rounded-lg shadow-xl overflow-hidden"
           style={{ minWidth: "100%", maxHeight: 240 }}
@@ -1760,7 +1785,13 @@ function LatestTransformationSelect({
             )}
           </div>
         </div>
-      )}
+        )}
+      </div>
+      {verTag ? (
+        <span className="text-xs font-mono text-gray-500 flex-shrink-0 tabular-nums">
+          {verTag}
+        </span>
+      ) : null}
     </div>
   );
 }
@@ -1813,6 +1844,8 @@ function Step2ServingBlocksConfig({
       {form.servingBlocks.map((b, idx) => {
         const src = MOCK_FEATURE_SOURCES.find(s => s.name === b.featureSource);
         const fsVer = src ? resolveFsVersionTag(src) : "";
+        const tfMock = findMockTransformationForBlock(b, form.region);
+        const outputsCnt = getBlockOutputFeatureNames(b, form.region).length;
         return (
           <div
             key={b.id}
@@ -1840,33 +1873,29 @@ function Step2ServingBlocksConfig({
                 hint={form.region ? `Region: ${form.region}` : "Select region in Basic Info"}
                 error={err && !b.featureSource.trim() ? "Feature Source is required" : undefined}
               >
-                <div className="flex flex-col gap-2">
-                  <FeatureSourceSelect
-                    value={b.featureSource}
-                    onChange={name => {
-                      patchBlock(b.id, { featureSource: name, transformation: "" });
-                    }}
-                    sources={filteredSources}
-                    hasError={err && !b.featureSource.trim()}
-                  />
-                  {src && (
-                    <div className="flex flex-wrap items-center gap-2">
-                      <DataLatencyTag latency={src.dataLatency} />
-                      <span
-                        className="inline-flex items-center px-2 py-0.5 rounded-full border text-[11px]"
-                        style={{ background: "#f0f9ff", color: "#0369a1", borderColor: "#bae6fd", fontWeight: 600 }}
-                      >
-                        FS {fsVer}
-                      </span>
-                    </div>
-                  )}
+                <div className="flex items-center gap-2 min-w-0 w-full">
+                  <div className="flex-1 min-w-0">
+                    <FeatureSourceSelect
+                      value={b.featureSource}
+                      onChange={name => {
+                        patchBlock(b.id, { featureSource: name, transformation: "" });
+                      }}
+                      sources={filteredSources}
+                      hasError={err && !b.featureSource.trim()}
+                    />
+                  </div>
+                  {fsVer ? (
+                    <span className="text-xs font-mono text-gray-500 flex-shrink-0 tabular-nums">
+                      {fsVer}
+                    </span>
+                  ) : null}
                 </div>
               </FormGroup>
 
               <FormGroup
                 label="Transformation"
                 required
-                hint="Uses latest enabled version for this region"
+                hint={form.region ? `Latest enabled version for ${form.region}` : "Select region in Basic Info"}
                 error={err && !b.transformation.trim() ? "Transformation is required" : undefined}
               >
                 <LatestTransformationSelect
@@ -1881,39 +1910,77 @@ function Step2ServingBlocksConfig({
 
             {src && (
               <div
-                className="rounded-lg border px-4 py-3 space-y-2.5"
+                className="rounded-lg border px-4 py-3 space-y-2"
                 style={{ borderColor: "rgba(19,194,194,0.20)", background: "rgba(19,194,194,0.03)" }}
               >
                 <p className="text-xs flex items-center gap-1.5" style={{ color: "#0e9494", fontWeight: 600 }}>
                   <span className="w-1.5 h-1.5 rounded-full bg-teal-400 flex-shrink-0" />
-                  From Feature Source
+                  Serving pair details
                 </p>
-                <div className="flex items-center gap-3">
-                  <span className="text-xs text-gray-400 flex-shrink-0" style={{ fontWeight: 500, width: 96 }}>
-                    Source Type
-                  </span>
-                  <SourceTypeBadge sourceType={src.sourceType} />
-                </div>
-                <div className="flex items-center gap-3">
-                  <span className="text-xs text-gray-400 flex-shrink-0" style={{ fontWeight: 500, width: 96 }}>
-                    Input Params
-                  </span>
-                  <div className="flex flex-wrap gap-1">
-                    {src.inputParams.map(p => (
+                <div className="grid gap-2 sm:grid-cols-2">
+                  <div className="flex items-start gap-2 min-w-0">
+                    <span className="text-xs text-gray-400 flex-shrink-0 pt-0.5" style={{ fontWeight: 500, width: 112 }}>
+                      Feature Source Type
+                    </span>
+                    <SourceTypeBadge sourceType={src.sourceType} />
+                  </div>
+                  <div className="flex items-start gap-2 min-w-0">
+                    <span className="text-xs text-gray-400 flex-shrink-0 pt-0.5" style={{ fontWeight: 500, width: 112 }}>
+                      Data Latency
+                    </span>
+                    <DataLatencyTag latency={src.dataLatency} />
+                  </div>
+                  <div className="flex items-start gap-2 min-w-0 sm:col-span-2">
+                    <span className="text-xs text-gray-400 flex-shrink-0 pt-0.5" style={{ fontWeight: 500, width: 112 }}>
+                      Input Params
+                    </span>
+                    <div className="flex flex-wrap gap-1 min-w-0">
+                      {src.inputParams.map(p => (
+                        <span
+                          key={p}
+                          className="inline-flex items-center px-2 py-0.5 rounded-md text-xs"
+                          style={{
+                            background: "#f3f4f6",
+                            color: "#374151",
+                            border: "1px solid #e5e7eb",
+                            fontFamily: "monospace",
+                            fontWeight: 500,
+                          }}
+                        >
+                          {p}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-2 min-w-0">
+                    <span className="text-xs text-gray-400 flex-shrink-0" style={{ fontWeight: 500, width: 112 }}>
+                      Transformation Type
+                    </span>
+                    {tfMock ? (
                       <span
-                        key={p}
-                        className="inline-flex items-center px-2 py-0.5 rounded-md text-xs"
+                        className="text-xs px-2 py-0.5 rounded-md border"
                         style={{
-                          background: "#f3f4f6",
-                          color: "#374151",
-                          border: "1px solid #e5e7eb",
-                          fontFamily: "monospace",
-                          fontWeight: 500,
+                          background: tfMock.transformKind === "Aggregator" ? "#fff7e6" : "#f0f9ff",
+                          color: tfMock.transformKind === "Aggregator" ? "#ad4e00" : "#0369a1",
+                          borderColor: tfMock.transformKind === "Aggregator" ? "#ffd591" : "#bae6fd",
+                          fontWeight: 600,
                         }}
                       >
-                        {p}
+                        {tfMock.transformKind}
                       </span>
-                    ))}
+                    ) : (
+                      <span className="text-xs text-gray-400">Select transformation</span>
+                    )}
+                  </div>
+                  <div className="flex items-center gap-2 min-w-0">
+                    <span className="text-xs text-gray-400 flex-shrink-0" style={{ fontWeight: 500, width: 112 }}>
+                      Outputs Cnt
+                    </span>
+                    {tfMock && b.transformation.trim() ? (
+                      <span className="text-xs font-mono text-gray-700 font-semibold">{outputsCnt}</span>
+                    ) : (
+                      <span className="text-xs text-gray-400">—</span>
+                    )}
                   </div>
                 </div>
               </div>
@@ -1953,6 +2020,97 @@ function Step3FeatureMappingAndCompute({
   const trainingFeatures = MOCK_TRAINING_FEATURES[form.tableName] ?? DEFAULT_TRAINING_FEATURES;
   const servingSet = new Set(outputFeatures);
 
+  const addComputeBtnRef = useRef<HTMLButtonElement>(null);
+  const computePopoverPanelRef = useRef<HTMLDivElement>(null);
+  const [computePopoverOpen, setComputePopoverOpen] = useState(false);
+  const [computeEditingId, setComputeEditingId] = useState<string | null>(null);
+  const [computeDraft, setComputeDraft] = useState({
+    name: "",
+    sql: "",
+    dataType: "DOUBLE",
+  });
+  const [computePopoverAttempted, setComputePopoverAttempted] = useState(false);
+  const [computePanelStyle, setComputePanelStyle] = useState<{
+    top: number;
+    left: number;
+    width: number;
+    maxHeight: number;
+  } | null>(null);
+
+  const updateComputePanelPosition = useCallback(() => {
+    const el = addComputeBtnRef.current;
+    if (!el) return;
+    const rect = el.getBoundingClientRect();
+    const width = Math.max(360, Math.min(440, rect.width + 120));
+    let left = rect.right - width;
+    const margin = 8;
+    if (left < margin) left = margin;
+    if (left + width > window.innerWidth - margin) {
+      left = Math.max(margin, window.innerWidth - width - margin);
+    }
+    const top = rect.bottom + 4;
+    const maxHeight = Math.max(180, window.innerHeight - top - margin);
+    setComputePanelStyle({ top, left, width, maxHeight });
+  }, []);
+
+  useEffect(() => {
+    if (!computePopoverOpen) setComputePanelStyle(null);
+  }, [computePopoverOpen]);
+
+  useLayoutEffect(() => {
+    if (!computePopoverOpen) return;
+    updateComputePanelPosition();
+  }, [computePopoverOpen, updateComputePanelPosition]);
+
+  useEffect(() => {
+    if (!computePopoverOpen) return;
+    function onScrollOrResize() {
+      updateComputePanelPosition();
+    }
+    const scrollRoot = addComputeBtnRef.current?.closest("[data-fg-modal-scroll]");
+    window.addEventListener("resize", onScrollOrResize);
+    scrollRoot?.addEventListener("scroll", onScrollOrResize, { passive: true });
+    return () => {
+      window.removeEventListener("resize", onScrollOrResize);
+      scrollRoot?.removeEventListener("scroll", onScrollOrResize);
+    };
+  }, [computePopoverOpen, updateComputePanelPosition]);
+
+  useEffect(() => {
+    if (!computePopoverOpen) return;
+    function onDocMouse(e: MouseEvent) {
+      const t = e.target as Node;
+      if (addComputeBtnRef.current?.contains(t)) return;
+      if (computePopoverPanelRef.current?.contains(t)) return;
+      setComputePopoverOpen(false);
+      setComputePopoverAttempted(false);
+    }
+    document.addEventListener("mousedown", onDocMouse);
+    return () => document.removeEventListener("mousedown", onDocMouse);
+  }, [computePopoverOpen]);
+
+  useEffect(() => {
+    if (!computePopoverOpen) return;
+    function onKey(e: KeyboardEvent) {
+      if (e.key === "Escape") {
+        e.preventDefault();
+        e.stopPropagation();
+        setComputePopoverOpen(false);
+        setComputePopoverAttempted(false);
+      }
+    }
+    document.addEventListener("keydown", onKey, true);
+    return () => document.removeEventListener("keydown", onKey, true);
+  }, [computePopoverOpen]);
+
+  useEffect(() => {
+    if (!computePopoverOpen) return;
+    const id = requestAnimationFrame(() => {
+      computePopoverPanelRef.current?.querySelector<HTMLInputElement>("input")?.focus();
+    });
+    return () => cancelAnimationFrame(id);
+  }, [computePopoverOpen]);
+
   useEffect(() => {
     const prev = form.featureMapping;
     const next: Record<string, string> = {};
@@ -1986,6 +2144,191 @@ function Step3FeatureMappingAndCompute({
     );
   }
 
+  function openComputeNew() {
+    setComputeEditingId(null);
+    setComputeDraft({ name: "", sql: "", dataType: "DOUBLE" });
+    setComputePopoverAttempted(false);
+    setComputePopoverOpen(true);
+  }
+
+  function openComputeEdit(row: ComputeFeatureRow) {
+    setComputeEditingId(row.id);
+    setComputeDraft({ name: row.name, sql: row.sql, dataType: row.dataType });
+    setComputePopoverAttempted(false);
+    setComputePopoverOpen(true);
+  }
+
+  function closeComputePopover() {
+    setComputePopoverOpen(false);
+    setComputePopoverAttempted(false);
+  }
+
+  function saveComputePopover() {
+    setComputePopoverAttempted(true);
+    const name = computeDraft.name.trim();
+    const sql = computeDraft.sql.trim();
+    const dt = computeDraft.dataType.trim();
+    if (!name || !sql || !dt) return;
+    if (outputFeatures.length === 0) return;
+    const unknown = computeSqlUnknownIdentifiers(sql, servingSet);
+    if (unknown.length > 0) return;
+    const taken = new Set(
+      form.computeFeatures
+        .filter(c => c.id !== computeEditingId)
+        .map(c => c.name.trim()),
+    );
+    if (taken.has(name)) return;
+
+    if (computeEditingId) {
+      patchCompute(computeEditingId, { name, sql, dataType: dt });
+    } else {
+      setField("computeFeatures", [
+        ...form.computeFeatures,
+        { id: newComputeId(), name, sql, dataType: dt },
+      ]);
+    }
+    closeComputePopover();
+  }
+
+  function copyComputeRow(c: ComputeFeatureRow) {
+    const base = c.name.trim() || "feature";
+    let candidate = `${base}_copy`;
+    const names = new Set(form.computeFeatures.map(x => x.name.trim()));
+    let n = 2;
+    while (names.has(candidate)) {
+      candidate = `${base}_copy${n}`;
+      n += 1;
+    }
+    setField("computeFeatures", [
+      ...form.computeFeatures,
+      { id: newComputeId(), name: candidate, sql: c.sql, dataType: c.dataType },
+    ]);
+  }
+
+  const popoverUnknown =
+    outputFeatures.length > 0 && computeDraft.sql.trim()
+      ? computeSqlUnknownIdentifiers(computeDraft.sql, servingSet)
+      : [];
+  const popoverNameDup =
+    computePopoverAttempted &&
+    computeDraft.name.trim() &&
+    form.computeFeatures.some(
+      c => c.id !== computeEditingId && c.name.trim() === computeDraft.name.trim(),
+    );
+
+  const computePopoverPortal =
+    computePopoverOpen && computePanelStyle
+      ? createPortal(
+          <div
+            ref={computePopoverPanelRef}
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="fg-compute-popover-title"
+            className="fixed z-[200] bg-white border border-gray-200 rounded-xl shadow-xl flex flex-col overflow-hidden"
+            style={{
+              top: computePanelStyle.top,
+              left: computePanelStyle.left,
+              width: computePanelStyle.width,
+              maxHeight: computePanelStyle.maxHeight,
+            }}
+          >
+            <div className="px-3 py-2 border-b border-gray-100 flex-shrink-0">
+              <h4 id="fg-compute-popover-title" className="text-xs font-semibold text-gray-800">
+                {computeEditingId ? "Edit compute feature" : "Add compute feature"}
+              </h4>
+            </div>
+            <div className="p-3 space-y-3 overflow-y-auto flex-1 min-h-0">
+              <FormGroup
+                label="Feature name"
+                required
+                error={
+                  computePopoverAttempted && !computeDraft.name.trim()
+                    ? "Name is required"
+                    : popoverNameDup
+                    ? "Name already used"
+                    : undefined
+                }
+              >
+                <StyledInput
+                  value={computeDraft.name}
+                  onChange={v => setComputeDraft(d => ({ ...d, name: v }))}
+                  placeholder="e.g. risk_score_adjusted"
+                  mono
+                  hasError={
+                    computePopoverAttempted &&
+                    (!computeDraft.name.trim() || !!popoverNameDup)
+                  }
+                />
+              </FormGroup>
+              <FormGroup
+                label="Data type"
+                required
+                error={computePopoverAttempted && !computeDraft.dataType.trim() ? "Data type is required" : undefined}
+              >
+                <StyledSelect
+                  value={computeDraft.dataType}
+                  onChange={v => setComputeDraft(d => ({ ...d, dataType: v }))}
+                  options={COMPUTE_DATA_TYPES.map(dt => ({ label: dt, value: dt }))}
+                  placeholder="Type"
+                  hasError={computePopoverAttempted && !computeDraft.dataType.trim()}
+                />
+              </FormGroup>
+              <div>
+                <label className="text-sm text-gray-700 mb-1.5 block" style={{ fontWeight: 600 }}>
+                  SQL expression
+                  <span className="text-red-500 ml-0.5">*</span>
+                </label>
+                <textarea
+                  value={computeDraft.sql}
+                  onChange={e => setComputeDraft(d => ({ ...d, sql: e.target.value }))}
+                  rows={4}
+                  aria-invalid={
+                    computePopoverAttempted &&
+                    (!computeDraft.sql.trim() || popoverUnknown.length > 0)
+                  }
+                  className={`w-full text-xs px-3 py-2 rounded-lg border outline-none transition-colors font-mono ${
+                    computePopoverAttempted &&
+                    (!computeDraft.sql.trim() || popoverUnknown.length > 0)
+                      ? "border-red-300 bg-red-50"
+                      : "border-gray-200"
+                  }`}
+                  placeholder="e.g. user_risk_score * 1.1"
+                />
+                {popoverUnknown.length > 0 && (
+                  <p className="mt-1 text-xs text-red-500" role="alert">
+                    Unknown identifiers (not in serving outputs): {popoverUnknown.join(", ")}
+                  </p>
+                )}
+                {computePopoverAttempted && !computeDraft.sql.trim() && (
+                  <p className="mt-1 text-xs text-red-500" role="alert">
+                    SQL is required
+                  </p>
+                )}
+              </div>
+            </div>
+            <div className="px-3 py-2 border-t border-gray-100 flex justify-end gap-2 flex-shrink-0 bg-gray-50">
+              <button
+                type="button"
+                onClick={closeComputePopover}
+                className="px-3 py-1.5 text-xs rounded-lg border border-gray-200 text-gray-600 hover:bg-white"
+                style={{ fontWeight: 500 }}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={saveComputePopover}
+                className="px-3 py-1.5 text-xs rounded-lg text-white"
+                style={{ backgroundColor: "#13c2c2", fontWeight: 600 }}
+              >
+                Save
+              </button>
+            </div>
+          </div>,
+          document.body,
+        )
+      : null;
+
   return (
     <div className="space-y-6">
       {outputFeatures.length === 0 ? (
@@ -2009,18 +2352,14 @@ function Step3FeatureMappingAndCompute({
         />
       )}
 
-      <div className="space-y-3">
+      <div className="space-y-2">
         <div className="flex items-center justify-between gap-2">
           <h3 className="text-sm font-semibold text-gray-800">Compute features (real-time SQL)</h3>
           <button
+            ref={addComputeBtnRef}
             type="button"
             disabled={outputFeatures.length === 0}
-            onClick={() =>
-              setField("computeFeatures", [
-                ...form.computeFeatures,
-                { id: newComputeId(), name: "", sql: "", dataType: "DOUBLE" },
-              ])
-            }
+            onClick={openComputeNew}
             className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs border transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
             style={{ fontWeight: 600, borderColor: "#e5e7eb", color: "#374151" }}
           >
@@ -2032,82 +2371,73 @@ function Step3FeatureMappingAndCompute({
         </p>
 
         <div aria-live="polite" className="sr-only">
-          {err && form.computeFeatures.some(c => c.sql.trim()) ? "Compute SQL validation messages shown inline." : ""}
+          {err && form.computeFeatures.length > 0 ? "Compute feature list updated." : ""}
         </div>
 
-        {form.computeFeatures.map((c, i) => {
+        {form.computeFeatures.map(c => {
           const unknown =
             outputFeatures.length > 0 && c.sql.trim()
               ? computeSqlUnknownIdentifiers(c.sql, servingSet)
               : [];
-          const sqlInvalid = err && (unknown.length > 0 || !c.sql.trim());
           const rowInvalid =
-            err && (!c.name.trim() || !c.sql.trim() || !c.dataType.trim() || unknown.length > 0);
+            err &&
+            (!c.name.trim() || !c.sql.trim() || !c.dataType.trim() || unknown.length > 0);
 
           return (
             <div
               key={c.id}
-              className="rounded-lg border p-3 space-y-3"
+              className="flex items-center justify-between gap-2 min-h-[44px] rounded-lg border px-3 py-2"
               style={{ borderColor: rowInvalid ? "#ffa39e" : "#e5e7eb", background: "white" }}
             >
-              <div className="flex items-center justify-between">
-                <span className="text-xs font-semibold text-gray-600">Compute {i + 1}</span>
+              <div className="flex items-center gap-2 min-w-0 flex-1">
+                <span
+                  className="text-xs font-medium text-gray-800 truncate font-mono"
+                  title={c.name}
+                >
+                  {c.name || "(unnamed)"}
+                </span>
+                <span
+                  className="text-[10px] px-1.5 py-0.5 rounded border flex-shrink-0 font-semibold"
+                  style={{
+                    background: "#f0f9ff",
+                    color: "#0369a1",
+                    borderColor: "#bae6fd",
+                  }}
+                >
+                  {c.dataType}
+                </span>
+              </div>
+              <div className="flex items-center gap-0.5 flex-shrink-0">
+                <button
+                  type="button"
+                  onClick={() => openComputeEdit(c)}
+                  className="p-2 rounded-md text-gray-500 hover:bg-gray-100 hover:text-[#0e9494]"
+                  aria-label={`Edit compute feature ${c.name}`}
+                >
+                  <Pencil size={15} />
+                </button>
+                <button
+                  type="button"
+                  onClick={() => copyComputeRow(c)}
+                  className="p-2 rounded-md text-gray-500 hover:bg-gray-100 hover:text-[#0e9494]"
+                  aria-label={`Copy compute feature ${c.name}`}
+                >
+                  <Copy size={15} />
+                </button>
                 <button
                   type="button"
                   onClick={() => removeCompute(c.id)}
-                  className="text-xs text-red-600 hover:underline"
-                  aria-label={`Remove compute feature ${i + 1}`}
+                  className="p-2 rounded-md text-gray-500 hover:bg-red-50 hover:text-red-600"
+                  aria-label={`Delete compute feature ${c.name}`}
                 >
-                  Remove
+                  <Trash2 size={15} />
                 </button>
-              </div>
-              <FormGroup label="Feature name" required error={err && !c.name.trim() ? "Name is required" : undefined}>
-                <StyledInput
-                  value={c.name}
-                  onChange={v => patchCompute(c.id, { name: v })}
-                  placeholder="e.g. risk_score_adjusted"
-                  mono
-                />
-              </FormGroup>
-              <FormGroup
-                label="Data type"
-                required
-                error={err && !c.dataType ? "Data type is required" : undefined}
-              >
-                <StyledSelect
-                  value={c.dataType}
-                  onChange={v => patchCompute(c.id, { dataType: v })}
-                  options={COMPUTE_DATA_TYPES.map(dt => ({ label: dt, value: dt }))}
-                  placeholder="Type"
-                  hasError={err && !c.dataType}
-                />
-              </FormGroup>
-              <div>
-                <label className="text-sm text-gray-700 mb-1.5 block" style={{ fontWeight: 600 }}>
-                  SQL expression
-                  <span className="text-red-500 ml-0.5">*</span>
-                </label>
-                <textarea
-                  value={c.sql}
-                  onChange={e => patchCompute(c.id, { sql: e.target.value })}
-                  rows={3}
-                  aria-invalid={sqlInvalid}
-                  aria-describedby={unknown.length ? `cf-sql-err-${c.id}` : undefined}
-                  className={`w-full text-xs px-3 py-2 rounded-lg border outline-none transition-colors font-mono ${
-                    sqlInvalid ? "border-red-300 bg-red-50" : "border-gray-200"
-                  }`}
-                  placeholder="e.g. user_risk_score * 1.1"
-                />
-                {unknown.length > 0 && (
-                  <p id={`cf-sql-err-${c.id}`} className="mt-1 text-xs text-red-500" role="alert">
-                    Unknown identifiers (not in serving outputs): {unknown.join(", ")}
-                  </p>
-                )}
               </div>
             </div>
           );
         })}
       </div>
+      {computePopoverPortal}
     </div>
   );
 }
