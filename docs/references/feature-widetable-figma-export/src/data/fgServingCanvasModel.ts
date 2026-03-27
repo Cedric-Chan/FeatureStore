@@ -32,7 +32,7 @@ export function listServingFeatureSourceDependencyLines(
     if (cfg?.kind !== "feature_source") continue;
     const id = cfg.asset.selectedCatalogId;
     const ent = getFeatureSourceById(id);
-    lines.push(ent ? ent.label : id);
+    lines.push(ent ? `${ent.label} (${ent.versionTag})` : id);
   }
   return lines;
 }

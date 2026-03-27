@@ -13,6 +13,8 @@ import {
   Info,
   Maximize2,
   Plus,
+  PlusSquare,
+  Search,
   Trash2,
   X,
 } from "lucide-react";
@@ -104,6 +106,7 @@ function UpstreamCascadePicker({
   textPlaceholder = "Enter value",
   emptyLabel = "Select source…",
   disabledUpstreamFieldKeys,
+  endMappingTrigger = false,
 }: {
   source: SourceRef | null;
   groups: ReturnType<typeof listUpstreamOutputGroups>;
@@ -117,10 +120,13 @@ function UpstreamCascadePicker({
   emptyLabel?: string;
   /** Upstream fields already selected on another row; current `source` remains selectable. */
   disabledUpstreamFieldKeys?: Set<string>;
+  /** Pill-style trigger + search affordance for END node mapping cards. */
+  endMappingTrigger?: boolean;
 }) {
   const [open, setOpen] = useState(false);
   const [step, setStep] = useState<"root" | "fields" | "fixed">("root");
   const [pickedNode, setPickedNode] = useState<FgServingNodeId | null>(null);
+  const [triggerFocused, setTriggerFocused] = useState(false);
   const rootRef = useRef<HTMLDivElement>(null);
   const fixedInputUid = useId().replace(/:/g, "");
   const fixedInputId = `fixed-val-${fixedFieldLabel.replace(/\W/g, "_")}-${fixedInputUid}`;
@@ -163,6 +169,19 @@ function UpstreamCascadePicker({
     setPickedNode(null);
   };
 
+  const triggerBtnClass = endMappingTrigger
+    ? `flex-1 min-h-[44px] text-left pl-3 pr-2 py-2 text-xs border border-gray-200/90 rounded-full bg-white
+        flex items-center gap-2 min-w-0 shadow-sm
+        hover:border-cyan-200 hover:bg-cyan-50/40
+        focus:outline-none focus:ring-2 focus:ring-cyan-300 focus:ring-offset-1
+        disabled:opacity-50 disabled:cursor-not-allowed`
+    : `flex-1 min-h-[44px] text-left px-3 py-2 text-xs border border-gray-200 rounded-lg bg-white
+        hover:border-gray-300 focus:outline-none focus:ring-2 focus:ring-teal-400 focus:ring-offset-1
+        disabled:opacity-50 disabled:cursor-not-allowed`;
+
+  const showSearchAffordance =
+    endMappingTrigger && (open || triggerFocused);
+
   return (
     <div className="relative" ref={rootRef}>
       <div className="flex items-center gap-1">
@@ -170,19 +189,29 @@ function UpstreamCascadePicker({
           type="button"
           disabled={disabled}
           onClick={openMenu}
-          className="flex-1 min-h-[44px] text-left px-3 py-2 text-xs border border-gray-200 rounded-lg bg-white
-            hover:border-gray-300 focus:outline-none focus:ring-2 focus:ring-teal-400 focus:ring-offset-1
-            disabled:opacity-50 disabled:cursor-not-allowed"
+          onFocus={() => setTriggerFocused(true)}
+          onBlur={() => setTriggerFocused(false)}
+          className={triggerBtnClass}
         >
-          {formatSourceLabel(source, nodeTitleById, emptyLabel)}
+          <span className="truncate flex-1 min-w-0 text-slate-800">
+            {formatSourceLabel(source, nodeTitleById, emptyLabel)}
+          </span>
+          {showSearchAffordance ? (
+            <Search
+              size={14}
+              className="shrink-0 text-gray-400"
+              aria-hidden
+            />
+          ) : null}
         </button>
         {source !== null && !disabled && (
           <button
             type="button"
             aria-label="Clear mapping"
             onClick={onClear}
-            className="shrink-0 min-w-[44px] min-h-[44px] flex items-center justify-center rounded-lg border border-gray-200
-              text-gray-400 hover:text-gray-700 hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-teal-400"
+            className={`shrink-0 min-w-[44px] min-h-[44px] flex items-center justify-center border border-gray-200
+              text-gray-400 hover:text-gray-700 hover:bg-cyan-50/60 focus:outline-none focus:ring-2 focus:ring-cyan-300
+              ${endMappingTrigger ? "rounded-full" : "rounded-lg focus:ring-teal-400"}`}
           >
             <X size={16} />
           </button>
@@ -199,13 +228,15 @@ function UpstreamCascadePicker({
                 <button
                   key={g.nodeId}
                   type="button"
-                  className="w-full flex items-center justify-between px-3 py-2.5 text-left text-xs hover:bg-slate-50"
+                  className="w-full flex items-center justify-between px-3 py-2.5 text-left text-xs
+                    text-gray-800 hover:bg-cyan-50/90 active:bg-cyan-100/80
+                    focus:outline-none focus-visible:bg-cyan-50 focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-cyan-200"
                   onClick={() => {
                     setPickedNode(g.nodeId);
                     setStep("fields");
                   }}
                 >
-                  <span className="font-medium text-gray-800">{g.title}</span>
+                  <span className="font-medium">{g.title}</span>
                   <ChevronRight size={14} className="text-gray-400" />
                 </button>
               ))}
@@ -225,7 +256,8 @@ function UpstreamCascadePicker({
             <div className="flex-1 flex flex-col border-l border-gray-100 min-w-[200px]">
               <button
                 type="button"
-                className="px-3 py-2 text-[11px] text-gray-500 hover:bg-gray-50 border-b border-gray-100"
+                className="px-3 py-2 text-[11px] text-gray-500 hover:bg-cyan-50/70 border-b border-gray-100
+                  focus:outline-none focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-cyan-200"
                 onClick={() => {
                   setStep("root");
                   setPickedNode(null);
@@ -243,10 +275,10 @@ function UpstreamCascadePicker({
                         key={f.name}
                         type="button"
                         disabled={taken}
-                        className={`w-full text-left px-3 py-2 text-xs ${
+                        className={`w-full text-left px-3 py-2 text-xs focus:outline-none focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-teal-200 ${
                           taken
                             ? "text-gray-400 cursor-not-allowed bg-gray-50/80"
-                            : "hover:bg-teal-50 text-gray-800"
+                            : "hover:bg-teal-50 active:bg-teal-100/80 text-gray-800"
                         }`}
                         onClick={() => {
                           if (taken) return;
@@ -1135,9 +1167,6 @@ function EndPanel({
     onChange({ ...cfg, outputs: next });
   }
 
-  const rowGridClass =
-    "grid grid-cols-1 sm:grid-cols-[minmax(0,1fr)_minmax(0,1.6fr)_44px] gap-2 sm:gap-3 items-start sm:items-center";
-
   return (
     <div className="space-y-4">
       <label className="block">
@@ -1152,119 +1181,113 @@ function EndPanel({
         />
       </label>
 
-      <section className="rounded-xl border border-gray-200 bg-white p-3 sm:p-4 space-y-3">
-        <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-          <h3 className="text-sm font-semibold text-slate-800">
-            Output features mapping
+      <section className="rounded-xl border border-gray-200 bg-white p-3 sm:p-4 space-y-4">
+        <div>
+          <h3 className="text-sm font-semibold text-slate-800 tracking-tight">
+            Output Features Mapping
           </h3>
-          <span className="text-xs text-gray-500">
-            Rows: {cfg.outputs.length}
-          </span>
+          <p className="mt-0.5 text-[11px] text-gray-400">
+            {cfg.outputs.length} mapping{cfg.outputs.length === 1 ? "" : "s"}
+          </p>
         </div>
-        <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-gray-500">
-          <span className="inline-flex items-center gap-1">
-            <Info size={12} className="shrink-0 text-gray-400" aria-hidden />
+        <p className="text-[11px] text-gray-500 leading-snug">
+          <span className="inline-flex items-start gap-1.5">
+            <Info
+              size={12}
+              className="shrink-0 text-gray-400 mt-0.5"
+              aria-hidden
+            />
             Training list suggestions; names that match Training Config count as
             mapped on the FG detail card.
           </span>
-        </div>
+        </p>
 
-        <div className="rounded-lg border border-gray-100 overflow-hidden">
-          <div
-            className={`${rowGridClass} px-2 sm:px-3 py-2 bg-slate-50/90 border-b border-gray-100`}
-            role="row"
-          >
-            <div
-              className="text-[11px] font-medium text-gray-500 uppercase tracking-wide"
-              role="columnheader"
-            >
-              Feature name
-            </div>
-            <div
-              className="text-[11px] font-medium text-gray-500 uppercase tracking-wide hidden sm:block"
-              role="columnheader"
-            >
-              Source mapping
-            </div>
-            <div className="hidden sm:block" aria-hidden />
-          </div>
-
+        <div className="space-y-3">
           {cfg.outputs.map((row) => (
             <div
               key={row.id}
-              role="row"
-              className={`${rowGridClass} px-2 sm:px-3 py-2 border-t border-gray-100 transition-colors hover:bg-slate-50/40`}
+              className="relative rounded-xl bg-slate-50/90 border border-gray-200/80 p-3 pt-9 sm:pt-3 sm:pr-11"
             >
-              <div className="min-w-0 flex flex-col gap-1">
-                <label
-                  className="text-[11px] text-gray-500 sm:sr-only"
-                  htmlFor={`end-feat-${row.id}`}
+              {!readOnly && (
+                <button
+                  type="button"
+                  aria-label="Remove output row"
+                  disabled={cfg.outputs.length <= 1}
+                  onClick={() => removeRow(row.id)}
+                  className="absolute top-2 right-2 min-w-[40px] min-h-[40px] flex items-center justify-center rounded-lg
+                    text-red-500 hover:text-red-600 hover:bg-red-50/90
+                    focus:outline-none focus:ring-2 focus:ring-red-300 focus:ring-offset-1
+                    disabled:opacity-30 disabled:pointer-events-none disabled:hover:bg-transparent"
                 >
-                  Feature name
-                </label>
-                <input
-                  id={`end-feat-${row.id}`}
-                  type="text"
-                  list={`end-feat-dl-${row.id}`}
-                  disabled={readOnly}
-                  value={row.trainingFeatureName}
-                  onChange={(e) =>
-                    updateRow(row.id, { trainingFeatureName: e.target.value })
-                  }
-                  placeholder={
-                    trainingFeatureNames.length > 0
-                      ? "e.g. qc_score"
-                      : "Feature name"
-                  }
-                  autoComplete="off"
-                  className="w-full min-h-[44px] px-2.5 text-xs border border-gray-200 rounded-lg font-mono text-slate-800 focus:outline-none focus:ring-2 focus:ring-teal-400 focus:ring-offset-1"
-                />
-                <datalist id={`end-feat-dl-${row.id}`}>
-                  {trainingFeatureNames.map((name) => (
-                    <option key={name} value={name} />
-                  ))}
-                </datalist>
-              </div>
-              <div className="min-w-0 flex flex-col gap-1">
-                <span className="text-[11px] text-gray-500 sm:sr-only">
-                  Source mapping
-                </span>
-                <UpstreamCascadePicker
-                  source={row.source}
-                  groups={upstreamGroups}
-                  nodeTitleById={nodeTitleById}
-                  disabled={readOnly}
-                  onPick={(ref) => updateRow(row.id, { source: ref })}
-                  onClear={() => updateRow(row.id, { source: null })}
-                  fixedFieldLabel={row.trainingFeatureName || "output"}
-                  fixedValueMode="text"
-                  emptyLabel="Set variable"
-                  disabledUpstreamFieldKeys={occupiedUpstreamKeysForRow(row.id)}
-                />
-              </div>
-              <div className="flex justify-end sm:justify-center pt-1 sm:pt-0">
-                {!readOnly && (
-                  <button
-                    type="button"
-                    aria-label="Remove output row"
-                    disabled={cfg.outputs.length <= 1}
-                    onClick={() => removeRow(row.id)}
-                    className="min-w-[44px] min-h-[44px] flex items-center justify-center text-gray-400 hover:text-red-600 rounded-lg hover:bg-red-50/80 focus:outline-none focus:ring-2 focus:ring-teal-400 focus:ring-offset-1 disabled:opacity-30 disabled:pointer-events-none"
+                  <Trash2 size={18} strokeWidth={2} aria-hidden />
+                </button>
+              )}
+              <div className="space-y-3 min-w-0">
+                <div className="min-w-0 flex flex-col gap-1.5">
+                  <label
+                    className="text-xs font-medium text-slate-700"
+                    htmlFor={`end-feat-${row.id}`}
                   >
-                    <Trash2 size={16} />
-                  </button>
-                )}
+                    FeatureName
+                  </label>
+                  <input
+                    id={`end-feat-${row.id}`}
+                    type="text"
+                    list={`end-feat-dl-${row.id}`}
+                    disabled={readOnly}
+                    value={row.trainingFeatureName}
+                    onChange={(e) =>
+                      updateRow(row.id, { trainingFeatureName: e.target.value })
+                    }
+                    placeholder={
+                      trainingFeatureNames.length > 0
+                        ? "e.g. qc_score"
+                        : "Feature name"
+                    }
+                    autoComplete="off"
+                    className="w-full min-h-[44px] px-3 text-xs border border-gray-200 rounded-xl bg-white font-mono text-slate-800
+                      focus:outline-none focus:ring-2 focus:ring-cyan-300 focus:ring-offset-0 focus:border-cyan-200"
+                  />
+                  <datalist id={`end-feat-dl-${row.id}`}>
+                    {trainingFeatureNames.map((name) => (
+                      <option key={name} value={name} />
+                    ))}
+                  </datalist>
+                </div>
+                <div className="min-w-0 flex flex-col gap-1.5">
+                  <span className="text-xs font-medium text-slate-700">
+                    Source FieldMapping
+                  </span>
+                  <UpstreamCascadePicker
+                    source={row.source}
+                    groups={upstreamGroups}
+                    nodeTitleById={nodeTitleById}
+                    disabled={readOnly}
+                    onPick={(ref) => updateRow(row.id, { source: ref })}
+                    onClear={() => updateRow(row.id, { source: null })}
+                    fixedFieldLabel={row.trainingFeatureName || "output"}
+                    fixedValueMode="text"
+                    emptyLabel="Set variable"
+                    disabledUpstreamFieldKeys={occupiedUpstreamKeysForRow(
+                      row.id
+                    )}
+                    endMappingTrigger
+                  />
+                </div>
               </div>
             </div>
           ))}
         </div>
 
         {!readOnly && (
-          <div className="flex flex-col sm:flex-row gap-2 pt-1">
+          <div className="grid grid-cols-2 gap-2 pt-1">
             <button
               type="button"
               onClick={addRow}
-              className="inline-flex items-center justify-center gap-1.5 min-h-[44px] px-4 text-xs font-medium rounded-lg border border-gray-200 bg-white text-slate-700 hover:border-teal-300 hover:text-teal-700 hover:bg-teal-50/50 focus:outline-none focus:ring-2 focus:ring-teal-400 focus:ring-offset-1"
+              className="inline-flex items-center justify-center gap-1.5 min-h-[44px] px-3 text-xs font-medium rounded-xl
+                border border-gray-200/90 bg-slate-100/80 text-slate-700
+                hover:bg-slate-200/70 hover:border-gray-300
+                focus:outline-none focus:ring-2 focus:ring-cyan-300 focus:ring-offset-1"
             >
               <Plus size={14} strokeWidth={2.5} aria-hidden />
               Add
@@ -1272,10 +1295,13 @@ function EndPanel({
             <button
               type="button"
               onClick={addAllFromUpstream}
-              className="inline-flex items-center justify-center gap-1.5 min-h-[44px] px-4 text-xs font-medium rounded-lg border border-dashed border-gray-300 bg-slate-50/80 text-slate-600 hover:border-teal-300 hover:text-teal-700 hover:bg-teal-50/40 focus:outline-none focus:ring-2 focus:ring-teal-400 focus:ring-offset-1"
+              className="inline-flex items-center justify-center gap-1.5 min-h-[44px] px-2 text-xs font-medium rounded-xl
+                border border-gray-200/90 bg-slate-100/80 text-slate-700
+                hover:bg-slate-200/70 hover:border-gray-300
+                focus:outline-none focus:ring-2 focus:ring-cyan-300 focus:ring-offset-1"
             >
-              <Plus size={14} strokeWidth={2.5} aria-hidden />
-              Add all from upstream
+              <PlusSquare size={14} strokeWidth={2} aria-hidden />
+              Add All from Source
             </button>
           </div>
         )}

@@ -264,8 +264,18 @@ export default function FeatureGroupDetail() {
 
   const trainingFeatureSet = useMemo(() => {
     const names = trainingFeatureNamesFromForm(fg?._formData);
-    return new Set(names);
-  }, [fg?._formData]);
+    const set = new Set(names);
+    const tableName = fd.tableName?.trim();
+    if (tableName) {
+      const mockCols =
+        MOCK_TRAINING_FEATURES[tableName] ?? DEFAULT_TRAINING_FEATURES;
+      for (const col of mockCols) {
+        const n = col.trim();
+        if (n) set.add(n);
+      }
+    }
+    return set;
+  }, [fg?._formData, fd.tableName]);
 
   const servingSummary = useMemo(() => {
     if (!fg?.servingCanvasState) {
@@ -277,11 +287,13 @@ export default function FeatureGroupDetail() {
     return computeFgServingPublishedSummary(normalized, trainingFeatureSet);
   }, [fg?.servingCanvasState, trainingFeatureSet]);
 
+  /* Toast only when navigating from Publish (location.state); HashRouter
+   * deep-links or refresh on /fg/:id have no state, so the toast will not show. */
   useEffect(() => {
     const st = location.state as { afterServingPublish?: boolean } | null;
     if (!st?.afterServingPublish || !fgId) return;
     toast.info(
-      "Serving configuration saved. Open Manage → Online to apply the change and return this Feature Group to Online.",
+      "Serving configuration saved. Open Manage > Online to apply the change and return this Feature Group to Online.",
       { duration: 10_000 }
     );
     navigate(`/fg/${fgId}`, { replace: true, state: {} });
@@ -607,7 +619,7 @@ export default function FeatureGroupDetail() {
                     <FieldRow label="Mapped Fts">
                       <PlainVal>{String(servingSummary.mappedFts)}</PlainVal>
                     </FieldRow>
-                    <FieldRow label="Custom Fts">
+                    <FieldRow label="Extra Fts (custom-specified)">
                       <PlainVal>{String(servingSummary.extraFts)}</PlainVal>
                     </FieldRow>
                     <FieldRow label="Canvas">
