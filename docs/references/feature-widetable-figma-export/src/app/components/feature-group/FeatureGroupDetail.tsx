@@ -33,7 +33,11 @@ import {
 } from "lucide-react";
 import type { FeatureGroup, FeatureGroupStatus } from "./FeatureGroupList";
 import { INITIAL_MODULES } from "./FeatureGroupList";
-import FeatureGroupModal, { type FGFormData, normalizeFgFormData } from "./FeatureGroupModal";
+import FeatureGroupModal, {
+  type FGFormData,
+  normalizeFgFormData,
+  DataLatencyTag,
+} from "./FeatureGroupModal";
 
 // ─── Source type badge colors ─────────────────────────────────────────────────
 const SOURCE_TYPE_COLORS: Record<string, { bg: string; text: string; border: string }> = {
@@ -310,6 +314,12 @@ const DEFAULT_VERSIONS: VersionRow[] = [
 ];
 
 // ─── Extended config mock ─────────────────────────────────────────────────────
+type ServingPairRow = {
+  featureSource: string;
+  sourceType: "HBase" | "Redis" | "gRPC" | "GraphDB";
+  dataLatency: "Online" | "Nearline" | "Offline";
+};
+
 interface DetailConfig {
   module: string;
   dataLatency: "Online" | "Nearline" | "Offline";
@@ -325,12 +335,36 @@ interface DetailConfig {
   sourceType: "HBase" | "Redis" | "gRPC" | "GraphDB";
   fsInputParams: string[];
   transformation: string;
+  /** When set, Serving Config shows one row per pair; else derived from flat fields. */
+  servingPairs?: ServingPairRow[];
 }
 
 const DETAIL_CONFIG: Record<string, DetailConfig> = {
-  "1": { module: "Credit Buyer Behavior", dataLatency: "Online",   dataServer: "reg_sg_hive", tableSchema: "risk_db",       tableName: "user_risk_score_ods",      datePartition: "dt",            partitionType: "Incremental Data", updateFrequency: "Daily",    entitiesColumns: ["platform_user_id"],      filter: "dt='2026-02-16'",  featureSource: "riskfeat_hbase_sg",    sourceType: "HBase",   fsInputParams: ["platform_user_id"],               transformation: "QueryAAICache@V2" },
+  "1": {
+    module: "Credit Buyer Behavior", dataLatency: "Online", dataServer: "reg_sg_hive",
+    tableSchema: "risk_db", tableName: "user_risk_score_ods", datePartition: "dt",
+    partitionType: "Incremental Data", updateFrequency: "Daily",
+    entitiesColumns: ["platform_user_id"], filter: "dt='2026-02-16'",
+    featureSource: "riskfeat_hbase_sg", sourceType: "HBase",
+    fsInputParams: ["platform_user_id"], transformation: "QueryAAICache@V2",
+    servingPairs: [
+      { featureSource: "riskfeat_hbase_sg", sourceType: "HBase", dataLatency: "Online" },
+      { featureSource: "th_redis_realtime", sourceType: "Redis", dataLatency: "Nearline" },
+    ],
+  },
   "2": { module: "External Data",         dataLatency: "Nearline", dataServer: "reg_us_hive", tableSchema: "acard_db",      tableName: "mx_acard_realtime_ods",    datePartition: "event_date",    partitionType: "Full Data",        updateFrequency: "Weekly",   entitiesColumns: ["platform_user_id"],      filter: "",                featureSource: "acard_redis_mx",       sourceType: "Redis",   fsInputParams: ["platform_user_id", "id_card_no"], transformation: "QueryAAICache@V2" },
-  "3": { module: "External Data",         dataLatency: "Online",   dataServer: "reg_sg_hive", tableSchema: "embedding_db",  tableName: "th_embedding_v3_ods",      datePartition: "pt",            partitionType: "Full Data",        updateFrequency: "Daily",    entitiesColumns: ["platform_user_id", "item_id"], filter: "",                featureSource: "embed_grpc_th",        sourceType: "gRPC",    fsInputParams: ["platform_user_id", "item_id"],    transformation: "QueryAAICache@V2" },
+  "3": {
+    module: "External Data", dataLatency: "Online", dataServer: "reg_sg_hive",
+    tableSchema: "embedding_db", tableName: "th_embedding_v3_ods", datePartition: "pt",
+    partitionType: "Full Data", updateFrequency: "Daily",
+    entitiesColumns: ["platform_user_id", "item_id"], filter: "",
+    featureSource: "embed_grpc_th", sourceType: "gRPC",
+    fsInputParams: ["platform_user_id", "item_id"], transformation: "QueryAAICache@V2",
+    servingPairs: [
+      { featureSource: "embed_grpc_th", sourceType: "gRPC", dataLatency: "Online" },
+      { featureSource: "th_graph_relation", sourceType: "GraphDB", dataLatency: "Offline" },
+    ],
+  },
   "4": { module: "Credit Buyer Behavior", dataLatency: "Offline",  dataServer: "reg_sg_hive", tableSchema: "recommend_db",  tableName: "dp_recommend_score_ods",   datePartition: "dt",            partitionType: "Incremental Data", updateFrequency: "Monthly",  entitiesColumns: ["platform_user_id"],      filter: "",                featureSource: "recommend_graphdb_sg", sourceType: "GraphDB", fsInputParams: ["platform_user_id", "shop_id"],    transformation: "QueryAAICache@V2" },
   "5": { module: "Credit Buyer Behavior", dataLatency: "Online",   dataServer: "reg_sg_hive", tableSchema: "graph_db",      tableName: "user_graph_relation_ods",  datePartition: "stat_date",     partitionType: "Incremental Data", updateFrequency: "Daily",    entitiesColumns: ["platform_user_id", "shop_id"], filter: "is_active=true",  featureSource: "graphrel_hbase_th",    sourceType: "HBase",   fsInputParams: ["platform_user_id", "shop_id"],    transformation: "QueryAAICache@V2" },
   "6": { module: "External Data",         dataLatency: "Nearline", dataServer: "reg_us_hive", tableSchema: "device_db",     tableName: "mx_device_fingerprint_ods",datePartition: "data_date",     partitionType: "Full Data",        updateFrequency: "Daily",    entitiesColumns: ["spp_user_id", "device_id"], filter: "",                featureSource: "devfp_redis_mx",       sourceType: "Redis",   fsInputParams: ["spp_user_id", "device_id"],       transformation: "QueryAAICache@V2" },
@@ -361,6 +395,15 @@ export default function FeatureGroupDetail() {
 
   const trainingFeatureCount = DEFAULT_FEATURES.filter(f => f.training).length;
   const servingFeatureCount  = DEFAULT_FEATURES.filter(f => f.serving).length;
+  const mappedFeatureCount = DEFAULT_FEATURES.filter(f => f.training && f.serving).length;
+
+  const servingPairsForView: ServingPairRow[] = ext.servingPairs ?? [
+    {
+      featureSource: ext.featureSource,
+      sourceType: ext.sourceType,
+      dataLatency: ext.dataLatency,
+    },
+  ];
 
   const prefillFormData: Partial<FGFormData> = fg
     ? normalizeFgFormData({
@@ -407,8 +450,8 @@ export default function FeatureGroupDetail() {
   return (
     <div className="min-h-screen bg-gray-50">
       {/* Header */}
-      <div className="bg-white border-b border-gray-200 px-6 py-4">
-        <div className="max-w-5xl mx-auto">
+      <div className="bg-white border-b border-gray-200 px-6 sm:px-8 py-4">
+        <div className="max-w-7xl mx-auto">
           {/* Breadcrumb */}
           <div className="flex items-center gap-2 text-sm text-gray-400 mb-3">
             <button
@@ -485,9 +528,9 @@ export default function FeatureGroupDetail() {
       </div>
 
       {/* Content */}
-      <div className="max-w-5xl mx-auto px-6 py-5 space-y-5">
+      <div className="max-w-7xl mx-auto px-6 sm:px-8 py-5 space-y-5">
         {/* ─── Three config panels ─── */}
-        <div className="grid grid-cols-3 gap-3">
+        <div className="grid grid-cols-3 gap-5">
           {/* Basic Info */}
           <ConfigPanel title="Basic Info" icon={<Info size={11} />}>
             <FieldRow label="Region">
@@ -516,7 +559,7 @@ export default function FeatureGroupDetail() {
             <FieldRow label="Data Server">
               <GrayBadge>{ext.dataServer}</GrayBadge>
             </FieldRow>
-            <FieldRow label="Offline Table">
+            <FieldRow label="Table Name">
               <PlainVal mono>{ext.tableSchema}.{ext.tableName}</PlainVal>
             </FieldRow>
             <FieldRow label="Date Partition">
@@ -525,10 +568,10 @@ export default function FeatureGroupDetail() {
             <FieldRow label="Partition Type">
               <GrayBadge>{ext.partitionType}</GrayBadge>
             </FieldRow>
-            <FieldRow label="Update Frequency">
+            <FieldRow label="Update Freq.">
               <GrayBadge>{ext.updateFrequency}</GrayBadge>
             </FieldRow>
-            <FieldRow label="Entities Column">
+            <FieldRow label="Entities">
               {ext.entitiesColumns.length > 0
                 ? <PlainVal mono>{ext.entitiesColumns.join(", ")}</PlainVal>
                 : <span className="text-gray-300 text-xs">—</span>
@@ -547,29 +590,29 @@ export default function FeatureGroupDetail() {
 
           {/* Serving Config */}
           <ConfigPanel title="Serving Config" icon={<Zap size={11} />}>
-            <FieldRow label="Data Latency">
-              <GrayBadge>{ext.dataLatency}</GrayBadge>
-            </FieldRow>
             <FieldRow label="Feature Source">
-              <PlainVal mono>{ext.featureSource}</PlainVal>
-            </FieldRow>
-            <FieldRow label="Source Type">
-              <GrayBadge>{ext.sourceType}</GrayBadge>
-            </FieldRow>
-            {ext.fsInputParams && ext.fsInputParams.length > 0 && (
-              <FieldRow label="Input Params">
-                <div className="flex flex-wrap gap-1">
-                  {ext.fsInputParams.map(p => (
-                    <GrayBadge key={p}><span style={{ fontFamily: "monospace" }}>{p}</span></GrayBadge>
-                  ))}
-                </div>
-              </FieldRow>
-            )}
-            <FieldRow label="Transformation">
-              <PlainVal mono>{ext.transformation}</PlainVal>
+              <div className="space-y-2 w-full min-w-0">
+                {servingPairsForView.map((pair, idx) => (
+                  <div
+                    key={`${pair.featureSource}-${idx}`}
+                    className={`flex flex-wrap items-center gap-2 min-w-0 ${
+                      idx < servingPairsForView.length - 1
+                        ? "pb-2 border-b border-gray-50"
+                        : ""
+                    }`}
+                  >
+                    <PlainVal mono>{pair.featureSource}</PlainVal>
+                    <SourceTypeBadge sourceType={pair.sourceType} />
+                    <DataLatencyTag latency={pair.dataLatency} />
+                  </div>
+                ))}
+              </div>
             </FieldRow>
             <FieldRow label="Serving Fts">
               <PlainVal>{String(servingFeatureCount)}</PlainVal>
+            </FieldRow>
+            <FieldRow label="Mapped Fts">
+              <PlainVal>{String(mappedFeatureCount)}</PlainVal>
             </FieldRow>
           </ConfigPanel>
         </div>
@@ -857,8 +900,6 @@ function FeatureListTab({ fg }: { fg: FeatureGroup }) {
       if (!matchTrain && !matchServing) return false;
     }
     if (filters.dataType && !f.dataType.toLowerCase().includes(filters.dataType.toLowerCase())) return false;
-    if (filters.partition === "true"  && !f.partition) return false;
-    if (filters.partition === "false" &&  f.partition) return false;
     if (filters.training  === "true"  && !f.training)  return false;
     if (filters.training  === "false" &&  f.training)  return false;
     if (filters.serving   === "true"  && !f.serving)   return false;
@@ -881,7 +922,6 @@ function FeatureListTab({ fg }: { fg: FeatureGroup }) {
   const hasFilter = (col: string) => !!filters[col];
 
   const BOOL_COLS: { key: keyof FeatureRow; label: string }[] = [
-    { key: "partition", label: "Partition" },
     { key: "training",  label: "Training"  },
     { key: "serving",   label: "Serving"   },
   ];
@@ -1011,7 +1051,7 @@ function FeatureListTab({ fg }: { fg: FeatureGroup }) {
           <tbody>
             {paged.length === 0 ? (
               <tr>
-                <td colSpan={6} className="text-center py-12 text-gray-400 text-sm">
+                <td colSpan={5} className="text-center py-12 text-gray-400 text-sm">
                   No features match the current filters
                 </td>
               </tr>
@@ -1052,7 +1092,6 @@ function FeatureListTab({ fg }: { fg: FeatureGroup }) {
                     </div>
                   </td>
                   <td className="px-5 py-3 text-xs font-mono text-gray-600">{f.dataType}</td>
-                  <td className="px-5 py-3"><AvailDot value={f.partition} /></td>
                   <td className="px-5 py-3"><AvailDot value={f.training}  /></td>
                   <td className="px-5 py-3"><AvailDot value={f.serving}   /></td>
                   <td className="px-5 py-3 text-xs" style={{ color: "#374151" }}>
