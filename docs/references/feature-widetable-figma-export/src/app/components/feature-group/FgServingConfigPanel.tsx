@@ -1,4 +1,11 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useId,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import {
   ChevronRight,
   Code2,
@@ -80,6 +87,11 @@ function autofillMappings(
   });
 }
 
+/** Keys `nodeId:fieldName` for upstream fields bound elsewhere (e.g. other End rows). */
+function upstreamFieldKey(nodeId: FgServingNodeId, field: string): string {
+  return `${nodeId}:${field}`;
+}
+
 function UpstreamCascadePicker({
   source,
   groups,
@@ -91,6 +103,7 @@ function UpstreamCascadePicker({
   fixedValueMode,
   textPlaceholder = "Enter value",
   emptyLabel = "Select source…",
+  disabledUpstreamFieldKeys,
 }: {
   source: SourceRef | null;
   groups: ReturnType<typeof listUpstreamOutputGroups>;
@@ -102,12 +115,33 @@ function UpstreamCascadePicker({
   fixedValueMode: "bool" | "text";
   textPlaceholder?: string;
   emptyLabel?: string;
+  /** Upstream fields already selected on another row; current `source` remains selectable. */
+  disabledUpstreamFieldKeys?: Set<string>;
 }) {
   const [open, setOpen] = useState(false);
   const [step, setStep] = useState<"root" | "fields" | "fixed">("root");
   const [pickedNode, setPickedNode] = useState<FgServingNodeId | null>(null);
   const rootRef = useRef<HTMLDivElement>(null);
-  const fixedInputId = `fixed-val-${fixedFieldLabel.replace(/\W/g, "_")}`;
+  const fixedInputUid = useId().replace(/:/g, "");
+  const fixedInputId = `fixed-val-${fixedFieldLabel.replace(/\W/g, "_")}-${fixedInputUid}`;
+
+  function isUpstreamFieldTaken(
+    nodeId: FgServingNodeId,
+    field: string
+  ): boolean {
+    const keys = disabledUpstreamFieldKeys;
+    if (!keys || keys.size === 0) return false;
+    const key = upstreamFieldKey(nodeId, field);
+    if (!keys.has(key)) return false;
+    if (
+      source?.kind === "upstream" &&
+      source.nodeId === nodeId &&
+      source.field === field
+    ) {
+      return false;
+    }
+    return true;
+  }
 
   useEffect(() => {
     if (!open) return;
@@ -202,26 +236,42 @@ function UpstreamCascadePicker({
               <div className="py-1 max-h-48 overflow-y-auto">
                 {groups
                   .find((x) => x.nodeId === pickedNode)
-                  ?.fields.map((f) => (
-                    <button
-                      key={f.name}
-                      type="button"
-                      className="w-full text-left px-3 py-2 text-xs hover:bg-teal-50 text-gray-800"
-                      onClick={() => {
-                        onPick({
-                          kind: "upstream",
-                          nodeId: pickedNode,
-                          field: f.name,
-                          fieldType: f.type,
-                        });
-                        setOpen(false);
-                        setStep("root");
-                      }}
-                    >
-                      {f.name}{" "}
-                      <span className="text-gray-400">({f.type})</span>
-                    </button>
-                  ))}
+                  ?.fields.map((f) => {
+                    const taken = isUpstreamFieldTaken(pickedNode, f.name);
+                    return (
+                      <button
+                        key={f.name}
+                        type="button"
+                        disabled={taken}
+                        className={`w-full text-left px-3 py-2 text-xs ${
+                          taken
+                            ? "text-gray-400 cursor-not-allowed bg-gray-50/80"
+                            : "hover:bg-teal-50 text-gray-800"
+                        }`}
+                        onClick={() => {
+                          if (taken) return;
+                          onPick({
+                            kind: "upstream",
+                            nodeId: pickedNode,
+                            field: f.name,
+                            fieldType: f.type,
+                          });
+                          setOpen(false);
+                          setStep("root");
+                        }}
+                      >
+                        {f.name}{" "}
+                        <span className={taken ? "text-gray-400" : "text-gray-400"}>
+                          ({f.type})
+                        </span>
+                        {taken ? (
+                          <span className="ml-1 text-[10px] text-gray-400">
+                            (used)
+                          </span>
+                        ) : null}
+                      </button>
+                    );
+                  })}
               </div>
             </div>
           )}
@@ -1011,6 +1061,18 @@ function EndPanel({
     [canvasState, nodeId]
   );
 
+  const flatUpstreamFields = useMemo(
+    () =>
+      upstreamGroups.flatMap((g) =>
+        g.fields.map((f) => ({
+          nodeId: g.nodeId,
+          field: f.name,
+          fieldType: f.type,
+        }))
+      ),
+    [upstreamGroups]
+  );
+
   function patch(p: Partial<typeof cfg>) {
     onChange({ ...cfg, ...p });
   }
@@ -1041,8 +1103,43 @@ function EndPanel({
     patch({ outputs: cfg.outputs.filter((r) => r.id !== id) });
   }
 
+  function occupiedUpstreamKeysForRow(exceptRowId: string): Set<string> {
+    const s = new Set<string>();
+    for (const r of cfg.outputs) {
+      if (r.id === exceptRowId) continue;
+      if (r.source?.kind === "upstream") {
+        s.add(upstreamFieldKey(r.source.nodeId, r.source.field));
+      }
+    }
+    return s;
+  }
+
+  function addAllFromUpstream() {
+    const next = cfg.outputs.map((row) => {
+      if (row.source !== null) return row;
+      const name = row.trainingFeatureName.trim();
+      if (!name) return row;
+      const hits = flatUpstreamFields.filter((o) => o.field === name);
+      if (hits.length !== 1) return row;
+      const h = hits[0];
+      return {
+        ...row,
+        source: {
+          kind: "upstream" as const,
+          nodeId: h.nodeId,
+          field: h.field,
+          fieldType: h.fieldType,
+        },
+      };
+    });
+    onChange({ ...cfg, outputs: next });
+  }
+
+  const rowGridClass =
+    "grid grid-cols-1 sm:grid-cols-[minmax(0,1fr)_minmax(0,1.6fr)_44px] gap-2 sm:gap-3 items-start sm:items-center";
+
   return (
-    <div className="space-y-5">
+    <div className="space-y-4">
       <label className="block">
         <span className="sr-only">Description</span>
         <textarea
@@ -1051,40 +1148,59 @@ function EndPanel({
           onChange={(e) => patch({ description: e.target.value })}
           placeholder="Add description…"
           rows={2}
-          className="w-full min-h-[52px] px-3 py-2 text-xs border border-gray-200 rounded-lg text-gray-700 placeholder:text-gray-400"
+          className="w-full min-h-[52px] px-3 py-2 text-xs border border-gray-200 rounded-lg text-gray-700 placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-teal-400 focus:ring-offset-1"
         />
       </label>
 
-      <section>
-        <div className="flex items-center justify-between mb-2">
-          <h3 className="text-xs font-bold text-gray-800 tracking-wide">
-            OUTPUT VARIABLE
+      <section className="rounded-xl border border-gray-200 bg-white p-3 sm:p-4 space-y-3">
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+          <h3 className="text-sm font-semibold text-slate-800">
+            Output features mapping
           </h3>
-          {!readOnly && (
-            <button
-              type="button"
-              aria-label="Add output variable"
-              onClick={addRow}
-              className="min-w-[44px] min-h-[44px] flex items-center justify-center rounded-lg text-gray-500 hover:bg-gray-100"
-            >
-              <Plus size={18} />
-            </button>
-          )}
+          <span className="text-xs text-gray-500">
+            Rows: {cfg.outputs.length}
+          </span>
         </div>
-        <p className="text-[11px] text-gray-500 mb-2 leading-relaxed">
-          Type a feature name or pick from suggestions (Training Config list).
-          Names that match the list count as mapped features on the FG detail
-          card.
-        </p>
-        <div className="space-y-3">
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-gray-500">
+          <span className="inline-flex items-center gap-1">
+            <Info size={12} className="shrink-0 text-gray-400" aria-hidden />
+            Training list suggestions; names that match Training Config count as
+            mapped on the FG detail card.
+          </span>
+        </div>
+
+        <div className="rounded-lg border border-gray-100 overflow-hidden">
+          <div
+            className={`${rowGridClass} px-2 sm:px-3 py-2 bg-slate-50/90 border-b border-gray-100`}
+            role="row"
+          >
+            <div
+              className="text-[11px] font-medium text-gray-500 uppercase tracking-wide"
+              role="columnheader"
+            >
+              Feature name
+            </div>
+            <div
+              className="text-[11px] font-medium text-gray-500 uppercase tracking-wide hidden sm:block"
+              role="columnheader"
+            >
+              Source mapping
+            </div>
+            <div className="hidden sm:block" aria-hidden />
+          </div>
+
           {cfg.outputs.map((row) => (
             <div
               key={row.id}
-              className="flex flex-col gap-2 p-2 rounded-lg border border-gray-100 bg-gray-50/50"
+              role="row"
+              className={`${rowGridClass} px-2 sm:px-3 py-2 border-t border-gray-100 transition-colors hover:bg-slate-50/40`}
             >
-              <div className="flex flex-col sm:flex-row sm:items-start gap-2">
-                <label className="sr-only" htmlFor={`end-feat-${row.id}`}>
-                  Output feature name
+              <div className="min-w-0 flex flex-col gap-1">
+                <label
+                  className="text-[11px] text-gray-500 sm:sr-only"
+                  htmlFor={`end-feat-${row.id}`}
+                >
+                  Feature name
                 </label>
                 <input
                   id={`end-feat-${row.id}`}
@@ -1097,47 +1213,72 @@ function EndPanel({
                   }
                   placeholder={
                     trainingFeatureNames.length > 0
-                      ? "Feature name…"
-                      : "Feature name (Training list empty)"
+                      ? "e.g. qc_score"
+                      : "Feature name"
                   }
                   autoComplete="off"
-                  className="sm:w-[min(100%,200px)] shrink-0 min-h-[44px] px-2 text-xs border border-gray-200 rounded-lg font-mono"
+                  className="w-full min-h-[44px] px-2.5 text-xs border border-gray-200 rounded-lg font-mono text-slate-800 focus:outline-none focus:ring-2 focus:ring-teal-400 focus:ring-offset-1"
                 />
                 <datalist id={`end-feat-dl-${row.id}`}>
                   {trainingFeatureNames.map((name) => (
                     <option key={name} value={name} />
                   ))}
                 </datalist>
-                <div className="flex-1 min-w-0 flex items-start gap-1">
-                  <UpstreamCascadePicker
-                    source={row.source}
-                    groups={upstreamGroups}
-                    nodeTitleById={nodeTitleById}
-                    disabled={readOnly}
-                    onPick={(ref) => updateRow(row.id, { source: ref })}
-                    onClear={() => updateRow(row.id, { source: null })}
-                    fixedFieldLabel={
-                      row.trainingFeatureName || "output"
-                    }
-                    fixedValueMode="text"
-                    emptyLabel="Set variable"
-                  />
-                  {!readOnly && (
-                    <button
-                      type="button"
-                      aria-label="Remove output row"
-                      disabled={cfg.outputs.length <= 1}
-                      onClick={() => removeRow(row.id)}
-                      className="shrink-0 min-w-[44px] min-h-[44px] flex items-center justify-center text-gray-400 hover:text-red-600 rounded-lg disabled:opacity-30 disabled:pointer-events-none"
-                    >
-                      <Trash2 size={16} />
-                    </button>
-                  )}
-                </div>
+              </div>
+              <div className="min-w-0 flex flex-col gap-1">
+                <span className="text-[11px] text-gray-500 sm:sr-only">
+                  Source mapping
+                </span>
+                <UpstreamCascadePicker
+                  source={row.source}
+                  groups={upstreamGroups}
+                  nodeTitleById={nodeTitleById}
+                  disabled={readOnly}
+                  onPick={(ref) => updateRow(row.id, { source: ref })}
+                  onClear={() => updateRow(row.id, { source: null })}
+                  fixedFieldLabel={row.trainingFeatureName || "output"}
+                  fixedValueMode="text"
+                  emptyLabel="Set variable"
+                  disabledUpstreamFieldKeys={occupiedUpstreamKeysForRow(row.id)}
+                />
+              </div>
+              <div className="flex justify-end sm:justify-center pt-1 sm:pt-0">
+                {!readOnly && (
+                  <button
+                    type="button"
+                    aria-label="Remove output row"
+                    disabled={cfg.outputs.length <= 1}
+                    onClick={() => removeRow(row.id)}
+                    className="min-w-[44px] min-h-[44px] flex items-center justify-center text-gray-400 hover:text-red-600 rounded-lg hover:bg-red-50/80 focus:outline-none focus:ring-2 focus:ring-teal-400 focus:ring-offset-1 disabled:opacity-30 disabled:pointer-events-none"
+                  >
+                    <Trash2 size={16} />
+                  </button>
+                )}
               </div>
             </div>
           ))}
         </div>
+
+        {!readOnly && (
+          <div className="flex flex-col sm:flex-row gap-2 pt-1">
+            <button
+              type="button"
+              onClick={addRow}
+              className="inline-flex items-center justify-center gap-1.5 min-h-[44px] px-4 text-xs font-medium rounded-lg border border-gray-200 bg-white text-slate-700 hover:border-teal-300 hover:text-teal-700 hover:bg-teal-50/50 focus:outline-none focus:ring-2 focus:ring-teal-400 focus:ring-offset-1"
+            >
+              <Plus size={14} strokeWidth={2.5} aria-hidden />
+              Add
+            </button>
+            <button
+              type="button"
+              onClick={addAllFromUpstream}
+              className="inline-flex items-center justify-center gap-1.5 min-h-[44px] px-4 text-xs font-medium rounded-lg border border-dashed border-gray-300 bg-slate-50/80 text-slate-600 hover:border-teal-300 hover:text-teal-700 hover:bg-teal-50/40 focus:outline-none focus:ring-2 focus:ring-teal-400 focus:ring-offset-1"
+            >
+              <Plus size={14} strokeWidth={2.5} aria-hidden />
+              Add all from upstream
+            </button>
+          </div>
+        )}
       </section>
     </div>
   );
