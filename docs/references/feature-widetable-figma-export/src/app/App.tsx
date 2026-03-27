@@ -9,6 +9,7 @@ import {
 } from "@/app/pages/CanvasPageRoutes";
 import { FeatureGroupsLayout } from "@/app/feature-group/FeatureGroupsProvider";
 import { FeatureGroupDetailPage } from "@/app/pages/FeatureGroupDetailPage";
+import FgServingCanvasPage from "@/app/pages/FgServingCanvasPage";
 import { FeatureGroupListPage } from "@/app/pages/FeatureGroupListPage";
 import { FeatureMapPage } from "@/app/pages/FeatureMapPage";
 import { TaskMonitorPage } from "@/app/pages/TaskMonitorPage";
@@ -33,6 +34,7 @@ export default function App() {
         <Route path="/tf/edit/:tfName/:tfVersion" element={<TransformationFormPage />} />
         <Route element={<FeatureGroupsLayout />}>
           <Route path="/fg" element={<FeatureGroupListPage />} />
+          <Route path="/fg/:fgId/serving" element={<FgServingCanvasPage />} />
           <Route path="/fg/:fgId" element={<FeatureGroupDetailPage />} />
         </Route>
         <Route path="/fm" element={<FeatureMapPage />} />

@@ -1,3 +1,4 @@
+import type { NodeDef } from "@/data/widetableCanvasModel";
 import type { FGFormData } from "./FeatureGroupModal";
 
 export type FeatureGroupStatus =
@@ -6,6 +7,14 @@ export type FeatureGroupStatus =
   | "Draft"
   | "Disable"
   | "Offline";
+
+/** Mock publish snapshot for Serving canvas history */
+export interface FgServingPublishRecord {
+  id: string;
+  label: string;
+  createdAt: string;
+  nodes: NodeDef[];
+}
 
 export interface FeatureGroup {
   id: string;
@@ -17,6 +26,12 @@ export interface FeatureGroup {
   createTime: string;
   updateTime: string;
   description: string;
+  /** Soft delete: hidden from list; only Draft may be deleted */
+  deleted?: boolean;
+  /** Current Serving canvas node layout (mock) */
+  servingCanvasNodes?: NodeDef[];
+  /** Newest-first publish snapshots */
+  servingPublishHistory?: FgServingPublishRecord[];
   /** Internal: form data preserved for draft editing */
   _formData?: Partial<FGFormData>;
   /** Internal: last saved step index */

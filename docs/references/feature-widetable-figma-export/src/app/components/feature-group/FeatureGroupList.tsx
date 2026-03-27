@@ -20,20 +20,20 @@ import {
   RefreshCw,
   Settings,
   ChevronRight,
-  ChevronDown,
   Search,
-  CheckCircle2,
-  Ban,
-  Trash2,
-  AlertTriangle,
   X,
   FilePlus,
   AlertCircle,
-  RotateCcw,
   Database,
   Zap,
   Copy,
 } from "lucide-react";
+import { FgManageDropdown } from "./FgManageDropdown";
+import {
+  FgConfigDiffModal,
+  MOCK_FG_DIFF_NEW,
+  MOCK_FG_DIFF_OLD,
+} from "./FgConfigDiffModal";
 
 // ─── Status config ────────────────────────────────────────────────────────────
 const STATUS_CONFIG: Record<
@@ -129,7 +129,7 @@ export default function FeatureGroupList() {
   const navigate = useNavigate();
 
   // Core list state (lifted so modal can mutate it)
-  const { fgList, setFgList, syncFgMetadata, modules, setModules } =
+  const { fgList, setFgList, updateFg, syncFgMetadata, modules, setModules } =
     useFeatureGroups();
 
   const SYNC_ARIA =
@@ -147,6 +147,7 @@ export default function FeatureGroupList() {
   const [modalInitData, setModalInitData] = useState<
     Partial<FGFormData> | undefined
   >();
+  const [configDiffFgId, setConfigDiffFgId] = useState<string | null>(null);
 
   function openCreateModal() {
     setModalInitData(undefined);
@@ -182,16 +183,6 @@ export default function FeatureGroupList() {
     navigate(`/fg/${newId}`);
   }
 
-  function setFgStatus(id: string, status: FeatureGroupStatus) {
-    setFgList((list) =>
-      list.map((fg) => (fg.id === id ? { ...fg, status } : fg))
-    );
-  }
-
-  function deleteFg(id: string) {
-    setFgList(list => list.filter(fg => fg.id !== id));
-  }
-
   function downloadHTML() {
     const blob = new Blob([FEATURE_GROUP_HTML], { type: "text/html;charset=utf-8" });
     const url  = URL.createObjectURL(blob);
@@ -206,10 +197,16 @@ export default function FeatureGroupList() {
 
   const filtered = fgList.filter(
     (fg) =>
-      fg.name.toLowerCase().includes(search.toLowerCase()) ||
-      fg.owner.toLowerCase().includes(search.toLowerCase()) ||
-      fg.region.toLowerCase().includes(search.toLowerCase())
+      !fg.deleted &&
+      (fg.name.toLowerCase().includes(search.toLowerCase()) ||
+        fg.owner.toLowerCase().includes(search.toLowerCase()) ||
+        fg.region.toLowerCase().includes(search.toLowerCase()))
   );
+
+  const diffFg =
+    configDiffFgId != null
+      ? fgList.find((f) => f.id === configDiffFgId)
+      : undefined;
 
   const totalPages = Math.ceil(filtered.length / pageSize);
   const paged = filtered.slice((currentPage - 1) * pageSize, currentPage * pageSize);
@@ -327,13 +324,12 @@ export default function FeatureGroupList() {
             onSync={() => void syncFgMetadata(fg.id)}
             syncTitle={SYNC_ARIA}
             onCopy={() => openCopyModal(fg)}
-            onDelete={() => deleteFg(fg.id)}
-            onManageAction={(action) => {
-              if (action === "delete")  deleteFg(fg.id);
-              else if (action === "online")  setFgStatus(fg.id, "Online");
-              else if (action === "revoke")  setFgStatus(fg.id, "Online");
-              else if (action === "disable") setFgStatus(fg.id, "Offline");
+            onOnlineIntent={() => {
+              if (fg.status === "Online Changing") setConfigDiffFgId(fg.id);
+              else updateFg(fg.id, { status: "Online" });
             }}
+            onDraftConfirm={() => updateFg(fg.id, { status: "Draft" })}
+            onDeleteConfirm={() => updateFg(fg.id, { deleted: true })}
           />
         ))}
         {paged.length === 0 && (
@@ -394,161 +390,17 @@ export default function FeatureGroupList() {
         onClose={() => setModalOpen(false)}
         onSubmit={(data) => handleBasicModalSubmit(data)}
       />
+
+      <FgConfigDiffModal
+        open={configDiffFgId != null && !!diffFg}
+        onClose={() => setConfigDiffFgId(null)}
+        oldText={MOCK_FG_DIFF_OLD}
+        newText={MOCK_FG_DIFF_NEW}
+        onConfirm={() => {
+          if (configDiffFgId) updateFg(configDiffFgId, { status: "Online" });
+        }}
+      />
     </div>
-  );
-}
-
-// ─── Manage Dropdown ──────────────────────────────────────────────────────────
-type ManageAction = "online" | "revoke" | "disable" | "delete";
-
-function ManageDropdown({
-  status,
-  onAction,
-}: {
-  status: FeatureGroupStatus;
-  onAction: (a: ManageAction) => void;
-}) {
-  const [open, setOpen] = useState(false);
-  const [confirmDisable, setConfirmDisable] = useState(false);
-  const ref = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    function handler(e: MouseEvent) {
-      if (ref.current && !ref.current.contains(e.target as Node)) {
-        setOpen(false);
-        setConfirmDisable(false);
-      }
-    }
-    if (open) document.addEventListener("mousedown", handler);
-    return () => document.removeEventListener("mousedown", handler);
-  }, [open]);
-
-  const canOnline  = status === "Disable" || status === "Offline";
-  const canRevoke  = status === "Online Changing";
-  const canAccept  = status === "Online Changing";  // "Online" = accept the change
-  const canDisable = status === "Online";
-  const canDelete  = ["Draft", "Disable", "Offline"].includes(status);
-
-  function toggle() { setOpen((v) => !v); setConfirmDisable(false); }
-
-  function handleDisableConfirm() {
-    onAction("disable");
-    setOpen(false);
-    setConfirmDisable(false);
-  }
-
-  return (
-    <div className="relative" ref={ref}>
-      <button
-        onClick={toggle}
-        className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs rounded-lg text-white transition-all hover:opacity-90"
-        style={{ backgroundColor: "#13c2c2", fontWeight: 500 }}
-      >
-        Manage
-        <ChevronDown size={11} className={`transition-transform ${open ? "rotate-180" : ""}`} />
-      </button>
-
-      {open && (
-        <div
-          className="absolute right-0 top-full mt-1 bg-white border border-gray-200 rounded-lg shadow-xl z-50 overflow-hidden"
-          style={{ minWidth: 168 }}
-        >
-          {!confirmDisable ? (
-            <div className="py-1">
-              <MenuItem
-                icon={<CheckCircle2 size={13} />}
-                label="Online"
-                enabled={canOnline || canAccept}
-                iconColor="text-emerald-500"
-                hoverColor="hover:bg-emerald-50 hover:text-emerald-700"
-                onClick={() => { onAction("online"); setOpen(false); }}
-              />
-              <MenuItem
-                icon={<RotateCcw size={13} />}
-                label="Revoke"
-                enabled={canRevoke}
-                iconColor="text-amber-500"
-                hoverColor="hover:bg-amber-50 hover:text-amber-600"
-                onClick={() => { onAction("revoke"); setOpen(false); }}
-              />
-              <MenuItem
-                icon={<Ban size={13} />}
-                label="Offline"
-                enabled={canDisable}
-                iconColor="text-red-500"
-                hoverColor="hover:bg-red-50 hover:text-red-600"
-                onClick={() => setConfirmDisable(true)}
-              />
-              <div className="h-px bg-gray-100 my-1" />
-              <MenuItem
-                icon={<Trash2 size={13} />}
-                label="Delete"
-                enabled={canDelete}
-                iconColor="text-red-500"
-                hoverColor="hover:bg-red-50 hover:text-red-600"
-                danger
-                onClick={() => { onAction("delete"); setOpen(false); }}
-              />
-            </div>
-          ) : (
-            <div className="p-4" style={{ width: 220 }}>
-              <div className="flex gap-2.5 mb-3.5">
-                <AlertTriangle size={15} className="flex-shrink-0 mt-0.5" style={{ color: "#fa8c16" }} />
-                <p className="text-xs text-gray-700 leading-relaxed">
-                  确认要将该 Feature Group 设为 <span style={{ fontWeight: 600 }}>Offline</span> 吗？此操作不可立即撤销。
-                </p>
-              </div>
-              <div className="flex justify-end gap-2">
-                <button
-                  onClick={() => setConfirmDisable(false)}
-                  className="px-3 py-1 text-xs rounded border border-gray-300 text-gray-600 hover:bg-gray-50 transition-colors"
-                >
-                  取消
-                </button>
-                <button
-                  onClick={handleDisableConfirm}
-                  className="px-3 py-1 text-xs rounded text-white transition-all hover:opacity-90"
-                  style={{ backgroundColor: "#ef4444", fontWeight: 500 }}
-                >
-                  确认 Offline
-                </button>
-              </div>
-            </div>
-          )}
-        </div>
-      )}
-    </div>
-  );
-}
-
-// ─── Menu Item ────────────────────────────────────────────────────────────────
-function MenuItem({
-  icon, label, enabled, iconColor, hoverColor, danger = false, onClick,
-}: {
-  icon: React.ReactNode;
-  label: string;
-  enabled: boolean;
-  iconColor: string;
-  hoverColor: string;
-  danger?: boolean;
-  onClick: () => void;
-}) {
-  return (
-    <button
-      disabled={!enabled}
-      onClick={enabled ? onClick : undefined}
-      className={`w-full flex items-center gap-2.5 px-3.5 py-2 text-xs text-left transition-colors ${
-        enabled
-          ? `${danger ? "text-red-600" : "text-gray-700"} ${hoverColor} cursor-pointer`
-          : "text-gray-300 cursor-not-allowed"
-      }`}
-    >
-      <span className={enabled ? iconColor : "text-gray-300"}>{icon}</span>
-      {label}
-      {!enabled && (
-        <span className="ml-auto text-gray-300" style={{ fontSize: 10 }}>N/A</span>
-      )}
-    </button>
   );
 }
 
@@ -560,8 +412,9 @@ function FeatureGroupCard({
   onSync,
   syncTitle,
   onCopy,
-  onDelete,
-  onManageAction,
+  onOnlineIntent,
+  onDraftConfirm,
+  onDeleteConfirm,
 }: {
   fg: FeatureGroup;
   index: number;
@@ -569,8 +422,9 @@ function FeatureGroupCard({
   onSync: () => void;
   syncTitle: string;
   onCopy: () => void;
-  onDelete: () => void;
-  onManageAction: (action: ManageAction) => void;
+  onOnlineIntent: () => void;
+  onDraftConfirm: () => void;
+  onDeleteConfirm: () => void;
 }) {
   const [hovered, setHovered] = useState(false);
   const isDraft = fg.status === "Draft";
@@ -650,13 +504,11 @@ function FeatureGroupCard({
               <button
                 type="button"
                 onClick={
-                  fg.status === "Online Changing" || fg.status === "Disable"
-                    ? undefined
-                    : onSync
+                  fg.status === "Online Changing" ? undefined : onSync
                 }
-                disabled={fg.status === "Online Changing" || fg.status === "Disable"}
+                disabled={fg.status === "Online Changing"}
                 className={`flex items-center gap-1.5 px-3 py-1.5 text-xs rounded-lg border transition-all min-h-[44px] ${
-                  fg.status === "Online Changing" || fg.status === "Disable"
+                  fg.status === "Online Changing"
                     ? "border-gray-100 text-gray-300 bg-gray-50 cursor-not-allowed"
                     : "border-gray-200 text-gray-600 hover:border-teal-300 hover:text-teal-600 hover:bg-teal-50"
                 }`}
@@ -664,8 +516,6 @@ function FeatureGroupCard({
                 title={
                   fg.status === "Online Changing"
                     ? "Cannot sync while a change is pending"
-                    : fg.status === "Disable"
-                    ? "Cannot sync a disabled feature group"
                     : syncTitle
                 }
                 aria-label={syncTitle}
@@ -685,9 +535,12 @@ function FeatureGroupCard({
                 Copy
               </button>
 
-              <ManageDropdown
+              <FgManageDropdown
+                compact
                 status={fg.status}
-                onAction={onManageAction}
+                onOnlineIntent={onOnlineIntent}
+                onDraftConfirm={onDraftConfirm}
+                onDeleteConfirm={onDeleteConfirm}
               />
             </div>
           </div>

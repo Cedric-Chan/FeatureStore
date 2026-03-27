@@ -7,21 +7,17 @@ import {
   User,
   Clock,
   FileText,
-  ChevronDown,
   CheckCircle2,
   AlertCircle,
   Circle,
   RefreshCw,
   Calendar,
   Ban,
-  Trash2,
-  AlertTriangle,
   Filter,
   ArrowUpDown,
   ArrowUp,
   ArrowDown,
   Info,
-  RotateCcw,
   GitBranch,
   Activity,
   Database,
@@ -42,6 +38,12 @@ import FeatureGroupModal, {
   MOCK_TRAINING_FEATURES,
   DEFAULT_TRAINING_FEATURES,
 } from "./FeatureGroupModal";
+import { FgManageDropdown } from "./FgManageDropdown";
+import {
+  FgConfigDiffModal,
+  MOCK_FG_DIFF_NEW,
+  MOCK_FG_DIFF_OLD,
+} from "./FgConfigDiffModal";
 
 // ─── Status config ────────────────────────────────────────────────────────────
 const STATUS_CONFIG: Record<
@@ -244,8 +246,10 @@ export default function FeatureGroupDetail() {
 
   const [basicModalOpen, setBasicModalOpen] = useState(false);
   const [trainingModalOpen, setTrainingModalOpen] = useState(false);
+  const [configDiffOpen, setConfigDiffOpen] = useState(false);
 
   const trainingDone = fg ? isFgTrainingComplete(fg._formData) : false;
+  const servingConfigured = fg ? isFgServingConfigured(fg._formData) : false;
 
   const featureRows = fg ? buildFeatureRowsFromFg(fg) : [];
   const trainingFeatureCount = featureRows.filter((r) => r.training).length;
@@ -296,7 +300,7 @@ export default function FeatureGroupDetail() {
     }));
   }
 
-  if (!fg) {
+  if (!fg || fg.deleted) {
     return (
       <div className="min-h-screen bg-gray-50 flex items-center justify-center">
         <div className="text-center">
@@ -364,15 +368,13 @@ export default function FeatureGroupDetail() {
               <button
                 type="button"
                 onClick={
-                  fg.status === "Online Changing" || fg.status === "Disable"
+                  fg.status === "Online Changing"
                     ? undefined
                     : () => void syncFgMetadata(fg.id)
                 }
-                disabled={
-                  fg.status === "Online Changing" || fg.status === "Disable"
-                }
+                disabled={fg.status === "Online Changing"}
                 className={`flex items-center gap-1.5 px-4 py-2 text-sm rounded-lg border transition-all min-h-[44px] ${
-                  fg.status === "Online Changing" || fg.status === "Disable"
+                  fg.status === "Online Changing"
                     ? "border-gray-100 text-gray-300 bg-gray-50 cursor-not-allowed"
                     : "border-gray-200 text-gray-600 hover:border-teal-300 hover:text-teal-600 hover:bg-teal-50"
                 }`}
@@ -380,8 +382,6 @@ export default function FeatureGroupDetail() {
                 title={
                   fg.status === "Online Changing"
                     ? "Cannot sync while a change is pending"
-                    : fg.status === "Disable"
-                    ? "Cannot sync a disabled feature group"
                     : SYNC_ARIA
                 }
                 aria-label={SYNC_ARIA}
@@ -389,14 +389,18 @@ export default function FeatureGroupDetail() {
                 <RefreshCw size={14} />
                 Sync
               </button>
-              <ManageDropdown
+              <FgManageDropdown
                 status={fg.status}
-                onAction={(action) => {
-                  if (action === "online" || action === "revoke") {
-                    updateFg(fg.id, (f) => ({ ...f, status: "Online" }));
-                  } else if (action === "disable") {
-                    updateFg(fg.id, (f) => ({ ...f, status: "Disable" }));
-                  }
+                onOnlineIntent={() => {
+                  if (fg.status === "Online Changing") setConfigDiffOpen(true);
+                  else updateFg(fg.id, { status: "Online" });
+                }}
+                onDraftConfirm={() =>
+                  updateFg(fg.id, { status: "Draft" })
+                }
+                onDeleteConfirm={() => {
+                  updateFg(fg.id, { deleted: true });
+                  navigate("/fg");
                 }}
               />
             </div>
@@ -406,7 +410,7 @@ export default function FeatureGroupDetail() {
 
       {/* Content */}
       <div className="max-w-7xl mx-auto px-6 sm:px-8 py-5 space-y-5">
-        <div className="grid grid-cols-1 gap-5">
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-5 items-stretch min-w-0">
           <ConfigPanel
             title="Basic Info"
             icon={<Info size={11} />}
@@ -414,11 +418,9 @@ export default function FeatureGroupDetail() {
               <button
                 type="button"
                 onClick={() => setBasicModalOpen(true)}
-                disabled={
-                  fg.status === "Online Changing" || fg.status === "Disable"
-                }
+                disabled={fg.status === "Online Changing"}
                 className={`p-2 rounded-lg border transition-all min-h-[44px] min-w-[44px] flex items-center justify-center ${
-                  fg.status === "Online Changing" || fg.status === "Disable"
+                  fg.status === "Online Changing"
                     ? "border-gray-100 text-gray-300 cursor-not-allowed"
                     : "border-gray-200 text-gray-500 hover:border-teal-300 hover:text-teal-600"
                 }`}
@@ -436,7 +438,7 @@ export default function FeatureGroupDetail() {
               <PlainVal>{fd.module}</PlainVal>
             </FieldRow>
             <FieldRow label="Owner">
-              <div className="flex flex-wrap gap-1">
+              <div className="flex flex-col gap-1 items-start w-full min-w-0">
                 {fg.owner.split(",").map((o) => (
                   <GrayBadge key={o}>{o.trim()}</GrayBadge>
                 ))}
@@ -449,9 +451,7 @@ export default function FeatureGroupDetail() {
               <PlainVal>{fg.updateTime}</PlainVal>
             </FieldRow>
           </ConfigPanel>
-        </div>
 
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-5 items-stretch">
           <ConfigPanel
             title="Training Config"
             icon={<Database size={11} />}
@@ -460,11 +460,9 @@ export default function FeatureGroupDetail() {
                 <button
                   type="button"
                   onClick={() => setTrainingModalOpen(true)}
-                  disabled={
-                    fg.status === "Online Changing" || fg.status === "Disable"
-                  }
+                  disabled={fg.status === "Online Changing"}
                   className={`p-2 rounded-lg border transition-all min-h-[44px] min-w-[44px] flex items-center justify-center ${
-                    fg.status === "Online Changing" || fg.status === "Disable"
+                    fg.status === "Online Changing"
                       ? "border-gray-100 text-gray-300 cursor-not-allowed"
                       : "border-gray-200 text-gray-500 hover:border-teal-300 hover:text-teal-600"
                   }`}
@@ -512,45 +510,88 @@ export default function FeatureGroupDetail() {
                 </FieldRow>
               </>
             ) : (
-              <p className="text-sm text-gray-400 py-6 text-center px-2">
-                No training configuration yet. Use the + control to add
-                training.
-              </p>
+              <div className="flex flex-col items-center justify-center min-h-[160px] py-6 px-2">
+                <button
+                  type="button"
+                  onClick={() => setTrainingModalOpen(true)}
+                  disabled={fg.status === "Online Changing"}
+                  className="inline-flex items-center justify-center w-14 h-14 rounded-full border-2 border-dashed border-teal-300 text-teal-600 hover:bg-teal-50 transition-colors disabled:opacity-40 disabled:cursor-not-allowed min-h-[44px] min-w-[44px]"
+                  title="Add training configuration"
+                  aria-label="Add training configuration"
+                >
+                  <Plus size={24} />
+                </button>
+                <p className="text-sm text-gray-400 mt-3 text-center max-w-xs">
+                  No training configuration yet. Use the button above to add training.
+                </p>
+              </div>
             )}
           </ConfigPanel>
 
-          <div className="flex items-center justify-center min-h-[120px]">
-            {!trainingDone && (
-              <button
-                type="button"
-                onClick={() => setTrainingModalOpen(true)}
-                disabled={
-                  fg.status === "Online Changing" || fg.status === "Disable"
-                }
-                className="inline-flex items-center justify-center w-14 h-14 rounded-full border-2 border-dashed border-teal-300 text-teal-600 hover:bg-teal-50 transition-colors disabled:opacity-40 disabled:cursor-not-allowed min-h-[44px] min-w-[44px]"
-                title="Add training configuration"
-                aria-label="Add training configuration"
-              >
-                <Plus size={24} />
-              </button>
+          <ConfigPanel
+            title="Serving Config"
+            icon={<Zap size={11} />}
+            headerRight={
+              servingConfigured ? (
+                <button
+                  type="button"
+                  onClick={() => navigate(`/fg/${fg.id}/serving`)}
+                  disabled={fg.status === "Online Changing"}
+                  className={`p-2 rounded-lg border transition-all min-h-[44px] min-w-[44px] flex items-center justify-center ${
+                    fg.status === "Online Changing"
+                      ? "border-gray-100 text-gray-300 cursor-not-allowed"
+                      : "border-gray-200 text-gray-500 hover:border-teal-300 hover:text-teal-600"
+                  }`}
+                  title="Edit serving config"
+                  aria-label="Edit serving config"
+                >
+                  <Pencil size={14} />
+                </button>
+              ) : null
+            }
+          >
+            {servingConfigured ? (
+              <>
+                <FieldRow label="Serving Fts">
+                  <PlainVal>{String(servingFeatureCount)}</PlainVal>
+                </FieldRow>
+                <FieldRow label="Mapped Fts">
+                  <PlainVal>{String(mappedFeatureCount)}</PlainVal>
+                </FieldRow>
+                <FieldRow label="Canvas">
+                  <PlainVal>Open canvas to edit DAG</PlainVal>
+                </FieldRow>
+              </>
+            ) : (
+              <div className="flex flex-col items-center justify-center min-h-[160px] py-6 px-2">
+                <button
+                  type="button"
+                  onClick={() => navigate(`/fg/${fg.id}/serving`)}
+                  disabled={fg.status === "Online Changing"}
+                  className="inline-flex items-center justify-center w-14 h-14 rounded-full border-2 border-dashed border-teal-300 text-teal-600 hover:bg-teal-50 transition-colors disabled:opacity-40 disabled:cursor-not-allowed min-h-[44px] min-w-[44px]"
+                  title="Configure serving"
+                  aria-label="Configure serving"
+                >
+                  <Plus size={24} />
+                </button>
+                <p className="text-sm text-gray-400 mt-3 text-center max-w-xs">
+                  Add a serving pipeline on the canvas.
+                </p>
+              </div>
             )}
-          </div>
-
-          <ConfigPanel title="Serving Config" icon={<Zap size={11} />}>
-            <p className="text-sm text-gray-400 py-4 text-center px-2">
-              Serving configuration UI is planned for a follow-up release.
-            </p>
-            <FieldRow label="Serving Fts">
-              <PlainVal>{String(servingFeatureCount)}</PlainVal>
-            </FieldRow>
-            <FieldRow label="Mapped Fts">
-              <PlainVal>{String(mappedFeatureCount)}</PlainVal>
-            </FieldRow>
           </ConfigPanel>
         </div>
 
         <DetailTabSection fg={fg} />
       </div>
+
+      <FgConfigDiffModal
+        open={configDiffOpen}
+        onClose={() => setConfigDiffOpen(false)}
+        oldText={MOCK_FG_DIFF_OLD}
+        newText={MOCK_FG_DIFF_NEW}
+        onConfirm={() => updateFg(fg.id, { status: "Online" })}
+      />
 
       <FeatureGroupModal
         open={basicModalOpen}
@@ -1240,9 +1281,23 @@ function VersionHistoryTab() {
       <table className="w-full text-sm" style={{ borderCollapse: "separate", borderSpacing: 0 }}>
         <thead>
           <tr style={{ backgroundColor: "#fafafa" }} className="border-b border-gray-100 text-xs text-gray-500">
-            {["Version", "Created At", "Created By", "Published At", "Action"].map((h) => (
-              <th key={h} className="px-5 py-3 text-left" style={{ fontWeight: 600 }}>{h}</th>
-            ))}
+            <th className="px-5 py-3 text-left" style={{ fontWeight: 600 }}>Version</th>
+            <th
+              className="px-5 py-3 text-left"
+              style={{ fontWeight: 600 }}
+              title="Timestamp when this version snapshot was created (UTC, mock)."
+            >
+              Created At
+            </th>
+            <th className="px-5 py-3 text-left" style={{ fontWeight: 600 }}>Created By</th>
+            <th
+              className="px-5 py-3 text-left"
+              style={{ fontWeight: 600 }}
+              title="Timestamp when this version was published to Online (mock)."
+            >
+              Published At
+            </th>
+            <th className="px-5 py-3 text-left" style={{ fontWeight: 600 }}>Action</th>
           </tr>
         </thead>
         <tbody>
@@ -1358,15 +1413,6 @@ function VersionHistoryTab() {
                     )}
                   </div>
 
-                  {!v.isCurrent && (
-                    <button
-                      className="inline-flex items-center gap-1 px-2.5 py-1 text-xs rounded border border-gray-200 text-gray-500 hover:border-amber-400 hover:text-amber-600 hover:bg-amber-50 transition-colors"
-                      style={{ fontWeight: 500 }}
-                    >
-                      <RotateCcw size={11} />
-                      Rollback
-                    </button>
-                  )}
                 </div>
               </td>
             </tr>
@@ -1384,7 +1430,7 @@ const DETAIL_TABS: { key: DetailTab; label: string }[] = [
   { key: "features", label: "Feature List" },
   { key: "lineage",  label: "Lineage"                     },
   { key: "dqc",      label: "Offline DQC"                 },
-  { key: "versions", label: "Version History"             },
+  { key: "versions", label: "Versions"                  },
 ];
 
 function DetailTabSection({ fg }: { fg: FeatureGroup }) {
@@ -1416,158 +1462,5 @@ function DetailTabSection({ fg }: { fg: FeatureGroup }) {
       {active === "dqc"      && <OfflineDQCTab />}
       {active === "versions" && <VersionHistoryTab />}
     </div>
-  );
-}
-
-// ─── Manage Dropdown ──────────────────────────────────────────────────────────
-type ManageAction = "online" | "revoke" | "disable" | "delete";
-
-function ManageDropdown({
-  status,
-  onAction,
-}: {
-  status: FeatureGroupStatus;
-  onAction: (a: ManageAction) => void;
-}) {
-  const [open, setOpen] = useState(false);
-  const [confirmDisable, setConfirmDisable] = useState(false);
-  const ref = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    function handler(e: MouseEvent) {
-      if (ref.current && !ref.current.contains(e.target as Node)) {
-        setOpen(false);
-        setConfirmDisable(false);
-      }
-    }
-    if (open) document.addEventListener("mousedown", handler);
-    return () => document.removeEventListener("mousedown", handler);
-  }, [open]);
-
-  const canOnline  = ["Disable", "Online Changing"].includes(status);
-  const canRevoke  = status === "Online Changing";
-  const canDisable = status === "Online";
-  const canDelete  = ["Draft", "Disable"].includes(status);
-
-  return (
-    <div className="relative" ref={ref}>
-      <button
-        onClick={() => { setOpen((v) => !v); setConfirmDisable(false); }}
-        className="flex items-center gap-1.5 px-4 py-2 text-sm rounded-lg text-white transition-all hover:opacity-90"
-        style={{ backgroundColor: "#13c2c2", fontWeight: 500 }}
-      >
-        Manage
-        <ChevronDown size={13} className={`transition-transform ${open ? "rotate-180" : ""}`} />
-      </button>
-
-      {open && (
-        <div
-          className="absolute right-0 top-full mt-1 bg-white border border-gray-200 rounded-lg shadow-xl z-50 overflow-hidden"
-          style={{ minWidth: 160 }}
-        >
-          {!confirmDisable ? (
-            <div className="py-1">
-              <DetailMenuItem
-                icon={<CheckCircle2 size={13} />}
-                label="Online"
-                enabled={canOnline}
-                iconColor="text-emerald-500"
-                hoverColor="hover:bg-emerald-50 hover:text-emerald-700"
-                onClick={() => { onAction("online"); setOpen(false); }}
-              />
-              <DetailMenuItem
-                icon={<RotateCcw size={13} />}
-                label="Revoke"
-                enabled={canRevoke}
-                iconColor="text-amber-500"
-                hoverColor="hover:bg-amber-50 hover:text-amber-600"
-                onClick={() => { onAction("revoke"); setOpen(false); }}
-              />
-              <DetailMenuItem
-                icon={<Ban size={13} />}
-                label="Disable"
-                enabled={canDisable}
-                iconColor="text-orange-400"
-                hoverColor="hover:bg-orange-50 hover:text-orange-600"
-                onClick={() => setConfirmDisable(true)}
-              />
-              <div className="h-px bg-gray-100 my-1" />
-              <DetailMenuItem
-                icon={<Trash2 size={13} />}
-                label="Delete"
-                enabled={canDelete}
-                iconColor="text-red-500"
-                hoverColor="hover:bg-red-50 hover:text-red-600"
-                danger
-                onClick={() => { onAction("delete"); setOpen(false); }}
-              />
-            </div>
-          ) : (
-            <div className="p-4" style={{ width: 224 }}>
-              <div className="flex gap-2.5 mb-3.5">
-                <AlertTriangle size={15} className="flex-shrink-0 mt-0.5" style={{ color: "#fa8c16" }} />
-                <p className="text-xs text-gray-700 leading-relaxed">
-                  确认要将该 Feature Group 设为{" "}
-                  <span style={{ fontWeight: 600 }}>Disable</span> 吗？此操作不可立即撤销。
-                </p>
-              </div>
-              <div className="flex justify-end gap-2">
-                <button
-                  onClick={() => setConfirmDisable(false)}
-                  className="px-3 py-1 text-xs rounded border border-gray-300 text-gray-600 hover:bg-gray-50 transition-colors"
-                >
-                  取消
-                </button>
-                <button
-                  onClick={() => { onAction("disable"); setOpen(false); setConfirmDisable(false); }}
-                  className="px-3 py-1 text-xs rounded text-white transition-all hover:opacity-90"
-                  style={{ backgroundColor: "#fa8c16", fontWeight: 500 }}
-                >
-                  确认 Disable
-                </button>
-              </div>
-            </div>
-          )}
-        </div>
-      )}
-    </div>
-  );
-}
-
-function DetailMenuItem({
-  icon,
-  label,
-  enabled,
-  iconColor,
-  hoverColor,
-  danger = false,
-  onClick,
-}: {
-  icon: React.ReactNode;
-  label: string;
-  enabled: boolean;
-  iconColor: string;
-  hoverColor: string;
-  danger?: boolean;
-  onClick: () => void;
-}) {
-  return (
-    <button
-      disabled={!enabled}
-      onClick={enabled ? onClick : undefined}
-      className={`w-full flex items-center gap-2.5 px-3.5 py-2 text-xs text-left transition-colors ${
-        enabled
-          ? `${danger ? "text-red-600" : "text-gray-700"} ${hoverColor} cursor-pointer`
-          : "text-gray-300 cursor-not-allowed"
-      }`}
-    >
-      <span className={enabled ? iconColor : "text-gray-300"}>{icon}</span>
-      {label}
-      {!enabled && (
-        <span className="ml-auto text-gray-300" style={{ fontSize: 10 }}>
-          N/A
-        </span>
-      )}
-    </button>
   );
 }

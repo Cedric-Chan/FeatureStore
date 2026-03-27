@@ -1418,6 +1418,12 @@ function Step1TrainingConfig({
           hasError={err && !form.updateFrequency}
         />
       </FormGroup>
+      {(form.updateFrequency === "Weekly" || form.updateFrequency === "Monthly") && (
+        <p className="text-xs text-gray-500 -mt-2" role="status" aria-live="polite">
+          By default, data refreshes on the first day of each{" "}
+          {form.updateFrequency === "Weekly" ? "week" : "month"}.
+        </p>
+      )}
 
       <FormGroup
         label="Entities Column"

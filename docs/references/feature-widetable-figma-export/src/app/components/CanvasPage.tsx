@@ -29,7 +29,7 @@ import { FG_CATALOG, DEFAULT_FG_BY_NODE, JOIN_TYPES } from "@/data/featureGroupC
 const HIVE_ALLOWLIST_HINT =
   "Only Hive tables on the szfin_realtime project allowlist are listed. Contact DOD if you need access.";
 
-type NodeStatus = "waiting" | "cache_skipped" | "running" | "failed" | "success";
+export type NodeStatus = "waiting" | "cache_skipped" | "running" | "failed" | "success";
 
 // ─── Style maps ───────────────────────────────────────────────────────────────
 const TYPE_STYLES: Record<NodeDef["type"], { accent: string; iconBg: string; iconColor: string }> = {
@@ -81,7 +81,7 @@ function InstanceStatusBadge({ status, small }: { status: InstanceStatus; small?
 }
 
 // ─── Draggable pipeline node card ─────────────────────────────────────────────
-function PipelineNodeCard({
+export function PipelineNodeCard({
   node, selected, instanceView, nodeStatus,
   onDragStart, onClick,
 }: {
@@ -129,7 +129,7 @@ function PipelineNodeCard({
 }
 
 // ─── SVG Edges ────────────────────────────────────────────────────────────────
-function CanvasEdges({
+export function CanvasEdges({
   nodes, instanceView, nodeStatuses,
 }: {
   nodes: NodeDef[]; instanceView: boolean; nodeStatuses?: Record<NodeId, NodeStatus>;
@@ -178,7 +178,7 @@ function CanvasEdges({
 const MM_W = 118; const MM_H = 72;
 const mmSX = MM_W / CANVAS_W; const mmSY = MM_H / CANVAS_H;
 
-function Minimap({ nodes, pan, zoom, cw, ch }: { nodes: NodeDef[]; pan: { x: number; y: number }; zoom: number; cw: number; ch: number }) {
+export function Minimap({ nodes, pan, zoom, cw, ch }: { nodes: NodeDef[]; pan: { x: number; y: number }; zoom: number; cw: number; ch: number }) {
   const vpX = -pan.x / zoom; const vpY = -pan.y / zoom;
   const vpW = cw / zoom;     const vpH = ch / zoom;
   const rx = vpX * mmSX;     const ry = vpY * mmSY;
@@ -204,7 +204,7 @@ function Minimap({ nodes, pan, zoom, cw, ch }: { nodes: NodeDef[]; pan: { x: num
 }
 
 // ─── Zoom Controls ────────────────────────────────────────────────────────────
-function ZoomControls({ zoom, onZoom, onFit }: { zoom: number; onZoom: (d: number) => void; onFit: () => void }) {
+export function ZoomControls({ zoom, onZoom, onFit }: { zoom: number; onZoom: (d: number) => void; onFit: () => void }) {
   return (
     <div className="flex items-center gap-1 bg-white border border-gray-200 rounded-lg shadow-sm px-1.5 py-1">
       <button onClick={() => onZoom(-0.1)} className="p-1 text-gray-500 hover:text-gray-800 hover:bg-gray-100 rounded transition-all"><Minus size={12} /></button>
