@@ -327,6 +327,13 @@ export default function FeatureGroupDetail() {
     return featureSourceLinesFromServingForm(fd);
   }, [hasServingCanvas, servingSummary.featureSourceLines, fd]);
 
+  const featureRows = fg ? buildFeatureRowsFromFg(fg) : [];
+  const trainingFeatureCount = featureRows.filter((r) => r.training).length;
+  const servingFeatureCount = featureRows.filter((r) => r.serving).length;
+  const mappedFeatureCount = featureRows.filter(
+    (r) => r.training && r.serving
+  ).length;
+
   const servingFtsDisplay = hasServingCanvas
     ? servingSummary.servingFts
     : servingFeatureCount;
@@ -348,13 +355,6 @@ export default function FeatureGroupDetail() {
     );
     navigate(`/fg/${fgId}`, { replace: true, state: {} });
   }, [location.state, fgId, navigate]);
-
-  const featureRows = fg ? buildFeatureRowsFromFg(fg) : [];
-  const trainingFeatureCount = featureRows.filter((r) => r.training).length;
-  const servingFeatureCount = featureRows.filter((r) => r.serving).length;
-  const mappedFeatureCount = featureRows.filter(
-    (r) => r.training && r.serving
-  ).length;
 
   function handleBasicSave(data: FGFormData) {
     if (!fg) return;
