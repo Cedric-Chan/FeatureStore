@@ -669,29 +669,12 @@ export default function FeatureGroupDetail() {
                   <PlainVal>{String(extraFtsDisplay)}</PlainVal>
                 </FieldRow>
                 <FieldRow label="Canvas">
-                  <div className="flex flex-col gap-2 min-w-0">
+                  <div className="min-w-0">
                     <FgServingCanvasThumbnail
                       state={servingCanvasPreviewState}
                       width={160}
                       className="max-w-full"
                     />
-                    <div className="flex items-center gap-2 flex-wrap">
-                      <button
-                        type="button"
-                        onClick={() => navigate(`/fg/${fg.id}/serving`)}
-                        disabled={fg.status === "Online Changing"}
-                        className={servingCanvasEditButtonClass(
-                          fg.status === "Online Changing"
-                        )}
-                        title="Edit serving config"
-                        aria-label="Edit serving config"
-                      >
-                        <Pencil size={14} />
-                      </button>
-                      <span className="text-xs text-gray-500">
-                        Open canvas to edit DAG
-                      </span>
-                    </div>
                   </div>
                 </FieldRow>
               </>
