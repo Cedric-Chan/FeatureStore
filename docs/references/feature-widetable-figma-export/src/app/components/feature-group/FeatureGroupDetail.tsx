@@ -50,8 +50,29 @@ import { trainingFeatureNamesFromForm } from "./fgSeed";
 import {
   cloneFgServingState,
   computeFgServingPublishedSummary,
+  createInitialFgServingState,
   normalizeFgServingCanvasState,
 } from "@/data/fgServingCanvasModel";
+
+function featureSourceLinesFromServingForm(fd: FGFormData): string[] {
+  const seen = new Set<string>();
+  const lines: string[] = [];
+  for (const block of fd.servingBlocks ?? []) {
+    const name = block.featureSource?.trim();
+    if (!name || seen.has(name)) continue;
+    seen.add(name);
+    lines.push(name);
+  }
+  return lines;
+}
+
+function servingCanvasEditButtonClass(disabled: boolean): string {
+  return `p-2 rounded-lg border transition-all min-h-[44px] min-w-[44px] flex items-center justify-center shrink-0 ${
+    disabled
+      ? "border-gray-100 text-gray-300 cursor-not-allowed"
+      : "border-gray-200 text-gray-500 hover:border-teal-300 hover:text-teal-600"
+  }`;
+}
 
 // ─── Status config ────────────────────────────────────────────────────────────
 const STATUS_CONFIG: Record<
@@ -286,6 +307,35 @@ export default function FeatureGroupDetail() {
     );
     return computeFgServingPublishedSummary(normalized, trainingFeatureSet);
   }, [fg?.servingCanvasState, trainingFeatureSet]);
+
+  const servingCanvasPreviewState = useMemo(() => {
+    if (!fg) {
+      return normalizeFgServingCanvasState(createInitialFgServingState([]));
+    }
+    if (fg.servingCanvasState) {
+      return normalizeFgServingCanvasState(
+        cloneFgServingState(fg.servingCanvasState)
+      );
+    }
+    return normalizeFgServingCanvasState(
+      createInitialFgServingState(fd.entitiesColumns ?? [])
+    );
+  }, [fg, fg?.servingCanvasState, fd.entitiesColumns]);
+
+  const featureSourceDisplayLines = useMemo(() => {
+    if (hasServingCanvas) return servingSummary.featureSourceLines;
+    return featureSourceLinesFromServingForm(fd);
+  }, [hasServingCanvas, servingSummary.featureSourceLines, fd]);
+
+  const servingFtsDisplay = hasServingCanvas
+    ? servingSummary.servingFts
+    : servingFeatureCount;
+  const mappedFtsDisplay = hasServingCanvas
+    ? servingSummary.mappedFts
+    : mappedFeatureCount;
+  const extraFtsDisplay = hasServingCanvas
+    ? servingSummary.extraFts
+    : Math.max(0, servingFtsDisplay - mappedFtsDisplay);
 
   /* Toast only when navigating from Publish (location.state); HashRouter
    * deep-links or refresh on /fg/:id have no state, so the toast will not show. */
@@ -585,11 +635,9 @@ export default function FeatureGroupDetail() {
                   type="button"
                   onClick={() => navigate(`/fg/${fg.id}/serving`)}
                   disabled={fg.status === "Online Changing"}
-                  className={`p-2 rounded-lg border transition-all min-h-[44px] min-w-[44px] flex items-center justify-center ${
+                  className={servingCanvasEditButtonClass(
                     fg.status === "Online Changing"
-                      ? "border-gray-100 text-gray-300 cursor-not-allowed"
-                      : "border-gray-200 text-gray-500 hover:border-teal-300 hover:text-teal-600"
-                  }`}
+                  )}
                   title="Edit serving config"
                   aria-label="Edit serving config"
                 >
@@ -600,65 +648,52 @@ export default function FeatureGroupDetail() {
           >
             {servingConfigured ? (
               <>
-                {hasServingCanvas ? (
-                  <>
-                    <FieldRow label="Feature Sources">
-                      {servingSummary.featureSourceLines.length > 0 ? (
-                        <div className="text-xs text-gray-800 leading-relaxed break-words min-w-0">
-                          {servingSummary.featureSourceLines.map((line) => (
-                            <div key={line}>{line}</div>
-                          ))}
-                        </div>
-                      ) : (
-                        <span className="text-gray-400 text-xs">—</span>
-                      )}
-                    </FieldRow>
-                    <FieldRow label="Serving Fts">
-                      <PlainVal>{String(servingSummary.servingFts)}</PlainVal>
-                    </FieldRow>
-                    <FieldRow label="Mapped Fts">
-                      <PlainVal>{String(servingSummary.mappedFts)}</PlainVal>
-                    </FieldRow>
-                    <FieldRow label="Extra Fts (custom-specified)">
-                      <PlainVal>{String(servingSummary.extraFts)}</PlainVal>
-                    </FieldRow>
-                    <FieldRow label="Canvas">
-                      <div className="flex flex-col gap-2 min-w-0">
-                        <FgServingCanvasThumbnail
-                          state={normalizeFgServingCanvasState(
-                            cloneFgServingState(fg.servingCanvasState!)
-                          )}
-                          width={220}
-                          className="max-w-full"
-                        />
-                        <button
-                          type="button"
-                          onClick={() => navigate(`/fg/${fg.id}/serving`)}
-                          disabled={fg.status === "Online Changing"}
-                          className={`text-left text-xs font-medium w-fit ${
-                            fg.status === "Online Changing"
-                              ? "text-gray-300 cursor-not-allowed"
-                              : "text-teal-600 hover:text-teal-700"
-                          }`}
-                        >
-                          Open canvas to edit DAG
-                        </button>
-                      </div>
-                    </FieldRow>
-                  </>
-                ) : (
-                  <>
-                    <FieldRow label="Serving Fts">
-                      <PlainVal>{String(servingFeatureCount)}</PlainVal>
-                    </FieldRow>
-                    <FieldRow label="Mapped Fts">
-                      <PlainVal>{String(mappedFeatureCount)}</PlainVal>
-                    </FieldRow>
-                    <FieldRow label="Canvas">
-                      <PlainVal>Open canvas to edit DAG</PlainVal>
-                    </FieldRow>
-                  </>
-                )}
+                <FieldRow label="Feature Sources">
+                  {featureSourceDisplayLines.length > 0 ? (
+                    <div className="text-xs text-gray-800 leading-relaxed break-words min-w-0">
+                      {featureSourceDisplayLines.map((line) => (
+                        <div key={line}>{line}</div>
+                      ))}
+                    </div>
+                  ) : (
+                    <span className="text-gray-400 text-xs">—</span>
+                  )}
+                </FieldRow>
+                <FieldRow label="Serving Fts">
+                  <PlainVal>{String(servingFtsDisplay)}</PlainVal>
+                </FieldRow>
+                <FieldRow label="Mapped Fts">
+                  <PlainVal>{String(mappedFtsDisplay)}</PlainVal>
+                </FieldRow>
+                <FieldRow label="Custom Fts">
+                  <PlainVal>{String(extraFtsDisplay)}</PlainVal>
+                </FieldRow>
+                <FieldRow label="Canvas">
+                  <div className="flex flex-col gap-2 min-w-0">
+                    <FgServingCanvasThumbnail
+                      state={servingCanvasPreviewState}
+                      width={160}
+                      className="max-w-full"
+                    />
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <button
+                        type="button"
+                        onClick={() => navigate(`/fg/${fg.id}/serving`)}
+                        disabled={fg.status === "Online Changing"}
+                        className={servingCanvasEditButtonClass(
+                          fg.status === "Online Changing"
+                        )}
+                        title="Edit serving config"
+                        aria-label="Edit serving config"
+                      >
+                        <Pencil size={14} />
+                      </button>
+                      <span className="text-xs text-gray-500">
+                        Open canvas to edit DAG
+                      </span>
+                    </div>
+                  </div>
+                </FieldRow>
               </>
             ) : (
               <div className="flex flex-col items-center justify-center min-h-[160px] py-6 px-2">
