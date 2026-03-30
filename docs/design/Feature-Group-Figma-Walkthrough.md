@@ -26,11 +26,16 @@
 
 ## D. FG Modal & Serving（vs 参考包）
 
+**PRD 状态机设计稿**（与 `front-design/产品原型图.md` §3.3.0 一致）：[`assets/fg-feature-group-status-machine.png`](assets/fg-feature-group-status-machine.png)
+
 - [x] **`variant=basic`**：仅 **Basic Info**（`Step0` 字段）；**无** Step 导航条、**无 Save Draft**；Cancel + Continue
 - [x] **`variant=training`**：仅 **Training Config**（`Step1` 字段）；**无** Step 导航条；Cancel + Save
 - [x] **Add / Copy** 列表入口仅打开 **`basic`**；**不再**从列表打开四步 Wizard
 - [x] **Serving 画布**（`FgServingCanvasPage.tsx`）：平移/缩放/节点拖拽；**Publish History**；只读历史视图 + **Back to Current**；**Test Run** 抽屉（**Esc**、焦点、`aria-label`、主按钮 **44px**）；**Publish** 回详情并更新状态（Online → Online Changing）
+- [ ] **PRD**：**Publish** 仅 **Test Run 通过后**可点；回详情 **Toast**：Serving 已更新、须 **手动 Manage > Online** 方上线（实现以迭代为准）
+- [ ] **PRD**：**START** 节点 **Entities** 只读、与 Training 入参一致；**END** 入参 **AutoComplete**（Training 字段）+ 允许手填；列表内为 **Mapped**、外为 **Custom**（实现以迭代为准）
 - [x] **Manage > Online**（Online Changing）→ **Config Diff** 弹窗 → 确认后 **Online**
+- [ ] **PRD**：**Online Changing** 态 **不可 Edit**；**Online** 自 Draft 须 **T+S 均已配置**；**Online → Draft** / **Online Changing → Online（覆盖线上）** 为 **Admin** 能力（实现以迭代为准）
 - [x] **Feature Mapping** 全步 Wizard：**非**本期默认入口
 
 ### D.1 无障碍与交互（ui-ux 对齐）
@@ -59,3 +64,4 @@
 | 2026-03-20 | Prototype | HTML：`wtcBuildFeatureGroupPanelHtml`、`wtcFgLastInstHtml`、`wtcSyncRpHeader`；像素以 Figma 导出与 `CanvasPage` `FeatureGroupPanel` 为参照 |
 | 2026-03-27 | PRD 评审 | §3.3.A 多 Modal、Sync、Draft 分阶段；走查清单 B/C/D 同步 |
 | 2026-03-27 | PRD 评审 | Serving 路由、画布、Test Run 抽屉、Manage 三项、Versions、Config Diff |
+| 2026-03-30 | PRD | §3.3.A.1 START/END/Publish 门禁与 Toast；§3.3.0 状态机与 Admin 边；Versions 与 T/S 变更触发 Online Changing；状态机图 `assets/fg-feature-group-status-machine.png` |
