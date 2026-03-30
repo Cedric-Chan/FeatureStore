@@ -52,7 +52,9 @@ function formatSourceLabel(
 ): string {
   if (!ref) return emptyLabel;
   if (ref.kind === "fixed") {
-    return ref.value === "" ? "FixedValue" : `FixedValue: ${ref.value}`;
+    return ref.value === ""
+      ? "FIXED VALUE"
+      : `FIXED VALUE: ${ref.value}`;
   }
   const title = nodeTitleById.get(ref.nodeId) ?? ref.nodeId;
   return `${title} / ${ref.field} (${ref.fieldType})`;
@@ -104,7 +106,7 @@ function UpstreamCascadePicker({
   fixedFieldLabel,
   fixedValueMode,
   textPlaceholder = "Enter value",
-  emptyLabel = "Select source…",
+  emptyLabel = "SELECT SOURCE…",
   disabledUpstreamFieldKeys,
   endMappingTrigger = false,
 }: {
@@ -183,8 +185,8 @@ function UpstreamCascadePicker({
     endMappingTrigger && (open || triggerFocused);
 
   return (
-    <div className="relative" ref={rootRef}>
-      <div className="flex items-center gap-1">
+    <div className="relative min-w-0 flex-1" ref={rootRef}>
+      <div className="flex items-center gap-1 w-full min-w-0">
         <button
           type="button"
           disabled={disabled}
@@ -248,7 +250,7 @@ function UpstreamCascadePicker({
                   setPickedNode(null);
                 }}
               >
-                FixedValue
+                FIXED VALUE
               </button>
             </div>
           )}
@@ -263,7 +265,7 @@ function UpstreamCascadePicker({
                   setPickedNode(null);
                 }}
               >
-                ← Back
+                ← BACK
               </button>
               <div className="py-1 max-h-48 overflow-y-auto">
                 {groups
@@ -298,7 +300,7 @@ function UpstreamCascadePicker({
                         </span>
                         {taken ? (
                           <span className="ml-1 text-[10px] text-gray-400">
-                            (used)
+                            (USED)
                           </span>
                         ) : null}
                       </button>
@@ -314,10 +316,10 @@ function UpstreamCascadePicker({
                 className="mb-2 text-[11px] text-gray-500 hover:text-gray-800"
                 onClick={() => setStep("root")}
               >
-                ← Back
+                ← BACK
               </button>
-              <p className="text-[11px] text-gray-500 mb-2">
-                Constant value for {fixedFieldLabel}
+              <p className="text-[11px] text-gray-500 mb-2 uppercase">
+                CONSTANT VALUE FOR {fixedFieldLabel}
               </p>
               {fixedValueMode === "bool" ? (
                 <select
@@ -331,7 +333,7 @@ function UpstreamCascadePicker({
                   }}
                 >
                   <option value="" disabled>
-                    Choose…
+                    CHOOSE…
                   </option>
                   <option value="true">true</option>
                   <option value="false">false</option>
@@ -356,7 +358,7 @@ function UpstreamCascadePicker({
                       setStep("root");
                     }}
                   >
-                    Apply
+                    APPLY
                   </button>
                 </>
               )}
@@ -397,7 +399,7 @@ function SourceCascadePicker({
       fixedFieldLabel={param.paramName}
       fixedValueMode={fixedValueMode}
       textPlaceholder={textPlaceholder}
-      emptyLabel="Select source…"
+      emptyLabel="SELECT SOURCE…"
     />
   );
 }
@@ -443,7 +445,9 @@ function StartPanel({
 
   return (
     <section className="space-y-3">
-      <h3 className="text-xs font-bold text-gray-800 tracking-wide">INPUT FIELD</h3>
+      <h3 className="text-xs font-bold text-gray-800 tracking-wide uppercase">
+        INPUT FIELDS
+      </h3>
       <div className="space-y-2">
         {cfg.inputFields.map((row) => (
           <div key={row.id} className="flex items-center gap-2">
@@ -497,7 +501,7 @@ function StartPanel({
           onClick={addRow}
           className="w-full min-h-[44px] text-xs font-medium text-gray-700 bg-gray-100 hover:bg-gray-200 rounded-lg border border-gray-200"
         >
-          + Add
+          + ADD
         </button>
       )}
     </section>
@@ -602,10 +606,10 @@ function MappedAssetPanel({
   const selectedOutCount = asset.outputFields.filter((o) => o.selected).length;
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4">
       <div className="flex flex-wrap items-center gap-2">
-        <label htmlFor="fg-asset-select" className="text-xs text-gray-500 shrink-0">
-          Registered {assetKind === "feature_source" ? "Feature Source" : "Transformation"}
+        <label htmlFor="fg-asset-select" className="text-xs text-gray-500 shrink-0 uppercase">
+          REGISTERED {assetKind === "feature_source" ? "FEATURE SOURCE" : "TRANSFORMATION"}
         </label>
         <select
           id="fg-asset-select"
@@ -629,9 +633,11 @@ function MappedAssetPanel({
 
       <section className="rounded-xl border border-gray-200 bg-white p-3 space-y-3">
         <div className="flex flex-wrap items-center justify-between gap-2">
-          <h3 className="text-sm font-semibold text-slate-800">Map Input Fields</h3>
-          <span className="text-xs text-gray-500">
-            Configuration Progress: {mappedCount}/{totalIn || 0}
+          <h3 className="text-sm font-semibold text-slate-800 uppercase tracking-wide">
+            MAP INPUT FIELDS
+          </h3>
+          <span className="text-xs text-gray-500 uppercase">
+            CONFIGURATION PROGRESS: {mappedCount}/{totalIn || 0}
           </span>
         </div>
         <div className="flex items-center gap-2">
@@ -641,12 +647,12 @@ function MappedAssetPanel({
             onClick={autofill}
             className="text-xs font-medium text-blue-600 hover:text-blue-800 disabled:opacity-50 min-h-[44px] px-1"
           >
-            AutoFill
+            AUTOFILL
           </button>
           <span className="text-gray-300">|</span>
           <span className="inline-flex items-center gap-1 text-[11px] text-gray-400">
             <Info size={12} className="shrink-0" aria-hidden />
-            Match upstream fields by name
+            MATCH UPSTREAM FIELDS BY NAME
           </span>
         </div>
         <div className="space-y-3">
@@ -656,13 +662,13 @@ function MappedAssetPanel({
               className="rounded-lg border border-gray-200 bg-gray-50/80 p-3 space-y-2"
             >
               <div className="flex flex-wrap justify-between gap-2 text-xs">
-                <span className="text-gray-700">
-                  Field: <span className="font-mono font-medium">{m.paramName}</span>
+                <span className="text-gray-700 uppercase text-[11px]">
+                  FIELD: <span className="font-mono font-medium normal-case">{m.paramName}</span>
                 </span>
-                <span className="text-gray-500">type: {m.paramType}</span>
+                <span className="text-gray-500 uppercase text-[11px]">TYPE: {m.paramType}</span>
               </div>
               <div>
-                <span className="text-[11px] text-gray-500 block mb-1">Source:</span>
+                <span className="text-[11px] text-gray-500 block mb-1 uppercase">SOURCE</span>
                 <SourceCascadePicker
                   param={m}
                   groups={upstreamGroups}
@@ -678,7 +684,9 @@ function MappedAssetPanel({
       </section>
 
       <section className="rounded-xl border border-gray-200 bg-white p-3 space-y-3">
-        <h3 className="text-sm font-semibold text-slate-800">Map Output Fields</h3>
+        <h3 className="text-sm font-semibold text-slate-800 uppercase tracking-wide">
+          MAP OUTPUT FIELDS
+        </h3>
         <div className="flex flex-wrap items-center gap-3">
           <div className="flex-1 min-w-[140px] relative">
             <label htmlFor="out-search" className="sr-only">
@@ -688,12 +696,12 @@ function MappedAssetPanel({
               id="out-search"
               value={outSearch}
               onChange={(e) => setOutSearch(e.target.value)}
-              placeholder="Search by Field"
+              placeholder="SEARCH BY FIELD"
               className="w-full min-h-[44px] pl-3 pr-2 text-xs border border-gray-200 rounded-lg"
             />
           </div>
           <div className="flex items-center gap-2 text-xs text-gray-600">
-            <span>Selected: {selectedOutCount}</span>
+            <span className="uppercase">SELECTED: {selectedOutCount}</span>
             <label className="inline-flex items-center gap-2 cursor-pointer select-none">
               <input
                 type="checkbox"
@@ -702,7 +710,7 @@ function MappedAssetPanel({
                 onChange={(e) => toggleSelectAll(e.target.checked)}
                 className="rounded border-gray-300 text-teal-600 focus:ring-teal-500"
               />
-              Select All
+              SELECT ALL
             </label>
           </div>
         </div>
@@ -713,10 +721,10 @@ function MappedAssetPanel({
               className="rounded-lg border border-gray-200 overflow-hidden"
             >
               <div className="flex items-center justify-between gap-2 px-3 py-2 bg-sky-50/90 border-b border-gray-100">
-                <div className="text-xs text-gray-700 min-w-0">
-                  Field:{" "}
-                  <span className="font-mono font-semibold text-slate-800">{o.name}</span>
-                  <span className="text-gray-500 ml-2">type: {o.type}</span>
+                <div className="text-xs text-gray-700 min-w-0 uppercase">
+                  FIELD:{" "}
+                  <span className="font-mono font-semibold text-slate-800 normal-case">{o.name}</span>
+                  <span className="text-gray-500 ml-2">TYPE: {o.type}</span>
                 </div>
                 <input
                   type="checkbox"
@@ -728,8 +736,8 @@ function MappedAssetPanel({
                 />
               </div>
               <div className="px-3 py-2 bg-white flex flex-col gap-1">
-                <label className="text-[11px] text-gray-500" htmlFor={`def-${o.name}`}>
-                  Default Value:
+                <label className="text-[11px] text-gray-500 uppercase" htmlFor={`def-${o.name}`}>
+                  DEFAULT VALUE
                 </label>
                 <input
                   id={`def-${o.name}`}
@@ -856,23 +864,11 @@ function CodeBlockPanel({
   );
 
   return (
-    <div className="space-y-5">
-      <label className="block">
-        <span className="sr-only">Description</span>
-        <textarea
-          value={cfg.description}
-          disabled={readOnly}
-          onChange={(e) => patch({ description: e.target.value })}
-          placeholder="Add description…"
-          rows={2}
-          className="w-full min-h-[52px] px-3 py-2 text-xs border border-gray-200 rounded-lg text-gray-700 placeholder:text-gray-400"
-        />
-      </label>
-
+    <div className="space-y-3">
       <section>
-        <div className="flex items-center justify-between mb-2">
-          <h3 className="text-xs font-bold text-gray-800 tracking-wide">
-            INPUT Fields
+        <div className="flex items-center justify-between mb-1.5">
+          <h3 className="text-xs font-bold text-gray-800 tracking-wide uppercase">
+            INPUT FIELDS
           </h3>
           {!readOnly && (
             <button
@@ -885,11 +881,11 @@ function CodeBlockPanel({
             </button>
           )}
         </div>
-        <div className="space-y-3">
+        <div className="space-y-2">
           {cfg.inputs.map((row) => (
             <div
               key={row.id}
-              className="flex flex-col sm:flex-row sm:items-start gap-2 p-2 rounded-lg border border-gray-100 bg-gray-50/50"
+              className="flex flex-row items-center gap-2 w-full min-w-0 p-2 rounded-lg border border-gray-100 bg-gray-50/50"
             >
               <label className="sr-only" htmlFor={`cb-in-${row.id}`}>
                 Local variable name
@@ -902,9 +898,9 @@ function CodeBlockPanel({
                   updateInput(row.id, { localName: e.target.value })
                 }
                 placeholder="variable_name"
-                className="sm:w-[120px] shrink-0 min-h-[44px] px-2 text-xs border border-gray-200 rounded-lg font-mono"
+                className="flex-1 min-w-[120px] min-h-[44px] px-2 text-xs border border-gray-200 rounded-lg font-mono"
               />
-              <div className="flex-1 min-w-0 flex items-start gap-1">
+              <div className="flex-[2] min-w-0 flex items-center gap-1">
                 <UpstreamCascadePicker
                   source={row.source}
                   groups={upstreamGroups}
@@ -914,7 +910,7 @@ function CodeBlockPanel({
                   onClear={() => updateInput(row.id, { source: null })}
                   fixedFieldLabel={row.localName || "field"}
                   fixedValueMode="text"
-                  emptyLabel="Select source…"
+                  emptyLabel="SELECT SOURCE…"
                 />
                 {!readOnly && (
                   <button
@@ -961,8 +957,8 @@ function CodeBlockPanel({
           </div>
         </div>
         {copyDone && (
-          <p className="px-3 py-1 text-[11px] text-teal-700 bg-teal-50" role="status">
-            Copied to clipboard
+          <p className="px-3 py-1 text-[11px] text-teal-700 bg-teal-50 uppercase" role="status">
+            COPIED TO CLIPBOARD
           </p>
         )}
         {codeEditor}
@@ -1003,9 +999,9 @@ function CodeBlockPanel({
       )}
 
       <section>
-        <div className="flex items-center justify-between mb-2">
-          <h3 className="text-xs font-bold text-gray-800 tracking-wide">
-            OUTPUT Fields <span className="text-red-500">*</span>
+        <div className="flex items-center justify-between mb-1.5">
+          <h3 className="text-xs font-bold text-gray-800 tracking-wide uppercase">
+            OUTPUT FIELDS <span className="text-red-500">*</span>
           </h3>
           {!readOnly && (
             <button
@@ -1168,23 +1164,11 @@ function EndPanel({
   }
 
   return (
-    <div className="space-y-4">
-      <label className="block">
-        <span className="sr-only">Description</span>
-        <textarea
-          value={cfg.description}
-          disabled={readOnly}
-          onChange={(e) => patch({ description: e.target.value })}
-          placeholder="Add description…"
-          rows={2}
-          className="w-full min-h-[52px] px-3 py-2 text-xs border border-gray-200 rounded-lg text-gray-700 placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-teal-400 focus:ring-offset-1"
-        />
-      </label>
-
-      <section className="rounded-xl border border-gray-200 bg-white p-3 sm:p-4 space-y-4">
+    <div className="space-y-3">
+      <section className="rounded-xl border border-gray-200 bg-white p-3 sm:p-4 space-y-3">
         <div>
-          <h3 className="text-sm font-semibold text-slate-800 tracking-tight">
-            Output Features Mapping
+          <h3 className="text-sm font-semibold text-slate-800 tracking-tight uppercase">
+            OUTPUT FEATURES MAPPING
           </h3>
           <p className="mt-0.5 text-[11px] text-gray-400">
             {cfg.outputs.length} mapping{cfg.outputs.length === 1 ? "" : "s"}
@@ -1225,10 +1209,10 @@ function EndPanel({
               <div className="space-y-3 min-w-0">
                 <div className="min-w-0 flex flex-col gap-1.5">
                   <label
-                    className="text-xs font-medium text-slate-700"
+                    className="text-xs font-medium text-slate-700 uppercase tracking-wide"
                     htmlFor={`end-feat-${row.id}`}
                   >
-                    FeatureName
+                    FEATURE NAME
                   </label>
                   <input
                     id={`end-feat-${row.id}`}
@@ -1255,8 +1239,8 @@ function EndPanel({
                   </datalist>
                 </div>
                 <div className="min-w-0 flex flex-col gap-1.5">
-                  <span className="text-xs font-medium text-slate-700">
-                    Source FieldMapping
+                  <span className="text-xs font-medium text-slate-700 uppercase tracking-wide">
+                    SOURCE FIELD MAPPING
                   </span>
                   <UpstreamCascadePicker
                     source={row.source}
@@ -1267,7 +1251,7 @@ function EndPanel({
                     onClear={() => updateRow(row.id, { source: null })}
                     fixedFieldLabel={row.trainingFeatureName || "output"}
                     fixedValueMode="text"
-                    emptyLabel="Set variable"
+                    emptyLabel="SET VARIABLE"
                     disabledUpstreamFieldKeys={occupiedUpstreamKeysForRow(
                       row.id
                     )}
@@ -1287,10 +1271,10 @@ function EndPanel({
               className="inline-flex items-center justify-center gap-1.5 min-h-[44px] px-3 text-xs font-medium rounded-xl
                 border border-gray-200/90 bg-slate-100/80 text-slate-700
                 hover:bg-slate-200/70 hover:border-gray-300
-                focus:outline-none focus:ring-2 focus:ring-cyan-300 focus:ring-offset-1"
+                focus:outline-none focus:ring-2 focus:ring-cyan-300 focus:ring-offset-1 uppercase tracking-wide"
             >
               <Plus size={14} strokeWidth={2.5} aria-hidden />
-              Add
+              ADD
             </button>
             <button
               type="button"
@@ -1298,10 +1282,10 @@ function EndPanel({
               className="inline-flex items-center justify-center gap-1.5 min-h-[44px] px-2 text-xs font-medium rounded-xl
                 border border-gray-200/90 bg-slate-100/80 text-slate-700
                 hover:bg-slate-200/70 hover:border-gray-300
-                focus:outline-none focus:ring-2 focus:ring-cyan-300 focus:ring-offset-1"
+                focus:outline-none focus:ring-2 focus:ring-cyan-300 focus:ring-offset-1 uppercase tracking-wide"
             >
               <PlusSquare size={14} strokeWidth={2} aria-hidden />
-              Add All from Source
+              ADD ALL FROM SOURCE
             </button>
           </div>
         )}
@@ -1444,11 +1428,11 @@ export function FgServingConfigPanel({
           <div className="min-w-0 flex-1">
             <h2
               id="fg-serving-panel-title"
-              className="text-lg font-semibold text-gray-900 leading-tight"
+              className="text-lg font-semibold text-gray-900 leading-tight uppercase tracking-tight"
             >
               {node.title}
             </h2>
-            <p className="text-xs text-gray-400 mt-1">{node.subtitle}</p>
+            <p className="text-xs text-gray-400 mt-1 uppercase tracking-wide">{node.subtitle}</p>
           </div>
           <button
             type="button"
