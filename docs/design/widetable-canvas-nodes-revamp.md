@@ -139,7 +139,19 @@ Frame Table ──▶ Feature Group(s) ──▶ Data Ingestion ──▶ Data C
 
 ---
 
-## 8. API / 枚举（实现依赖）
+## 8. Instance 生命周期管理
+
+详见 [架构说明 §12](../architecture/在线特征平台架构说明.md)。要点摘要：
+
+- **Re-trigger**：FAILED / KILLED 可手动 Trigger 重新执行；无自动重试。
+- **并发**：同一 WideTable 下同一时刻仅允许一个 RUNNING Instance；若已有 RUNNING 则 Trigger 返回 409。
+- **删除**：本期不支持单独删除 Instance；仅支持删除整个 WideTable（级联）。
+- **结果表**：平台不自动删除 Hive 结果表；Phase 2 可配置 TTL。
+
+---
+
+## 9. API / 枚举（实现依赖）
 
 - **Fillna method** 选项：由**后端枚举**提供（示例：`mean` / `median` / `constant` / `forward_fill` 等），以 API 为准。
 - Raw / Clean 表名、S3 路径、实例统计、Report 表格数据：以 **Instance / 报告 API** 返回为准。
+- **API 规格**：详见 [`docs/api/widetable-api.yaml`](../api/widetable-api.yaml)。

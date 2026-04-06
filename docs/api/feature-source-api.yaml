@@ -1,0 +1,402 @@
+openapi: 3.1.0
+info:
+  title: Feature Source API
+  version: 1.0.0-mvp
+  description: |
+    CRUD, Test, and Manage operations for Feature Source and its Region Configs.
+    Aligns with architecture doc §4.1 and 产品原型图 §3.1.
+
+servers:
+  - url: /api/v1
+
+paths:
+  /feature-sources:
+    get:
+      operationId: listFeatureSources
+      summary: List Feature Sources with optional filters
+      parameters:
+        - name: name
+          in: query
+          schema: { type: string }
+          description: Fuzzy match on FS name
+        - name: sourceType
+          in: query
+          schema: { $ref: "#/components/schemas/SourceType" }
+        - name: region
+          in: query
+          schema: { $ref: "#/components/schemas/Region" }
+        - name: creator
+          in: query
+          schema: { type: string }
+          description: Fuzzy match on creator email
+        - name: page
+          in: query
+          schema: { type: integer, default: 1 }
+        - name: pageSize
+          in: query
+          schema: { type: integer, default: 20 }
+      responses:
+        "200":
+          description: Paginated list of Feature Sources with nested Region Configs
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  total: { type: integer }
+                  page: { type: integer }
+                  pageSize: { type: integer }
+                  items:
+                    type: array
+                    items: { $ref: "#/components/schemas/FeatureSourceWithRegions" }
+    post:
+      operationId: createFeatureSource
+      summary: Create a new Feature Source (meta info only)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/FeatureSourceCreate" }
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/FeatureSource" }
+        "400":
+          description: Validation error
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
+
+  /feature-sources/{fsId}:
+    parameters:
+      - name: fsId
+        in: path
+        required: true
+        schema: { type: string }
+    get:
+      operationId: getFeatureSource
+      summary: Get Feature Source detail with all Region Configs
+      responses:
+        "200":
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/FeatureSourceWithRegions" }
+        "404":
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
+    put:
+      operationId: updateFeatureSource
+      summary: Update Feature Source meta info (name is read-only)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/FeatureSourceUpdate" }
+      responses:
+        "200":
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/FeatureSource" }
+    delete:
+      operationId: deleteFeatureSource
+      summary: Delete entire Feature Source (rejects if any Region is ONLINE)
+      responses:
+        "204":
+          description: Deleted
+        "409":
+          description: Has ONLINE Region Configs; must disable first
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
+
+  /feature-sources/{fsId}/regions:
+    parameters:
+      - name: fsId
+        in: path
+        required: true
+        schema: { type: string }
+    post:
+      operationId: addRegionConfig
+      summary: Add a new Region Config under this FS (status = DRAFT)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/RegionConfigCreate" }
+      responses:
+        "201":
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/RegionConfig" }
+
+  /feature-sources/{fsId}/regions/{regionConfigId}:
+    parameters:
+      - name: fsId
+        in: path
+        required: true
+        schema: { type: string }
+      - name: regionConfigId
+        in: path
+        required: true
+        schema: { type: string }
+    put:
+      operationId: updateRegionConfig
+      summary: Update Region Config (Input/Output Params, Call Function, Description)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/RegionConfigUpdate" }
+      responses:
+        "200":
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/RegionConfig" }
+
+  /feature-sources/{fsId}/regions/{regionConfigId}/copy:
+    parameters:
+      - name: fsId
+        in: path
+        required: true
+        schema: { type: string }
+      - name: regionConfigId
+        in: path
+        required: true
+        schema: { type: string }
+    post:
+      operationId: copyRegionConfig
+      summary: Copy a Region Config to a new Region (status = DRAFT)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [region]
+              properties:
+                region: { $ref: "#/components/schemas/Region" }
+                description: { type: string }
+      responses:
+        "201":
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/RegionConfig" }
+
+  /feature-sources/{fsId}/regions/{regionConfigId}/manage:
+    parameters:
+      - name: fsId
+        in: path
+        required: true
+        schema: { type: string }
+      - name: regionConfigId
+        in: path
+        required: true
+        schema: { type: string }
+    post:
+      operationId: manageRegionConfig
+      summary: State transition (Enable / Disable / Draft / Delete)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [action]
+              properties:
+                action:
+                  type: string
+                  enum: [enable, disable, draft, delete]
+      responses:
+        "200":
+          description: State transitioned
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/RegionConfig" }
+        "409":
+          description: Invalid state transition or has downstream dependencies
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
+
+  /feature-sources/{fsId}/test:
+    parameters:
+      - name: fsId
+        in: path
+        required: true
+        schema: { type: string }
+    post:
+      operationId: testFeatureSource
+      summary: Execute a test run for a specific Region Config
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [regionConfigId, inputParams]
+              properties:
+                regionConfigId: { type: string }
+                inputParams:
+                  type: object
+                  additionalProperties: { type: string }
+      responses:
+        "200":
+          description: Test result
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status: { type: string, enum: [success, failed] }
+                  outputParams:
+                    type: object
+                    additionalProperties: true
+                  durationMs: { type: integer }
+                  errorMessage: { type: string }
+
+  /feature-sources/{fsId}/test/history:
+    parameters:
+      - name: fsId
+        in: path
+        required: true
+        schema: { type: string }
+    get:
+      operationId: listTestHistory
+      summary: List test history for this Feature Source
+      parameters:
+        - name: region
+          in: query
+          schema: { $ref: "#/components/schemas/Region" }
+        - name: operator
+          in: query
+          schema: { type: string }
+        - name: status
+          in: query
+          schema: { type: string, enum: [success, failed] }
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items:
+                    type: array
+                    items: { $ref: "#/components/schemas/TestHistoryEntry" }
+
+components:
+  schemas:
+    SourceType:
+      type: string
+      enum: [HBase, Redis, gRPC, GraphDB]
+      description: MVP data source types (MySQL, Kafka reserved for Phase 2)
+
+    Region:
+      type: string
+      enum: [ID, TH, MX, SG, PH, VN, SHOPEE_SG]
+
+    RegionConfigStatus:
+      type: string
+      enum: [DRAFT, ENABLE, DISABLE]
+      description: |
+        Internal enum. Display labels: DRAFT, ONLINE (for ENABLE), OFFLINE (for DISABLE).
+
+    FeatureSource:
+      type: object
+      properties:
+        id: { type: string }
+        name: { type: string }
+        sourceType: { $ref: "#/components/schemas/SourceType" }
+        dataLatency: { type: string, enum: [Online, Nearline, Offline] }
+        description: { type: string }
+        creator: { type: string }
+        createTime: { type: string, format: date-time }
+
+    FeatureSourceCreate:
+      type: object
+      required: [name, sourceType, dataLatency]
+      properties:
+        name: { type: string, pattern: "^[a-zA-Z_][a-zA-Z0-9_]*$" }
+        sourceType: { $ref: "#/components/schemas/SourceType" }
+        dataLatency: { type: string, enum: [Online, Nearline, Offline] }
+        description: { type: string }
+
+    FeatureSourceUpdate:
+      type: object
+      properties:
+        sourceType: { $ref: "#/components/schemas/SourceType" }
+        dataLatency: { type: string, enum: [Online, Nearline, Offline] }
+        description: { type: string }
+
+    RegionConfig:
+      type: object
+      properties:
+        id: { type: string }
+        featureSourceId: { type: string }
+        region: { $ref: "#/components/schemas/Region" }
+        callFunction: { type: string }
+        inputParams:
+          type: array
+          items: { type: string }
+        outputParams:
+          type: array
+          items: { type: string }
+        status: { $ref: "#/components/schemas/RegionConfigStatus" }
+        updateTime: { type: string, format: date-time }
+
+    RegionConfigCreate:
+      type: object
+      required: [region]
+      properties:
+        region: { $ref: "#/components/schemas/Region" }
+        callFunction: { type: string }
+        inputParams:
+          type: array
+          items: { type: string }
+        outputParams:
+          type: array
+          items: { type: string }
+        description: { type: string }
+
+    RegionConfigUpdate:
+      type: object
+      properties:
+        callFunction: { type: string }
+        inputParams:
+          type: array
+          items: { type: string }
+        outputParams:
+          type: array
+          items: { type: string }
+        description: { type: string }
+
+    FeatureSourceWithRegions:
+      allOf:
+        - $ref: "#/components/schemas/FeatureSource"
+        - type: object
+          properties:
+            regionConfigs:
+              type: array
+              items: { $ref: "#/components/schemas/RegionConfig" }
+
+    TestHistoryEntry:
+      type: object
+      properties:
+        id: { type: string }
+        region: { $ref: "#/components/schemas/Region" }
+        createTime: { type: string, format: date-time }
+        operator: { type: string }
+        status: { type: string, enum: [success, failed] }
+        inputParams: { type: object, additionalProperties: true }
+        outputParams: { type: object, additionalProperties: true }
+        durationMs: { type: integer }
+
+    ErrorResponse:
+      type: object
+      properties:
+        code: { type: string }
+        message: { type: string }
+        details: { type: object }

@@ -113,7 +113,7 @@ Region Tag 的颜色由该 Region 对应二级子行的 **Status** 字段动态�
 |------|----------|------|
 | **Add** | 始终可用 | 打开快速新增弹窗（Feature Source、Source Type、Data Latency 预填并锁定，见 §7.2） |
 | **Test** | 始终可用 | 打开 Test 弹窗（见 §8） |
-| **Delete** | 始终可用 | 若该行存在子行，弹出 Warning 告警弹窗（见 §9.1），阻止删除；若无子行则直接删除 |
+| **Delete** | 始终可用 | 点击时校验所有二级 Region Config 的 Status：若存在任一 **ENABLE（ONLINE）** 状态的 Region，弹出 Warning 告警弹窗（见 §9.1）阻止删除并提示"需先将所有 Region Config 置为 OFFLINE 或 DRAFT 后才可删除"；若均为 DRAFT/DISABLE 则弹出 PopConfirm 二次确认后删除 |
 
 ---
 
@@ -164,19 +164,23 @@ Region Tag 的颜色由该 Region 对应二级子行的 **Status** 字段动态�
 
 ## 5. 状态机
 
+> **Source of Truth**：以《产品原型图》§3.1.0 为准。
+
 ```
-         Online
-  DRAFT ──────────► ENABLE
-    ▲                  │
-    │                  │ Offline
-    │     Delete       ▼
-    └──────────── DISABLE
-         (Delete 也可在此状态执行)
+  ┌──── edit & save ────┐
+  ▼                     │
+DRAFT ── Test & Enable ──► ENABLE
+  ▲                          │
+  │        Draft             │ Disable
+  └──────────── DISABLE ◄────┘
+
+  DRAFT ── Delete ──► (Deleted)
+  DISABLE ── Delete ──► (Deleted)
 ```
 
 | 状态 | 展示文案 | 颜色 |
 |------|----------|------|
-| DRAFT | DRAFT | 灰色 |
+| DRAFT | DRAFT | 灰色（`slate`） |
 | ENABLE | ONLINE | 绿色（`emerald`） |
 | DISABLE | OFFLINE | 红色（`red`） |
 
@@ -184,8 +188,9 @@ Region Tag 的颜色由该 Region 对应二级子行的 **Status** 字段动态�
 
 | 操作 | 可执行状态 | 目标状态 |
 |------|------------|----------|
-| Online | DRAFT | ENABLE |
-| Offline | ENABLE | DISABLE |
+| Enable | DRAFT | ENABLE |
+| Disable | ENABLE | DISABLE |
+| Draft | DISABLE | DRAFT |
 | Delete | DRAFT 或 DISABLE | 删除（需无下游依赖） |
 
 ---
@@ -203,7 +208,7 @@ Region Tag 的颜色由该 Region 对应二级子行的 **Status** 字段动态�
 
 ### 6.3 操作项说明
 
-#### Online（启用）
+#### Enable（启用）
 
 | 属性 | 说明 |
 |------|------|
@@ -211,7 +216,7 @@ Region Tag 的颜色由该 Region 对应二级子行的 **Status** 字段动态�
 | 不可用表现 | 文字变灰，右侧提示"DRAFT only"，按钮禁用 |
 | 执行结果 | 状态变更为 ENABLE，UpdateTime 更新为当前时间 |
 
-#### Offline（下线）
+#### Disable（下线）
 
 | 属性 | 说明 |
 |------|------|
@@ -220,10 +225,18 @@ Region Tag 的颜色由该 Region 对应二级子行的 **Status** 字段动态�
 | 执行流程 | 点击后展示 **PopConfirm 二次确认面板**（在同一下拉容器内切换） |
 
 **PopConfirm 内容：**
-- 标题：`Confirm Offline?`
+- 标题：`Confirm Disable?`
 - 说明：`{Region} will be set to OFFLINE and become unavailable.`
-- 按钮：`Cancel`（取消，回到菜单主视图）| `Offline`（确认执行）
+- 按钮：`Cancel`（取消，回到菜单主视图）| `Disable`（确认执行）
 - 确认后：状态变更为 DISABLE，UpdateTime 更新，下拉菜单关闭
+
+#### Draft（回到草稿）
+
+| 属性 | 说明 |
+|------|------|
+| 可用条件 | 当前状态为 **DISABLE** |
+| 不可用表现 | 状态非 DISABLE 时按钮禁用并灰显，提示"DISABLE only" |
+| 执行结果 | 状态变更为 DRAFT，UpdateTime 更新为当前时间 |
 
 #### Delete（删除）
 
@@ -406,10 +419,10 @@ JSON 以 `<pre>` 格式化展示，支持横向滚动，最大高度限制防止
 
 ### 9.1 一级行 Delete 警告
 
-- **触发条件**：点击一级行 Action 列 Delete，且该行存在子行（subRows.length > 0）。
+- **触发条件**：点击一级行 Action 列 Delete，且该行存在任一 **ENABLE（ONLINE）** 状态的 Region Config。
 - **弹窗类型**：Warning（橙色警告图标）
 - **标题**：`Cannot Delete Feature Source`
-- **内容**：说明该 Feature Source 仍有 N 个 Region 配置，需先删除所有子行；并以列表形式展示各子行的 Region + Status。
+- **内容**：说明该 Feature Source 仍有 N 个 ONLINE 状态的 Region 配置，需先将所有 Region Config 置为 OFFLINE 或 DRAFT 后才可删除；以列表形式展示各 ONLINE 子行的 Region + Status。
 - **关闭方式**：点击"Got it"按钮 / 点击蒙层 / 按 Esc 键。
 
 ### 9.2 子行 Delete 错误提示
@@ -449,12 +462,19 @@ JSON 以 `<pre>` 格式化展示，支持横向滚动，最大高度限制防止
 
 ### Source Type
 
+**MVP（本期）**：
+
 | 值 | 图标 |
 |----|------|
 | HBase | Database 图标 |
 | gRPC | Zap 图标 |
 | Redis | Database 图标 |
 | GraphDB | Globe 图标 |
+
+**Phase 2 扩展**（本期不在下拉选项中展示）：
+
+| 值 | 图标 |
+|----|------|
 | MySQL | — |
 | Kafka | — |
 

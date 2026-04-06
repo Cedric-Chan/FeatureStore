@@ -1,0 +1,567 @@
+openapi: 3.1.0
+info:
+  title: Feature WideTable API
+  version: 1.0.0-mvp
+  description: |
+    CRUD, Canvas config, Instance management, and Trigger/Kill for Feature WideTable.
+    Aligns with architecture doc §5 and 産品原型図 §3.5.
+
+servers:
+  - url: /api/v1
+
+paths:
+  /wide-tables:
+    get:
+      operationId: listWideTables
+      summary: List WideTables with nested instances
+      parameters:
+        - name: name
+          in: query
+          schema: { type: string }
+        - name: region
+          in: query
+          schema: { type: string }
+        - name: owner
+          in: query
+          schema: { type: string }
+        - name: page
+          in: query
+          schema: { type: integer, default: 1 }
+        - name: pageSize
+          in: query
+          schema: { type: integer, default: 20 }
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  total: { type: integer }
+                  page: { type: integer }
+                  pageSize: { type: integer }
+                  items:
+                    type: array
+                    items: { $ref: "#/components/schemas/WideTableWithInstances" }
+
+    post:
+      operationId: createWideTable
+      summary: Create a new WideTable + initial Instance V1 (DRAFT)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/WideTableCreate" }
+      responses:
+        "201":
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/WideTableWithInstances" }
+
+  /wide-tables/{wtId}:
+    parameters:
+      - name: wtId
+        in: path
+        required: true
+        schema: { type: string }
+    get:
+      operationId: getWideTable
+      summary: Get WideTable detail with all instances
+      responses:
+        "200":
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/WideTableWithInstances" }
+    put:
+      operationId: updateWideTable
+      summary: Update WideTable meta (Owner, Biz Team, Description; Name and Region read-only)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/WideTableUpdate" }
+      responses:
+        "200":
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/WideTable" }
+    delete:
+      operationId: deleteWideTable
+      summary: Delete entire WideTable (PopConfirm on frontend)
+      responses:
+        "204":
+          description: Deleted
+
+  /wide-tables/{wtId}/instances:
+    parameters:
+      - name: wtId
+        in: path
+        required: true
+        schema: { type: string }
+    post:
+      operationId: addInstance
+      summary: Add a new Instance Version (auto-increment, status = DRAFT)
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                description: { type: string }
+      responses:
+        "201":
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Instance" }
+
+  /wide-tables/{wtId}/instances/{instanceId}:
+    parameters:
+      - name: wtId
+        in: path
+        required: true
+        schema: { type: string }
+      - name: instanceId
+        in: path
+        required: true
+        schema: { type: string }
+    get:
+      operationId: getInstance
+      summary: Get Instance detail
+      responses:
+        "200":
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Instance" }
+
+  /wide-tables/{wtId}/instances/{instanceId}/copy:
+    parameters:
+      - name: wtId
+        in: path
+        required: true
+        schema: { type: string }
+      - name: instanceId
+        in: path
+        required: true
+        schema: { type: string }
+    post:
+      operationId: copyInstance
+      summary: Copy Instance as new version (auto-increment, DRAFT, copies canvas config)
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                description: { type: string }
+      responses:
+        "201":
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Instance" }
+
+  /wide-tables/{wtId}/instances/{instanceId}/canvas:
+    parameters:
+      - name: wtId
+        in: path
+        required: true
+        schema: { type: string }
+      - name: instanceId
+        in: path
+        required: true
+        schema: { type: string }
+    get:
+      operationId: getCanvasConfig
+      summary: Get canvas DAG config for this instance
+      responses:
+        "200":
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/CanvasConfig" }
+    put:
+      operationId: saveCanvasConfig
+      summary: Save canvas DAG config (Save button)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/CanvasConfig" }
+      responses:
+        "200":
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/CanvasConfig" }
+
+  /wide-tables/{wtId}/instances/{instanceId}/check:
+    parameters:
+      - name: wtId
+        in: path
+        required: true
+        schema: { type: string }
+      - name: instanceId
+        in: path
+        required: true
+        schema: { type: string }
+    post:
+      operationId: checkInstance
+      summary: Validate canvas config (Check button)
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  valid: { type: boolean }
+                  errors:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        nodeId: { type: string }
+                        field: { type: string }
+                        message: { type: string }
+
+  /wide-tables/{wtId}/instances/{instanceId}/submit:
+    parameters:
+      - name: wtId
+        in: path
+        required: true
+        schema: { type: string }
+      - name: instanceId
+        in: path
+        required: true
+        schema: { type: string }
+    post:
+      operationId: submitInstance
+      summary: Submit instance (DRAFT -> READY; requires passed Check)
+      responses:
+        "200":
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Instance" }
+        "409":
+          description: Check not passed or invalid state
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
+
+  /wide-tables/{wtId}/instances/{instanceId}/trigger:
+    parameters:
+      - name: wtId
+        in: path
+        required: true
+        schema: { type: string }
+      - name: instanceId
+        in: path
+        required: true
+        schema: { type: string }
+    post:
+      operationId: triggerInstance
+      summary: Trigger execution (READY/SUCCESS/FAILED -> RUNNING)
+      responses:
+        "200":
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Instance" }
+        "409":
+          description: Instance not in triggerable state
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
+
+  /wide-tables/{wtId}/instances/{instanceId}/kill:
+    parameters:
+      - name: wtId
+        in: path
+        required: true
+        schema: { type: string }
+      - name: instanceId
+        in: path
+        required: true
+        schema: { type: string }
+    post:
+      operationId: killInstance
+      summary: Kill running instance (RUNNING -> KILLED)
+      responses:
+        "200":
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Instance" }
+        "409":
+          description: Instance not RUNNING
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
+
+  /wide-tables/{wtId}/instances/{instanceId}/report:
+    parameters:
+      - name: wtId
+        in: path
+        required: true
+        schema: { type: string }
+      - name: instanceId
+        in: path
+        required: true
+        schema: { type: string }
+    get:
+      operationId: getDataReport
+      summary: Get Data Report (Raw or Clean)
+      parameters:
+        - name: type
+          in: query
+          required: true
+          schema: { type: string, enum: [raw, clean] }
+        - name: search
+          in: query
+          schema: { type: string }
+          description: Filter by column name
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  columns:
+                    type: array
+                    items: { $ref: "#/components/schemas/ReportColumn" }
+
+  /wide-tables/{wtId}/instances/{instanceId}/report/export:
+    parameters:
+      - name: wtId
+        in: path
+        required: true
+        schema: { type: string }
+      - name: instanceId
+        in: path
+        required: true
+        schema: { type: string }
+    get:
+      operationId: exportDataReport
+      summary: Export Data Report as CSV
+      parameters:
+        - name: type
+          in: query
+          required: true
+          schema: { type: string, enum: [raw, clean] }
+      responses:
+        "200":
+          description: CSV file download
+          content:
+            text/csv:
+              schema: { type: string }
+
+  /wide-tables/{wtId}/instances/{instanceId}/execute-config:
+    parameters:
+      - name: wtId
+        in: path
+        required: true
+        schema: { type: string }
+      - name: instanceId
+        in: path
+        required: true
+        schema: { type: string }
+    get:
+      operationId: getExecuteConfig
+      summary: Get Execute Config for this instance
+      responses:
+        "200":
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ExecuteConfig" }
+    put:
+      operationId: updateExecuteConfig
+      summary: Update Execute Config
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ExecuteConfig" }
+      responses:
+        "200":
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ExecuteConfig" }
+
+components:
+  schemas:
+    InstanceStatus:
+      type: string
+      enum: [DRAFT, READY, RUNNING, SUCCESS, FAILED, KILLED]
+
+    WideTable:
+      type: object
+      properties:
+        id: { type: string }
+        name: { type: string }
+        region: { type: string }
+        owner:
+          type: array
+          items: { type: string }
+        bizTeam: { type: string }
+        description: { type: string }
+        updateTime: { type: string, format: date-time }
+
+    WideTableCreate:
+      type: object
+      required: [name, region, owner, bizTeam]
+      properties:
+        name: { type: string }
+        region: { type: string }
+        owner:
+          type: array
+          items: { type: string }
+        bizTeam: { type: string }
+        description: { type: string }
+
+    WideTableUpdate:
+      type: object
+      properties:
+        owner:
+          type: array
+          items: { type: string }
+        bizTeam: { type: string }
+        description: { type: string }
+
+    Instance:
+      type: object
+      properties:
+        id: { type: string }
+        wideTableId: { type: string }
+        version: { type: integer }
+        status: { $ref: "#/components/schemas/InstanceStatus" }
+        creator: { type: string }
+        createTime: { type: string, format: date-time }
+        startTime: { type: string, format: date-time }
+        endTime: { type: string, format: date-time }
+        rowsCnt: { type: integer }
+        columnsCnt: { type: integer }
+        resultTable: { type: string }
+        description: { type: string }
+
+    WideTableWithInstances:
+      allOf:
+        - $ref: "#/components/schemas/WideTable"
+        - type: object
+          properties:
+            instances:
+              type: array
+              items: { $ref: "#/components/schemas/Instance" }
+
+    CanvasConfig:
+      type: object
+      description: Serializable DAG for WideTable canvas
+      properties:
+        frameTable: { $ref: "#/components/schemas/FrameTableNode" }
+        featureGroups:
+          type: array
+          items: { $ref: "#/components/schemas/FGCanvasNode" }
+        dataIngestion: { $ref: "#/components/schemas/DataIngestionNode" }
+        dataCleaning: { $ref: "#/components/schemas/DataCleaningNode" }
+
+    FrameTableNode:
+      type: object
+      properties:
+        dataServer: { type: string }
+        tableSchema: { type: string }
+        tableName: { type: string }
+        primaryKeyColumns:
+          type: array
+          items: { type: string }
+        eventTimeColumn: { type: string }
+        columns:
+          type: array
+          items: { type: string }
+        customFilter: { type: string }
+
+    FGCanvasNode:
+      type: object
+      properties:
+        nodeId: { type: string }
+        featureGroupId: { type: string }
+        featureGroupName: { type: string }
+        primaryKeyColumn: { type: string }
+        eventTimeColumn: { type: string }
+        columns:
+          type: array
+          items: { type: string }
+        joinType:
+          type: string
+          enum: [LeftLatestJoin, InnerLatestJoin]
+        joinConditions:
+          type: array
+          items:
+            type: object
+            properties:
+              frameTableColumn: { type: string }
+              operator: { type: string }
+              fgColumn: { type: string }
+
+    DataIngestionNode:
+      type: object
+      properties:
+        rawDataResult: { type: string }
+        datePartition: { type: string }
+        rawDataReport: { type: string }
+
+    DataCleaningNode:
+      type: object
+      properties:
+        enabled: { type: boolean, default: false }
+        fillnaRules:
+          type: array
+          items:
+            type: object
+            properties:
+              method: { type: string }
+              features:
+                type: array
+                items: { type: string }
+        valueMappingRules:
+          type: array
+          items:
+            type: object
+            properties:
+              featureName: { type: string }
+              sql: { type: string }
+        cleanDataResult: { type: string }
+        cleanDataReport: { type: string }
+
+    ExecuteConfig:
+      type: object
+      properties:
+        resource:
+          type: string
+          enum: [Normal, High]
+          default: Normal
+        queuePriority:
+          type: string
+          enum: [Low, Medium, High]
+          default: Low
+        scheduler:
+          type: string
+          enum: [ONCE, Cron]
+          default: ONCE
+        cronExpression:
+          type: string
+          description: Required when scheduler is Cron
+
+    ReportColumn:
+      type: object
+      properties:
+        columnName: { type: string }
+        cnt: { type: integer }
+        cntUniq: { type: integer }
+        max: { type: number }
+        min: { type: number }
+        avg: { type: number }
+        zeroCnt: { type: integer }
+        nullCnt: { type: integer }
+        negCnt: { type: integer }
+
+    ErrorResponse:
+      type: object
+      properties:
+        code: { type: string }
+        message: { type: string }
+        details: { type: object }

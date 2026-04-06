@@ -1,0 +1,528 @@
+openapi: 3.1.0
+info:
+  title: Feature Group API
+  version: 1.0.0-mvp
+  description: |
+    CRUD, Publish, Sync, Config Diff, and Serving Canvas operations for Feature Group.
+    Aligns with architecture doc §4.3/§4.5 and 産品原型図 §3.3.
+
+servers:
+  - url: /api/v1
+
+paths:
+  /feature-groups:
+    get:
+      operationId: listFeatureGroups
+      summary: List Feature Groups with optional filters
+      parameters:
+        - name: name
+          in: query
+          schema: { type: string }
+        - name: region
+          in: query
+          schema: { type: string }
+        - name: bizTeam
+          in: query
+          schema: { type: string }
+        - name: status
+          in: query
+          schema: { $ref: "#/components/schemas/FGStatus" }
+        - name: module
+          in: query
+          schema: { type: string }
+        - name: page
+          in: query
+          schema: { type: integer, default: 1 }
+        - name: pageSize
+          in: query
+          schema: { type: integer, default: 20 }
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  total: { type: integer }
+                  page: { type: integer }
+                  pageSize: { type: integer }
+                  items:
+                    type: array
+                    items: { $ref: "#/components/schemas/FeatureGroupSummary" }
+
+    post:
+      operationId: createFeatureGroup
+      summary: Create a new Feature Group (Basic Info only, status = DRAFT)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/FGBasicInfoCreate" }
+      responses:
+        "201":
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/FeatureGroupDetail" }
+
+  /feature-groups/{fgId}:
+    parameters:
+      - name: fgId
+        in: path
+        required: true
+        schema: { type: string }
+    get:
+      operationId: getFeatureGroup
+      summary: Get Feature Group full detail (Basic + Training + Serving + Features)
+      responses:
+        "200":
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/FeatureGroupDetail" }
+    delete:
+      operationId: deleteFeatureGroup
+      summary: Soft-delete Feature Group (DRAFT only)
+      responses:
+        "204":
+          description: Deleted
+        "409":
+          description: Not in DRAFT status
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
+
+  /feature-groups/{fgId}/basic-info:
+    parameters:
+      - name: fgId
+        in: path
+        required: true
+        schema: { type: string }
+    put:
+      operationId: updateBasicInfo
+      summary: Update Basic Info (does NOT trigger Online Changing)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/FGBasicInfoUpdate" }
+      responses:
+        "200":
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/FeatureGroupDetail" }
+
+  /feature-groups/{fgId}/training-config:
+    parameters:
+      - name: fgId
+        in: path
+        required: true
+        schema: { type: string }
+    put:
+      operationId: updateTrainingConfig
+      summary: Save Training Config (triggers Online Changing if FG is Online)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/TrainingConfig" }
+      responses:
+        "200":
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/FeatureGroupDetail" }
+
+  /feature-groups/{fgId}/serving-config:
+    parameters:
+      - name: fgId
+        in: path
+        required: true
+        schema: { type: string }
+    get:
+      operationId: getServingConfig
+      summary: Get current Serving Config (canvas model)
+      responses:
+        "200":
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ServingConfig" }
+    put:
+      operationId: updateServingConfig
+      summary: Save Serving Config canvas state
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ServingConfig" }
+      responses:
+        "200":
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ServingConfig" }
+
+  /feature-groups/{fgId}/serving-config/publish:
+    parameters:
+      - name: fgId
+        in: path
+        required: true
+        schema: { type: string }
+    post:
+      operationId: publishServingConfig
+      summary: Publish Serving Config (requires passed Test Run; triggers Online Changing)
+      responses:
+        "200":
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/FeatureGroupDetail" }
+        "409":
+          description: Test Run not passed or FG not in valid state
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
+
+  /feature-groups/{fgId}/serving-config/test-run:
+    parameters:
+      - name: fgId
+        in: path
+        required: true
+        schema: { type: string }
+    post:
+      operationId: servingTestRun
+      summary: Execute a Serving Test Run
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                fileFormat: { type: string }
+                fileUrl: { type: string }
+                filePwd: { type: string }
+                requestSource: { type: string }
+                meta: { type: object, additionalProperties: true }
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status: { type: string, enum: [success, failed] }
+                  result: { type: object, additionalProperties: true }
+                  durationMs: { type: integer }
+
+  /feature-groups/{fgId}/sync:
+    parameters:
+      - name: fgId
+        in: path
+        required: true
+        schema: { type: string }
+    post:
+      operationId: syncFeatureGroup
+      summary: Manually refresh latest Training Config metadata
+      responses:
+        "200":
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/FeatureGroupDetail" }
+        "409":
+          description: FG is in Online Changing state (sync disabled)
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
+
+  /feature-groups/{fgId}/manage:
+    parameters:
+      - name: fgId
+        in: path
+        required: true
+        schema: { type: string }
+    post:
+      operationId: manageFeatureGroup
+      summary: State transition (Online / Draft / Delete)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [action]
+              properties:
+                action:
+                  type: string
+                  enum: [online, draft, delete]
+                  description: |
+                    online: Draft->Online (T+S configured) or OnlineChanging->Online (Admin, generates new FG Version).
+                    draft: Online->Draft (Admin).
+                    delete: Draft only (soft delete).
+      responses:
+        "200":
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/FeatureGroupDetail" }
+        "409":
+          description: Invalid state transition or missing config
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
+
+  /feature-groups/{fgId}/config-diff:
+    parameters:
+      - name: fgId
+        in: path
+        required: true
+        schema: { type: string }
+    get:
+      operationId: getConfigDiff
+      summary: Get Old vs New config diff (for Online Changing -> Online confirmation)
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  oldConfig: { type: object, additionalProperties: true }
+                  newConfig: { type: object, additionalProperties: true }
+
+  /feature-groups/{fgId}/versions:
+    parameters:
+      - name: fgId
+        in: path
+        required: true
+        schema: { type: string }
+    get:
+      operationId: listFGVersions
+      summary: List FG version history (audit snapshots)
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items:
+                    type: array
+                    items: { $ref: "#/components/schemas/FGVersionSnapshot" }
+
+  /feature-groups/{fgId}/versions/{versionId}:
+    parameters:
+      - name: fgId
+        in: path
+        required: true
+        schema: { type: string }
+      - name: versionId
+        in: path
+        required: true
+        schema: { type: string }
+    get:
+      operationId: getFGVersionDetail
+      summary: Get a specific version snapshot detail
+      responses:
+        "200":
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/FGVersionSnapshot" }
+
+  /feature-groups/{fgId}/features:
+    parameters:
+      - name: fgId
+        in: path
+        required: true
+        schema: { type: string }
+    get:
+      operationId: listFeatures
+      summary: List features in this FG with availability info
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items:
+                    type: array
+                    items: { $ref: "#/components/schemas/Feature" }
+
+  /feature-groups/{fgId}/copy:
+    parameters:
+      - name: fgId
+        in: path
+        required: true
+        schema: { type: string }
+    post:
+      operationId: copyFeatureGroup
+      summary: Copy FG as a new DRAFT (Basic Info only in modal)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/FGBasicInfoCreate" }
+      responses:
+        "201":
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/FeatureGroupDetail" }
+
+components:
+  schemas:
+    FGStatus:
+      type: string
+      enum: [DRAFT, ONLINE, ONLINE_CHANGING]
+
+    FeatureGroupSummary:
+      type: object
+      properties:
+        id: { type: string }
+        name: { type: string }
+        status: { $ref: "#/components/schemas/FGStatus" }
+        region: { type: string }
+        bizTeam: { type: string }
+        module: { type: string }
+        owner:
+          type: array
+          items: { type: string }
+        trainingConfigured: { type: boolean }
+        servingConfigured: { type: boolean }
+        createTime: { type: string, format: date-time }
+        updateTime: { type: string, format: date-time }
+        description: { type: string }
+
+    FeatureGroupDetail:
+      type: object
+      properties:
+        id: { type: string }
+        name: { type: string }
+        status: { $ref: "#/components/schemas/FGStatus" }
+        basicInfo: { $ref: "#/components/schemas/FGBasicInfo" }
+        trainingConfig: { $ref: "#/components/schemas/TrainingConfig" }
+        servingConfig: { $ref: "#/components/schemas/ServingConfig" }
+        features:
+          type: array
+          items: { $ref: "#/components/schemas/Feature" }
+        createTime: { type: string, format: date-time }
+        updateTime: { type: string, format: date-time }
+
+    FGBasicInfo:
+      type: object
+      properties:
+        name: { type: string }
+        module: { type: string }
+        entity:
+          type: array
+          items: { type: string }
+        latency: { type: string }
+        region: { type: string }
+        bizTeam: { type: string }
+        owner:
+          type: array
+          items: { type: string }
+        description: { type: string }
+
+    FGBasicInfoCreate:
+      type: object
+      required: [name, module, entity, region, bizTeam, owner]
+      properties:
+        name: { type: string }
+        module: { type: string }
+        entity:
+          type: array
+          items: { type: string }
+        latency: { type: string }
+        region: { type: string }
+        bizTeam: { type: string }
+        owner:
+          type: array
+          items: { type: string }
+        description: { type: string }
+
+    FGBasicInfoUpdate:
+      type: object
+      properties:
+        module: { type: string }
+        entity:
+          type: array
+          items: { type: string }
+        latency: { type: string }
+        bizTeam: { type: string }
+        owner:
+          type: array
+          items: { type: string }
+        description: { type: string }
+
+    TrainingConfig:
+      type: object
+      properties:
+        dataServer: { type: string }
+        tableSchema: { type: string }
+        tableName: { type: string }
+        entitiesColumns:
+          type: array
+          items: { type: string }
+        datePartitionColumn: { type: string }
+        customFilter: { type: string }
+        updateFrequency:
+          type: string
+          enum: [Daily, Weekly, Monthly]
+
+    ServingConfig:
+      type: object
+      description: Serializable canvas model for the Serving workflow
+      properties:
+        nodes:
+          type: array
+          items: { $ref: "#/components/schemas/ServingCanvasNode" }
+        edges:
+          type: array
+          items:
+            type: object
+            properties:
+              from: { type: string }
+              to: { type: string }
+        testRunPassed: { type: boolean }
+
+    ServingCanvasNode:
+      type: object
+      properties:
+        id: { type: string }
+        kind:
+          type: string
+          enum: [start, feature_source, transformation, end]
+        title: { type: string }
+        config: { type: object, additionalProperties: true }
+        x: { type: number }
+        y: { type: number }
+
+    Feature:
+      type: object
+      properties:
+        name: { type: string }
+        dataType: { type: string }
+        trainingAvailability: { type: boolean }
+        servingAvailability: { type: boolean }
+        source:
+          type: string
+          enum: [MAPPED, CUSTOM]
+          description: MAPPED = matched to offline column; CUSTOM = serving-only
+        offlineColumnName:
+          type: string
+          description: Offline column name for mapped features (null for CUSTOM)
+        partition: { type: string }
+
+    FGVersionSnapshot:
+      type: object
+      properties:
+        versionId: { type: string }
+        version: { type: integer }
+        createdAt: { type: string, format: date-time }
+        createdBy: { type: string }
+        publishedAt: { type: string, format: date-time }
+        basicInfo: { $ref: "#/components/schemas/FGBasicInfo" }
+        trainingConfig: { $ref: "#/components/schemas/TrainingConfig" }
+        servingConfig: { $ref: "#/components/schemas/ServingConfig" }
+
+    ErrorResponse:
+      type: object
+      properties:
+        code: { type: string }
+        message: { type: string }
+        details: { type: object }

@@ -1,0 +1,173 @@
+openapi: 3.1.0
+info:
+  title: Feature Map API
+  version: 1.0.0-mvp
+  description: |
+    Search, Feature Cart, and read-only Feature asset catalog.
+    Aligns with architecture doc §4.4 and 産品原型図 §3.4.
+    FeatureMap is read-only — data is synced from FeatureGroup registration/publish.
+
+servers:
+  - url: /api/v1
+
+paths:
+  /feature-map/search:
+    get:
+      operationId: searchFeatures
+      summary: Search features across all registered Feature Groups
+      parameters:
+        - name: keyword
+          in: query
+          schema: { type: string }
+          description: Full-text search on feature name, FG name, or description
+        - name: entity
+          in: query
+          schema: { type: string }
+        - name: bizTeam
+          in: query
+          schema: { type: string }
+          description: Filter by biz team (visibility filter, not permission wall)
+        - name: module
+          in: query
+          schema: { type: string }
+        - name: region
+          in: query
+          schema: { type: string }
+        - name: featureGroup
+          in: query
+          schema: { type: string }
+        - name: trainingAvailable
+          in: query
+          schema: { type: boolean }
+        - name: servingAvailable
+          in: query
+          schema: { type: boolean }
+        - name: page
+          in: query
+          schema: { type: integer, default: 1 }
+        - name: pageSize
+          in: query
+          schema: { type: integer, default: 20 }
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  total: { type: integer }
+                  page: { type: integer }
+                  pageSize: { type: integer }
+                  items:
+                    type: array
+                    items: { $ref: "#/components/schemas/FeatureMapEntry" }
+
+  /feature-map/modules:
+    get:
+      operationId: listModules
+      summary: Get module tree for left navigation (Module > FG hierarchy)
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  modules:
+                    type: array
+                    items: { $ref: "#/components/schemas/ModuleNode" }
+
+  /feature-map/feature-groups/{fgId}:
+    parameters:
+      - name: fgId
+        in: path
+        required: true
+        schema: { type: string }
+    get:
+      operationId: getFeatureGroupInMap
+      summary: Get FG summary with all features (read-only view for FeatureMap)
+      responses:
+        "200":
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/FeatureGroupMapView" }
+
+  /feature-map/cart:
+    post:
+      operationId: submitFeatureCart
+      summary: Submit selected features from cart to a target canvas
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [featureIds, target]
+              properties:
+                featureIds:
+                  type: array
+                  items: { type: string }
+                  description: List of feature IDs to submit
+                target:
+                  type: string
+                  enum: [training_widetable, serving_workflow]
+                  description: |
+                    training_widetable: redirect to WideTable canvas creation.
+                    serving_workflow: redirect to Serving Workflow canvas creation.
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  redirectUrl: { type: string }
+                  featureGroupIds:
+                    type: array
+                    items: { type: string }
+                    description: Deduplicated FG IDs from the selected features
+
+components:
+  schemas:
+    FeatureMapEntry:
+      type: object
+      properties:
+        featureId: { type: string }
+        featureName: { type: string }
+        dataType: { type: string }
+        featureGroupId: { type: string }
+        featureGroupName: { type: string }
+        module: { type: string }
+        entity: { type: string }
+        region: { type: string }
+        trainingAvailability: { type: boolean }
+        servingAvailability: { type: boolean }
+        updateTime: { type: string, format: date-time }
+
+    ModuleNode:
+      type: object
+      properties:
+        name: { type: string }
+        featureCount: { type: integer }
+        featureGroups:
+          type: array
+          items:
+            type: object
+            properties:
+              id: { type: string }
+              name: { type: string }
+              featureCount: { type: integer }
+
+    FeatureGroupMapView:
+      type: object
+      properties:
+        id: { type: string }
+        name: { type: string }
+        module: { type: string }
+        entity: { type: string }
+        region: { type: string }
+        bizTeam: { type: string }
+        description: { type: string }
+        features:
+          type: array
+          items: { $ref: "#/components/schemas/FeatureMapEntry" }

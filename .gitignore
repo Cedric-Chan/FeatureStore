@@ -1,1 +1,4 @@
 .DS_Store
+
+# Machine-local symlink to global Cursor skill (~/.cursor/skills/product-manager-platform)
+.cursor/skills/product-manager-platform

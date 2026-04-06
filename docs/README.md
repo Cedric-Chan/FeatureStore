@@ -49,7 +49,21 @@
 
 ---
 
-## 5. 前端交互示意（可编辑）
+## 5. API 规格（OpenAPI）
+
+**路径**：`docs/api/`
+
+| 文件 | 说明 |
+|------|------|
+| [api/feature-source-api.yaml](api/feature-source-api.yaml) | Feature Source CRUD、Test、Manage、Region Config |
+| [api/transformation-api.yaml](api/transformation-api.yaml) | Transformation CRUD、Version、Test、Manage |
+| [api/feature-group-api.yaml](api/feature-group-api.yaml) | Feature Group CRUD、Publish、Sync、Config Diff、Serving Canvas |
+| [api/widetable-api.yaml](api/widetable-api.yaml) | WideTable CRUD、Canvas Config、Instance Trigger/Kill、Report |
+| [api/feature-map-api.yaml](api/feature-map-api.yaml) | Feature Map 检索、Module 树、Feature Cart |
+
+---
+
+## 6. 前端交互示意（可编辑）
 
 **路径**：`docs/prototype/`
 
