@@ -3,8 +3,8 @@ info:
   title: Transformation API
   version: 1.0.0-mvp
   description: |
-    CRUD, Version management, Test, and Manage operations for Transformation.
-    Aligns with architecture doc §4.2 and 産品原型図 §3.2.
+    Transformation 的 CRUD、Version 管理、Test、Manage 操作。
+    与架构说明 §4.2、《产品原型图》§3.2 对齐。
 
 servers:
   - url: /api/v1
@@ -13,12 +13,12 @@ paths:
   /transformations:
     get:
       operationId: listTransformations
-      summary: List Transformations with optional filters
+      summary: 按条件分页查询 Transformation
       parameters:
         - name: name
           in: query
           schema: { type: string }
-          description: Fuzzy match on Transformation name
+          description: 对 Transformation 名称模糊匹配
         - name: type
           in: query
           schema: { $ref: "#/components/schemas/TransformationType" }
@@ -42,7 +42,7 @@ paths:
           schema: { type: integer, default: 20 }
       responses:
         "200":
-          description: Paginated list with rowspan grouping by name
+          description: 分页列表，同名校内 rowspan 合并
           content:
             application/json:
               schema:
@@ -57,7 +57,7 @@ paths:
 
     post:
       operationId: createTransformation
-      summary: Create a new Transformation (first version)
+      summary: 新建 Transformation（首个 Version）
       requestBody:
         required: true
         content:
@@ -81,7 +81,7 @@ paths:
         schema: { type: string }
     get:
       operationId: getTransformation
-      summary: Get all versions of a Transformation
+      summary: 获取某 Transformation 的全部 Version
       responses:
         "200":
           content:
@@ -102,7 +102,7 @@ paths:
         schema: { type: string }
     post:
       operationId: addTransformationVersion
-      summary: Add a new version (optionally copy from existing version)
+      summary: 新增 Version（可选从已有 Version 复制）
       requestBody:
         required: true
         content:
@@ -126,7 +126,7 @@ paths:
         schema: { type: integer }
     get:
       operationId: getTransformationVersion
-      summary: Get a specific version detail
+      summary: 获取指定 Version 详情
       responses:
         "200":
           content:
@@ -134,7 +134,7 @@ paths:
               schema: { $ref: "#/components/schemas/TransformationVersion" }
     put:
       operationId: updateTransformationVersion
-      summary: Update a version (only DRAFT status)
+      summary: 更新 Version（仅 DRAFT 状态可改）
       requestBody:
         required: true
         content:
@@ -146,7 +146,7 @@ paths:
             application/json:
               schema: { $ref: "#/components/schemas/TransformationVersion" }
         "409":
-          description: Not in DRAFT status
+          description: 非 DRAFT 状态
           content:
             application/json:
               schema: { $ref: "#/components/schemas/ErrorResponse" }
@@ -163,7 +163,7 @@ paths:
         schema: { type: integer }
     post:
       operationId: manageTransformationVersion
-      summary: State transition (Enable / Disable / Draft / Delete)
+      summary: 状态流转（Enable / Disable / Draft / Delete）
       requestBody:
         required: true
         content:
@@ -181,7 +181,7 @@ paths:
             application/json:
               schema: { $ref: "#/components/schemas/TransformationVersion" }
         "409":
-          description: Invalid state transition
+          description: 非法状态流转
           content:
             application/json:
               schema: { $ref: "#/components/schemas/ErrorResponse" }
@@ -198,7 +198,7 @@ paths:
         schema: { type: integer }
     post:
       operationId: testTransformation
-      summary: Execute a test run for a specific version
+      summary: 对指定 Version 执行 Test
       requestBody:
         required: true
         content:
@@ -237,7 +237,7 @@ paths:
         schema: { type: integer }
     get:
       operationId: listTransformationTestHistory
-      summary: List test history for this version
+      summary: 查询该 Version 的 Test 历史
       parameters:
         - name: region
           in: query
@@ -262,7 +262,7 @@ components:
       type: string
       enum: [Scalar, Aggregator]
       description: |
-        ScalarFunction (Map -> Map) or AggregateFunction (List<Map> -> Map).
+        ScalarFunction（Map -> Map）或 AggregateFunction（List<Map> -> Map）。
 
     ScriptLanguage:
       type: string
@@ -320,7 +320,7 @@ components:
       properties:
         copyFromVersion:
           type: integer
-          description: If set, copies config from specified version
+          description: 若设置则从指定 Version 复制配置
         type: { $ref: "#/components/schemas/TransformationType" }
         language: { $ref: "#/components/schemas/ScriptLanguage" }
         regions:

@@ -3,8 +3,8 @@ info:
   title: Feature WideTable API
   version: 1.0.0-mvp
   description: |
-    CRUD, Canvas config, Instance management, and Trigger/Kill for Feature WideTable.
-    Aligns with architecture doc §5 and 産品原型図 §3.5.
+    Feature WideTable 的 CRUD、Canvas 配置、Instance 管理及 Trigger/Kill。
+    与架构说明 §5、《产品原型图》§3.5 对齐。
 
 servers:
   - url: /api/v1
@@ -13,7 +13,7 @@ paths:
   /wide-tables:
     get:
       operationId: listWideTables
-      summary: List WideTables with nested instances
+      summary: 分页查询 WideTable（含嵌套 Instance）
       parameters:
         - name: name
           in: query
@@ -46,7 +46,7 @@ paths:
 
     post:
       operationId: createWideTable
-      summary: Create a new WideTable + initial Instance V1 (DRAFT)
+      summary: 新建 WideTable 及初始 Instance V1（DRAFT）
       requestBody:
         required: true
         content:
@@ -66,7 +66,7 @@ paths:
         schema: { type: string }
     get:
       operationId: getWideTable
-      summary: Get WideTable detail with all instances
+      summary: 获取 WideTable 详情及全部 Instance
       responses:
         "200":
           content:
@@ -74,7 +74,7 @@ paths:
               schema: { $ref: "#/components/schemas/WideTableWithInstances" }
     put:
       operationId: updateWideTable
-      summary: Update WideTable meta (Owner, Biz Team, Description; Name and Region read-only)
+      summary: 更新 WideTable 元信息（Owner、Biz Team、Description；Name 与 Region 只读）
       requestBody:
         required: true
         content:
@@ -87,10 +87,10 @@ paths:
               schema: { $ref: "#/components/schemas/WideTable" }
     delete:
       operationId: deleteWideTable
-      summary: Delete entire WideTable (PopConfirm on frontend)
+      summary: 删除整个 WideTable（前端 PopConfirm）
       responses:
         "204":
-          description: Deleted
+          description: 已删除
 
   /wide-tables/{wtId}/instances:
     parameters:
@@ -100,7 +100,7 @@ paths:
         schema: { type: string }
     post:
       operationId: addInstance
-      summary: Add a new Instance Version (auto-increment, status = DRAFT)
+      summary: 新增 Instance Version（自增，状态 DRAFT）
       requestBody:
         content:
           application/json:
@@ -126,7 +126,7 @@ paths:
         schema: { type: string }
     get:
       operationId: getInstance
-      summary: Get Instance detail
+      summary: 获取 Instance 详情
       responses:
         "200":
           content:
@@ -145,7 +145,7 @@ paths:
         schema: { type: string }
     post:
       operationId: copyInstance
-      summary: Copy Instance as new version (auto-increment, DRAFT, copies canvas config)
+      summary: 复制 Instance 为新 Version（自增、DRAFT，复制画布配置）
       requestBody:
         content:
           application/json:
@@ -171,7 +171,7 @@ paths:
         schema: { type: string }
     get:
       operationId: getCanvasConfig
-      summary: Get canvas DAG config for this instance
+      summary: 获取该 Instance 的 Canvas DAG 配置
       responses:
         "200":
           content:
@@ -179,7 +179,7 @@ paths:
               schema: { $ref: "#/components/schemas/CanvasConfig" }
     put:
       operationId: saveCanvasConfig
-      summary: Save canvas DAG config (Save button)
+      summary: 保存 Canvas DAG 配置（Save 按钮）
       requestBody:
         required: true
         content:
@@ -203,7 +203,7 @@ paths:
         schema: { type: string }
     post:
       operationId: checkInstance
-      summary: Validate canvas config (Check button)
+      summary: 校验画布配置（Check 按钮）
       responses:
         "200":
           content:
@@ -233,14 +233,14 @@ paths:
         schema: { type: string }
     post:
       operationId: submitInstance
-      summary: Submit instance (DRAFT -> READY; requires passed Check)
+      summary: 提交 Instance（DRAFT -> READY；需 Check 已通过）
       responses:
         "200":
           content:
             application/json:
               schema: { $ref: "#/components/schemas/Instance" }
         "409":
-          description: Check not passed or invalid state
+          description: Check 未通过或状态非法
           content:
             application/json:
               schema: { $ref: "#/components/schemas/ErrorResponse" }
@@ -257,14 +257,14 @@ paths:
         schema: { type: string }
     post:
       operationId: triggerInstance
-      summary: Trigger execution (READY/SUCCESS/FAILED -> RUNNING)
+      summary: 触发执行（READY/SUCCESS/FAILED -> RUNNING）
       responses:
         "200":
           content:
             application/json:
               schema: { $ref: "#/components/schemas/Instance" }
         "409":
-          description: Instance not in triggerable state
+          description: Instance 不可触发
           content:
             application/json:
               schema: { $ref: "#/components/schemas/ErrorResponse" }
@@ -281,14 +281,14 @@ paths:
         schema: { type: string }
     post:
       operationId: killInstance
-      summary: Kill running instance (RUNNING -> KILLED)
+      summary: 终止运行中 Instance（RUNNING -> KILLED）
       responses:
         "200":
           content:
             application/json:
               schema: { $ref: "#/components/schemas/Instance" }
         "409":
-          description: Instance not RUNNING
+          description: Instance 非 RUNNING
           content:
             application/json:
               schema: { $ref: "#/components/schemas/ErrorResponse" }
@@ -305,7 +305,7 @@ paths:
         schema: { type: string }
     get:
       operationId: getDataReport
-      summary: Get Data Report (Raw or Clean)
+      summary: 获取 Data Report（Raw 或 Clean）
       parameters:
         - name: type
           in: query
@@ -314,7 +314,7 @@ paths:
         - name: search
           in: query
           schema: { type: string }
-          description: Filter by column name
+          description: 按列名筛选
       responses:
         "200":
           content:
@@ -338,7 +338,7 @@ paths:
         schema: { type: string }
     get:
       operationId: exportDataReport
-      summary: Export Data Report as CSV
+      summary: 导出 Data Report 为 CSV
       parameters:
         - name: type
           in: query
@@ -346,7 +346,7 @@ paths:
           schema: { type: string, enum: [raw, clean] }
       responses:
         "200":
-          description: CSV file download
+          description: CSV 文件下载
           content:
             text/csv:
               schema: { type: string }
@@ -363,7 +363,7 @@ paths:
         schema: { type: string }
     get:
       operationId: getExecuteConfig
-      summary: Get Execute Config for this instance
+      summary: 获取该 Instance 的 Execute Config
       responses:
         "200":
           content:
@@ -371,7 +371,7 @@ paths:
               schema: { $ref: "#/components/schemas/ExecuteConfig" }
     put:
       operationId: updateExecuteConfig
-      summary: Update Execute Config
+      summary: 更新 Execute Config
       requestBody:
         required: true
         content:
@@ -450,7 +450,7 @@ components:
 
     CanvasConfig:
       type: object
-      description: Serializable DAG for WideTable canvas
+      description: WideTable 画布可序列化 DAG
       properties:
         frameTable: { $ref: "#/components/schemas/FrameTableNode" }
         featureGroups:
@@ -544,7 +544,7 @@ components:
           default: ONCE
         cronExpression:
           type: string
-          description: Required when scheduler is Cron
+          description: scheduler 为 Cron 时必填
 
     ReportColumn:
       type: object

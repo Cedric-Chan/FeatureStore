@@ -11,10 +11,10 @@
 
 ## 原始说明（导出自带）
 
-This is a code bundle for Feature Map. The original project is available at https://www.figma.com/design/Bwyhi6WYSjtohISRQ8X7kY/Feature-Map.
+本目录为 Feature Map 的代码包。原始项目：<https://www.figma.com/design/Bwyhi6WYSjtohISRQ8X7kY/Feature-Map>。
 
-### Running the code
+### 运行方式
 
-Run `npm i` to install the dependencies.
+执行 `npm i` 安装依赖。
 
-Run `npm run dev` to start the development server.
+执行 `npm run dev` 启动开发服务器。

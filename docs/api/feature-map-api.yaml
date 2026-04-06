@@ -3,9 +3,9 @@ info:
   title: Feature Map API
   version: 1.0.0-mvp
   description: |
-    Search, Feature Cart, and read-only Feature asset catalog.
-    Aligns with architecture doc §4.4 and 産品原型図 §3.4.
-    FeatureMap is read-only — data is synced from FeatureGroup registration/publish.
+    检索、Feature Cart、只读 Feature 资产目录。
+    与架构说明 §4.4、《产品原型图》§3.4 对齐。
+    FeatureMap 只读 — 数据由 FeatureGroup 注册/发布同步。
 
 servers:
   - url: /api/v1
@@ -14,19 +14,19 @@ paths:
   /feature-map/search:
     get:
       operationId: searchFeatures
-      summary: Search features across all registered Feature Groups
+      summary: 跨已注册 Feature Group 检索 Feature
       parameters:
         - name: keyword
           in: query
           schema: { type: string }
-          description: Full-text search on feature name, FG name, or description
+          description: 对 Feature 名、FG 名或描述全文检索
         - name: entity
           in: query
           schema: { type: string }
         - name: bizTeam
           in: query
           schema: { type: string }
-          description: Filter by biz team (visibility filter, not permission wall)
+          description: 按 Biz Team 过滤（可见性筛选，非权限墙）
         - name: module
           in: query
           schema: { type: string }
@@ -65,7 +65,7 @@ paths:
   /feature-map/modules:
     get:
       operationId: listModules
-      summary: Get module tree for left navigation (Module > FG hierarchy)
+      summary: 获取左侧导航 Module 树（Module > FG 层级）
       responses:
         "200":
           content:
@@ -85,7 +85,7 @@ paths:
         schema: { type: string }
     get:
       operationId: getFeatureGroupInMap
-      summary: Get FG summary with all features (read-only view for FeatureMap)
+      summary: 获取 FG 摘要及全部 Feature（FeatureMap 只读视图）
       responses:
         "200":
           content:
@@ -95,7 +95,7 @@ paths:
   /feature-map/cart:
     post:
       operationId: submitFeatureCart
-      summary: Submit selected features from cart to a target canvas
+      summary: 将购物车中选中的 Feature 提交到目标画布
       requestBody:
         required: true
         content:
@@ -107,13 +107,13 @@ paths:
                 featureIds:
                   type: array
                   items: { type: string }
-                  description: List of feature IDs to submit
+                  description: 待提交的 Feature ID 列表
                 target:
                   type: string
                   enum: [training_widetable, serving_workflow]
                   description: |
-                    training_widetable: redirect to WideTable canvas creation.
-                    serving_workflow: redirect to Serving Workflow canvas creation.
+                    training_widetable：跳转 WideTable 画布创建。
+                    serving_workflow：跳转 Serving Workflow 画布创建。
       responses:
         "200":
           content:
@@ -125,7 +125,7 @@ paths:
                   featureGroupIds:
                     type: array
                     items: { type: string }
-                    description: Deduplicated FG IDs from the selected features
+                    description: 由所选 Feature 去重得到的 FG ID 列表
 
 components:
   schemas:

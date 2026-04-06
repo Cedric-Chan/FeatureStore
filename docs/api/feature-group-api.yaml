@@ -3,8 +3,8 @@ info:
   title: Feature Group API
   version: 1.0.0-mvp
   description: |
-    CRUD, Publish, Sync, Config Diff, and Serving Canvas operations for Feature Group.
-    Aligns with architecture doc §4.3/§4.5 and 産品原型図 §3.3.
+    Feature Group 的 CRUD、Publish、Sync、Config Diff、Serving Canvas 操作。
+    与架构说明 §4.3/§4.5、《产品原型图》§3.3 对齐。
 
 servers:
   - url: /api/v1
@@ -13,7 +13,7 @@ paths:
   /feature-groups:
     get:
       operationId: listFeatureGroups
-      summary: List Feature Groups with optional filters
+      summary: 按条件分页查询 Feature Group
       parameters:
         - name: name
           in: query
@@ -52,7 +52,7 @@ paths:
 
     post:
       operationId: createFeatureGroup
-      summary: Create a new Feature Group (Basic Info only, status = DRAFT)
+      summary: 新建 Feature Group（仅 Basic Info，状态 DRAFT）
       requestBody:
         required: true
         content:
@@ -72,7 +72,7 @@ paths:
         schema: { type: string }
     get:
       operationId: getFeatureGroup
-      summary: Get Feature Group full detail (Basic + Training + Serving + Features)
+      summary: 获取 Feature Group 完整详情（Basic + Training + Serving + Features）
       responses:
         "200":
           content:
@@ -80,12 +80,12 @@ paths:
               schema: { $ref: "#/components/schemas/FeatureGroupDetail" }
     delete:
       operationId: deleteFeatureGroup
-      summary: Soft-delete Feature Group (DRAFT only)
+      summary: 软删 Feature Group（仅 DRAFT）
       responses:
         "204":
-          description: Deleted
+          description: 已删除
         "409":
-          description: Not in DRAFT status
+          description: 非 DRAFT 状态
           content:
             application/json:
               schema: { $ref: "#/components/schemas/ErrorResponse" }
@@ -98,7 +98,7 @@ paths:
         schema: { type: string }
     put:
       operationId: updateBasicInfo
-      summary: Update Basic Info (does NOT trigger Online Changing)
+      summary: 更新 Basic Info（不触发 Online Changing）
       requestBody:
         required: true
         content:
@@ -118,7 +118,7 @@ paths:
         schema: { type: string }
     put:
       operationId: updateTrainingConfig
-      summary: Save Training Config (triggers Online Changing if FG is Online)
+      summary: 保存 Training Config（FG 为 Online 时触发 Online Changing）
       requestBody:
         required: true
         content:
@@ -138,7 +138,7 @@ paths:
         schema: { type: string }
     get:
       operationId: getServingConfig
-      summary: Get current Serving Config (canvas model)
+      summary: 获取当前 Serving Config（画布模型）
       responses:
         "200":
           content:
@@ -146,7 +146,7 @@ paths:
               schema: { $ref: "#/components/schemas/ServingConfig" }
     put:
       operationId: updateServingConfig
-      summary: Save Serving Config canvas state
+      summary: 保存 Serving Config 画布状态
       requestBody:
         required: true
         content:
@@ -166,14 +166,14 @@ paths:
         schema: { type: string }
     post:
       operationId: publishServingConfig
-      summary: Publish Serving Config (requires passed Test Run; triggers Online Changing)
+      summary: 发布 Serving Config（需 Test Run 已通过；触发 Online Changing）
       responses:
         "200":
           content:
             application/json:
               schema: { $ref: "#/components/schemas/FeatureGroupDetail" }
         "409":
-          description: Test Run not passed or FG not in valid state
+          description: Test Run 未通过或 FG 状态不允许
           content:
             application/json:
               schema: { $ref: "#/components/schemas/ErrorResponse" }
@@ -186,7 +186,7 @@ paths:
         schema: { type: string }
     post:
       operationId: servingTestRun
-      summary: Execute a Serving Test Run
+      summary: 执行 Serving Test Run
       requestBody:
         required: true
         content:
@@ -218,14 +218,14 @@ paths:
         schema: { type: string }
     post:
       operationId: syncFeatureGroup
-      summary: Manually refresh latest Training Config metadata
+      summary: 手动刷新最新 Training Config 元数据
       responses:
         "200":
           content:
             application/json:
               schema: { $ref: "#/components/schemas/FeatureGroupDetail" }
         "409":
-          description: FG is in Online Changing state (sync disabled)
+          description: FG 处于 Online Changing（禁用 Sync）
           content:
             application/json:
               schema: { $ref: "#/components/schemas/ErrorResponse" }
@@ -238,7 +238,7 @@ paths:
         schema: { type: string }
     post:
       operationId: manageFeatureGroup
-      summary: State transition (Online / Draft / Delete)
+      summary: 状态流转（Online / Draft / Delete）
       requestBody:
         required: true
         content:
@@ -251,16 +251,16 @@ paths:
                   type: string
                   enum: [online, draft, delete]
                   description: |
-                    online: Draft->Online (T+S configured) or OnlineChanging->Online (Admin, generates new FG Version).
-                    draft: Online->Draft (Admin).
-                    delete: Draft only (soft delete).
+                    online：Draft->Online（T+S 已配置）或 OnlineChanging->Online（Admin，生成新 FG Version）。
+                    draft：Online->Draft（Admin）。
+                    delete：仅 Draft（软删）。
       responses:
         "200":
           content:
             application/json:
               schema: { $ref: "#/components/schemas/FeatureGroupDetail" }
         "409":
-          description: Invalid state transition or missing config
+          description: 非法状态流转或配置缺失
           content:
             application/json:
               schema: { $ref: "#/components/schemas/ErrorResponse" }
@@ -273,7 +273,7 @@ paths:
         schema: { type: string }
     get:
       operationId: getConfigDiff
-      summary: Get Old vs New config diff (for Online Changing -> Online confirmation)
+      summary: 获取旧/新 Config Diff（Online Changing -> Online 确认用）
       responses:
         "200":
           content:
@@ -292,7 +292,7 @@ paths:
         schema: { type: string }
     get:
       operationId: listFGVersions
-      summary: List FG version history (audit snapshots)
+      summary: 列出 FG Version 历史（审计快照）
       responses:
         "200":
           content:
@@ -316,7 +316,7 @@ paths:
         schema: { type: string }
     get:
       operationId: getFGVersionDetail
-      summary: Get a specific version snapshot detail
+      summary: 获取指定 Version 快照详情
       responses:
         "200":
           content:
@@ -331,7 +331,7 @@ paths:
         schema: { type: string }
     get:
       operationId: listFeatures
-      summary: List features in this FG with availability info
+      summary: 列出本 FG 内 Feature 及可用性信息
       responses:
         "200":
           content:
@@ -351,7 +351,7 @@ paths:
         schema: { type: string }
     post:
       operationId: copyFeatureGroup
-      summary: Copy FG as a new DRAFT (Basic Info only in modal)
+      summary: 复制 FG 为新 DRAFT（弹窗仅 Basic Info）
       requestBody:
         required: true
         content:
@@ -466,7 +466,7 @@ components:
 
     ServingConfig:
       type: object
-      description: Serializable canvas model for the Serving workflow
+      description: Serving 工作流可序列化画布模型
       properties:
         nodes:
           type: array
@@ -502,10 +502,10 @@ components:
         source:
           type: string
           enum: [MAPPED, CUSTOM]
-          description: MAPPED = matched to offline column; CUSTOM = serving-only
+          description: MAPPED = 与离线列映射一致；CUSTOM = 仅 Serving
         offlineColumnName:
           type: string
-          description: Offline column name for mapped features (null for CUSTOM)
+          description: 映射特征的离线列名（CUSTOM 时为 null）
         partition: { type: string }
 
     FGVersionSnapshot:

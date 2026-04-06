@@ -1,11 +1,10 @@
 
   # Feature Group
 
-  This is a code bundle for Feature Group. The original project is available at https://www.figma.com/design/kXJS9iAjeBKaU0GBhABfq3/Feature-Group.
+  本目录为 Figma 导出的代码包。原始设计稿：<https://www.figma.com/design/kXJS9iAjeBKaU0GBhABfq3/Feature-Group>。
 
-  ## Running the code
+  ## 本地运行
 
-  Run `npm i` to install the dependencies.
+  执行 `npm i` 安装依赖。
 
-  Run `npm run dev` to start the development server.
-  
+  执行 `npm run dev` 启动开发服务器。

@@ -3,8 +3,8 @@ info:
   title: Feature Source API
   version: 1.0.0-mvp
   description: |
-    CRUD, Test, and Manage operations for Feature Source and its Region Configs.
-    Aligns with architecture doc §4.1 and 产品原型图 §3.1.
+    Feature Source 及其 Region Config 的 CRUD、Test、Manage 操作。
+    与架构说明 §4.1、《产品原型图》§3.1 对齐。
 
 servers:
   - url: /api/v1
@@ -13,12 +13,12 @@ paths:
   /feature-sources:
     get:
       operationId: listFeatureSources
-      summary: List Feature Sources with optional filters
+      summary: 按条件分页查询 Feature Source
       parameters:
         - name: name
           in: query
           schema: { type: string }
-          description: Fuzzy match on FS name
+          description: 对 FS 名称模糊匹配
         - name: sourceType
           in: query
           schema: { $ref: "#/components/schemas/SourceType" }
@@ -28,7 +28,7 @@ paths:
         - name: creator
           in: query
           schema: { type: string }
-          description: Fuzzy match on creator email
+          description: 对创建人邮箱模糊匹配
         - name: page
           in: query
           schema: { type: integer, default: 1 }
@@ -37,7 +37,7 @@ paths:
           schema: { type: integer, default: 20 }
       responses:
         "200":
-          description: Paginated list of Feature Sources with nested Region Configs
+          description: 分页列表，含嵌套的 Region Config
           content:
             application/json:
               schema:
@@ -51,7 +51,7 @@ paths:
                     items: { $ref: "#/components/schemas/FeatureSourceWithRegions" }
     post:
       operationId: createFeatureSource
-      summary: Create a new Feature Source (meta info only)
+      summary: 新建 Feature Source（仅元信息）
       requestBody:
         required: true
         content:
@@ -59,12 +59,12 @@ paths:
             schema: { $ref: "#/components/schemas/FeatureSourceCreate" }
       responses:
         "201":
-          description: Created
+          description: 已创建
           content:
             application/json:
               schema: { $ref: "#/components/schemas/FeatureSource" }
         "400":
-          description: Validation error
+          description: 校验错误
           content:
             application/json:
               schema: { $ref: "#/components/schemas/ErrorResponse" }
@@ -77,7 +77,7 @@ paths:
         schema: { type: string }
     get:
       operationId: getFeatureSource
-      summary: Get Feature Source detail with all Region Configs
+      summary: 获取 Feature Source 详情及全部 Region Config
       responses:
         "200":
           content:
@@ -89,7 +89,7 @@ paths:
               schema: { $ref: "#/components/schemas/ErrorResponse" }
     put:
       operationId: updateFeatureSource
-      summary: Update Feature Source meta info (name is read-only)
+      summary: 更新 Feature Source 元信息（name 只读）
       requestBody:
         required: true
         content:
@@ -102,12 +102,12 @@ paths:
               schema: { $ref: "#/components/schemas/FeatureSource" }
     delete:
       operationId: deleteFeatureSource
-      summary: Delete entire Feature Source (rejects if any Region is ONLINE)
+      summary: 删除整个 Feature Source（任一 Region 为 ONLINE 则拒绝）
       responses:
         "204":
-          description: Deleted
+          description: 已删除
         "409":
-          description: Has ONLINE Region Configs; must disable first
+          description: 存在 ONLINE 的 Region Config，需先下线
           content:
             application/json:
               schema: { $ref: "#/components/schemas/ErrorResponse" }
@@ -120,7 +120,7 @@ paths:
         schema: { type: string }
     post:
       operationId: addRegionConfig
-      summary: Add a new Region Config under this FS (status = DRAFT)
+      summary: 在该 FS 下新增 Region Config（状态为 DRAFT）
       requestBody:
         required: true
         content:
@@ -144,7 +144,7 @@ paths:
         schema: { type: string }
     put:
       operationId: updateRegionConfig
-      summary: Update Region Config (Input/Output Params, Call Function, Description)
+      summary: 更新 Region Config（Input/Output Params、Call Function、Description）
       requestBody:
         required: true
         content:
@@ -168,7 +168,7 @@ paths:
         schema: { type: string }
     post:
       operationId: copyRegionConfig
-      summary: Copy a Region Config to a new Region (status = DRAFT)
+      summary: 复制 Region Config 到新 Region（状态为 DRAFT）
       requestBody:
         required: true
         content:
@@ -197,7 +197,7 @@ paths:
         schema: { type: string }
     post:
       operationId: manageRegionConfig
-      summary: State transition (Enable / Disable / Draft / Delete)
+      summary: 状态流转（Enable / Disable / Draft / Delete）
       requestBody:
         required: true
         content:
@@ -211,12 +211,12 @@ paths:
                   enum: [enable, disable, draft, delete]
       responses:
         "200":
-          description: State transitioned
+          description: 状态已流转
           content:
             application/json:
               schema: { $ref: "#/components/schemas/RegionConfig" }
         "409":
-          description: Invalid state transition or has downstream dependencies
+          description: 非法状态流转或存在下游依赖
           content:
             application/json:
               schema: { $ref: "#/components/schemas/ErrorResponse" }
@@ -229,7 +229,7 @@ paths:
         schema: { type: string }
     post:
       operationId: testFeatureSource
-      summary: Execute a test run for a specific Region Config
+      summary: 对指定 Region Config 执行一次 Test
       requestBody:
         required: true
         content:
@@ -244,7 +244,7 @@ paths:
                   additionalProperties: { type: string }
       responses:
         "200":
-          description: Test result
+          description: Test 结果
           content:
             application/json:
               schema:
@@ -265,7 +265,7 @@ paths:
         schema: { type: string }
     get:
       operationId: listTestHistory
-      summary: List test history for this Feature Source
+      summary: 查询该 Feature Source 的 Test 历史
       parameters:
         - name: region
           in: query
@@ -292,7 +292,7 @@ components:
     SourceType:
       type: string
       enum: [HBase, Redis, gRPC, GraphDB]
-      description: MVP data source types (MySQL, Kafka reserved for Phase 2)
+      description: MVP 数据源类型（MySQL、Kafka 预留二期）
 
     Region:
       type: string
@@ -302,7 +302,7 @@ components:
       type: string
       enum: [DRAFT, ENABLE, DISABLE]
       description: |
-        Internal enum. Display labels: DRAFT, ONLINE (for ENABLE), OFFLINE (for DISABLE).
+        内部枚举。展示文案：DRAFT、ONLINE（对应 ENABLE）、OFFLINE（对应 DISABLE）。
 
     FeatureSource:
       type: object

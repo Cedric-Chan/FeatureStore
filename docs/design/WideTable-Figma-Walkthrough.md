@@ -65,15 +65,15 @@
 
 ## 5. 回归 grep（每 PR）
 
-- `wtc-pr-row`：仅应出现在只读展示（实例/时间线等），不应作为唯一配置 UI。
+- `wtc-pr-row`：仅应出现在只读展示（实例/时间线等），不得作为唯一配置 UI。
 - `#tsModalPrimary`：`add` 模式须为 To Canvas，不得为 Confirm。
 
 ---
 
 ## 签认（可选）
 
-- [ ] §1 Modals
-- [ ] §2 List
+- [ ] §1 弹窗（Modals）
+- [ ] §2 列表（List）
 - [ ] §3 Frame Table
-- [ ] §4 Other nodes
+- [ ] §4 其他节点
 - [ ] §5 Grep / 像素终验

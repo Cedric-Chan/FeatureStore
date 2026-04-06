@@ -1,5 +1,5 @@
-# 推送至默认分支后自动构建 React 原型并发布到 GitHub Pages（公开链接，类似 Figma Published）。
-# 首次使用：仓库 Settings → Pages → Build and deployment → Source 选「GitHub Actions」。
+# 推送到默认分支后自动构建 React 原型并发布到 GitHub Pages（公开链接，类似 Figma Published）。
+# 首次启用：仓库 Settings → Pages → Build and deployment → Source 选择「GitHub Actions」。
 name: Deploy Feature Store (GitHub Pages)
 
 on:
@@ -25,14 +25,14 @@ jobs:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
     runs-on: ubuntu-latest
-    # 官方 Actions 运行时迁到 Node 24；此处用 FORCE_* 满足要求。
-    # 项目构建使用 Node 22 LTS：Node 24 下 npm ci 曾出现 “Exit handler never called” 无输出失败。
+    # 官方 Actions 运行时迁至 Node 24；此处用 FORCE_* 满足其要求。
+    # 本仓库构建使用 Node 22 LTS：在 Node 24 下 npm ci 曾出现 “Exit handler never called” 无输出失败。
     env:
       FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
     steps:
       - uses: actions/checkout@v6
 
-      # setup-node 的 pnpm cache 需先提供 pnpm 可执行文件
+      # setup-node 的 pnpm 缓存需先有 pnpm 可执行文件
       - uses: pnpm/action-setup@v4
         with:
           version: 9.15.9
@@ -43,7 +43,7 @@ jobs:
           cache: pnpm
           cache-dependency-path: docs/references/feature-widetable-figma-export/pnpm-lock.yaml
 
-      # 使用 pnpm 避免 GitHub Actions 上 npm 偶发 “Exit handler never called” 崩溃
+      # 使用 pnpm，避免 GitHub Actions 上 npm 偶发 “Exit handler never called” 崩溃
       - name: Install dependencies
         working-directory: docs/references/feature-widetable-figma-export
         run: pnpm install --frozen-lockfile

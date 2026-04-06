@@ -1,61 +1,16 @@
-**Add your own guidelines here**
+**请在此补充团队自己的设计与实现规范**
 <!--
 
-System Guidelines
+以下为 Figma/Make 导出模板中的「系统规范」占位说明，可按团队设计系统自行增删。
 
-Use this file to provide the AI with rules and guidelines you want it to follow.
-This template outlines a few examples of things you can add. You can add your own sections and format it to suit your needs
+# 通用规范示例
 
-TIP: More context isn't always better. It can confuse the LLM. Try and add the most important rules you need
+- 非必要勿用绝对定位；默认优先 flex / grid 等响应式布局。
+- 迭代中保持重构，控制单文件体量；工具函数与小组件拆到独立文件。
 
-# General guidelines
+# 设计系统规范示例
 
-Any general rules you want the AI to follow.
-For example:
+- 基准字号、日期格式、工具栏项数上限、Chips 最少数量等，请与团队 Token/组件库对齐。
+- Button 等基础组件的用途、变体（Primary / Secondary / Tertiary）与使用场景，请写入本节。
 
-* Only use absolute positioning when necessary. Opt for responsive and well structured layouts that use flexbox and grid by default
-* Refactor code as you go to keep code clean
-* Keep file sizes small and put helper functions and components in their own files.
-
---------------
-
-# Design system guidelines
-Rules for how the AI should make generations look like your company's design system
-
-Additionally, if you select a design system to use in the prompt box, you can reference
-your design system's components, tokens, variables and components.
-For example:
-
-* Use a base font-size of 14px
-* Date formats should always be in the format “Jun 10”
-* The bottom toolbar should only ever have a maximum of 4 items
-* Never use the floating action button with the bottom toolbar
-* Chips should always come in sets of 3 or more
-* Don't use a dropdown if there are 2 or fewer options
-
-You can also create sub sections and add more specific details
-For example:
-
-
-## Button
-The Button component is a fundamental interactive element in our design system, designed to trigger actions or navigate
-users through the application. It provides visual feedback and clear affordances to enhance user experience.
-
-### Usage
-Buttons should be used for important actions that users need to take, such as form submissions, confirming choices,
-or initiating processes. They communicate interactivity and should have clear, action-oriented labels.
-
-### Variants
-* Primary Button
-  * Purpose : Used for the main action in a section or page
-  * Visual Style : Bold, filled with the primary brand color
-  * Usage : One primary button per section to guide users toward the most important action
-* Secondary Button
-  * Purpose : Used for alternative or supporting actions
-  * Visual Style : Outlined with the primary color, transparent background
-  * Usage : Can appear alongside a primary button for less important actions
-* Tertiary Button
-  * Purpose : Used for the least important actions
-  * Visual Style : Text-only with no border, using primary color
-  * Usage : For actions that should be available but not emphasized
 -->
