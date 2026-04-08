@@ -8,12 +8,9 @@ import {
   User,
   Clock,
   FileText,
-  CheckCircle2,
   AlertCircle,
-  Circle,
   RefreshCw,
   Calendar,
-  Ban,
   Filter,
   ArrowUpDown,
   ArrowUp,
@@ -30,7 +27,7 @@ import {
   Pencil,
 } from "lucide-react";
 import { useFeatureGroups } from "@/app/feature-group/FeatureGroupsProvider";
-import type { FeatureGroup, FeatureGroupStatus } from "./FeatureGroupList";
+import type { FeatureGroup } from "./FeatureGroupList";
 import FeatureGroupModal, {
   type FGFormData,
   normalizeFgFormData,
@@ -39,12 +36,6 @@ import FeatureGroupModal, {
   MOCK_TRAINING_FEATURES,
   DEFAULT_TRAINING_FEATURES,
 } from "./FeatureGroupModal";
-import { FgManageDropdown } from "./FgManageDropdown";
-import {
-  FgConfigDiffModal,
-  MOCK_FG_DIFF_NEW,
-  MOCK_FG_DIFF_OLD,
-} from "./FgConfigDiffModal";
 import { FgServingCanvasThumbnail } from "./FgServingCanvasThumbnail";
 import { trainingFeatureNamesFromForm } from "./fgSeed";
 import {
@@ -64,74 +55,6 @@ function featureSourceLinesFromServingForm(fd: FGFormData): string[] {
     lines.push(name);
   }
   return lines;
-}
-
-function servingCanvasEditButtonClass(disabled: boolean): string {
-  return `p-2 rounded-lg border transition-all min-h-[44px] min-w-[44px] flex items-center justify-center shrink-0 ${
-    disabled
-      ? "border-gray-100 text-gray-300 cursor-not-allowed"
-      : "border-gray-200 text-gray-500 hover:border-teal-300 hover:text-teal-600"
-  }`;
-}
-
-// ─── Status config ────────────────────────────────────────────────────────────
-const STATUS_CONFIG: Record<
-  FeatureGroupStatus,
-  { label: string; bg: string; text: string; dot: string; border: string; icon: React.ReactNode }
-> = {
-  Online: {
-    label: "Online",
-    bg: "bg-emerald-50",
-    text: "text-emerald-700",
-    dot: "bg-emerald-500",
-    border: "border-emerald-200",
-    icon: <CheckCircle2 size={14} className="text-emerald-500" />,
-  },
-  "Online Changing": {
-    label: "Online Changing",
-    bg: "bg-amber-50",
-    text: "text-amber-700",
-    dot: "bg-amber-500",
-    border: "border-amber-200",
-    icon: <RefreshCw size={14} className="text-amber-500" />,
-  },
-  Draft: {
-    label: "Draft",
-    bg: "bg-slate-100",
-    text: "text-slate-600",
-    dot: "bg-slate-400",
-    border: "border-slate-200",
-    icon: <Circle size={14} className="text-slate-400" />,
-  },
-  Offline: {
-    label: "Offline",
-    bg: "bg-red-50",
-    text: "text-red-600",
-    dot: "bg-red-400",
-    border: "border-red-200",
-    icon: <AlertCircle size={14} className="text-red-400" />,
-  },
-  Disable: {
-    label: "Disable",
-    bg: "bg-gray-100",
-    text: "text-gray-500",
-    dot: "bg-gray-400",
-    border: "border-gray-200",
-    icon: <Ban size={14} className="text-gray-400" />,
-  },
-};
-
-function StatusTag({ status }: { status: FeatureGroupStatus }) {
-  const cfg = STATUS_CONFIG[status];
-  return (
-    <span
-      className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-sm border ${cfg.bg} ${cfg.text} ${cfg.border}`}
-      style={{ fontWeight: 500 }}
-    >
-      {cfg.icon}
-      {cfg.label}
-    </span>
-  );
 }
 
 function InfoCard({ icon, label, value }: { icon: React.ReactNode; label: string; value: string }) {
@@ -276,7 +199,6 @@ export default function FeatureGroupDetail() {
 
   const [basicModalOpen, setBasicModalOpen] = useState(false);
   const [trainingModalOpen, setTrainingModalOpen] = useState(false);
-  const [configDiffOpen, setConfigDiffOpen] = useState(false);
 
   const trainingDone = fg ? isFgTrainingComplete(fg._formData) : false;
   const hasServingCanvas = Boolean(fg?.servingCanvasState);
@@ -344,15 +266,12 @@ export default function FeatureGroupDetail() {
     ? servingSummary.extraFts
     : Math.max(0, servingFtsDisplay - mappedFtsDisplay);
 
-  /* Toast only when navigating from Publish (location.state); HashRouter
-   * deep-links or refresh on /fg/:id have no state, so the toast will not show. */
   useEffect(() => {
     const st = location.state as { afterServingPublish?: boolean } | null;
     if (!st?.afterServingPublish || !fgId) return;
-    toast.info(
-      "Serving configuration saved. Open Manage > Online to apply the change and return this Feature Group to Online.",
-      { duration: 10_000 }
-    );
+    toast.info("Serving configuration published successfully.", {
+      duration: 5_000,
+    });
     navigate(`/fg/${fgId}`, { replace: true, state: {} });
   }, [location.state, fgId, navigate]);
 
@@ -480,12 +399,7 @@ export default function FeatureGroupDetail() {
               <button
                 type="button"
                 onClick={() => setBasicModalOpen(true)}
-                disabled={fg.status === "Online Changing"}
-                className={`p-2 rounded-lg border transition-all min-h-[44px] min-w-[44px] flex items-center justify-center ${
-                  fg.status === "Online Changing"
-                    ? "border-gray-100 text-gray-300 cursor-not-allowed"
-                    : "border-gray-200 text-gray-500 hover:border-teal-300 hover:text-teal-600"
-                }`}
+                className="p-2 rounded-lg border transition-all min-h-[44px] min-w-[44px] flex items-center justify-center border-gray-200 text-gray-500 hover:border-teal-300 hover:text-teal-600"
                 title="Edit basic info"
                 aria-label="Edit basic info"
               >
@@ -520,12 +434,7 @@ export default function FeatureGroupDetail() {
                 <button
                   type="button"
                   onClick={() => setTrainingModalOpen(true)}
-                  disabled={fg.status === "Online Changing"}
-                  className={`p-2 rounded-lg border transition-all min-h-[44px] min-w-[44px] flex items-center justify-center ${
-                    fg.status === "Online Changing"
-                      ? "border-gray-100 text-gray-300 cursor-not-allowed"
-                      : "border-gray-200 text-gray-500 hover:border-teal-300 hover:text-teal-600"
-                  }`}
+                  className="p-2 rounded-lg border transition-all min-h-[44px] min-w-[44px] flex items-center justify-center border-gray-200 text-gray-500 hover:border-teal-300 hover:text-teal-600"
                   title="Edit training config"
                   aria-label="Edit training config"
                 >
@@ -574,8 +483,7 @@ export default function FeatureGroupDetail() {
                 <button
                   type="button"
                   onClick={() => setTrainingModalOpen(true)}
-                  disabled={fg.status === "Online Changing"}
-                  className="inline-flex items-center justify-center w-14 h-14 rounded-full border-2 border-dashed border-teal-300 text-teal-600 hover:bg-teal-50 transition-colors disabled:opacity-40 disabled:cursor-not-allowed min-h-[44px] min-w-[44px]"
+                  className="inline-flex items-center justify-center w-14 h-14 rounded-full border-2 border-dashed border-teal-300 text-teal-600 hover:bg-teal-50 transition-colors min-h-[44px] min-w-[44px]"
                   title="Add training configuration"
                   aria-label="Add training configuration"
                 >
@@ -596,10 +504,7 @@ export default function FeatureGroupDetail() {
                 <button
                   type="button"
                   onClick={() => navigate(`/fg/${fg.id}/serving`)}
-                  disabled={fg.status === "Online Changing"}
-                  className={servingCanvasEditButtonClass(
-                    fg.status === "Online Changing"
-                  )}
+                  className="p-2 rounded-lg border transition-all min-h-[44px] min-w-[44px] flex items-center justify-center shrink-0 border-gray-200 text-gray-500 hover:border-teal-300 hover:text-teal-600"
                   title="Edit serving config"
                   aria-label="Edit serving config"
                 >
@@ -645,8 +550,7 @@ export default function FeatureGroupDetail() {
                 <button
                   type="button"
                   onClick={() => navigate(`/fg/${fg.id}/serving`)}
-                  disabled={fg.status === "Online Changing"}
-                  className="inline-flex items-center justify-center w-14 h-14 rounded-full border-2 border-dashed border-teal-300 text-teal-600 hover:bg-teal-50 transition-colors disabled:opacity-40 disabled:cursor-not-allowed min-h-[44px] min-w-[44px]"
+                  className="inline-flex items-center justify-center w-14 h-14 rounded-full border-2 border-dashed border-teal-300 text-teal-600 hover:bg-teal-50 transition-colors min-h-[44px] min-w-[44px]"
                   title="Configure serving"
                   aria-label="Configure serving"
                 >
@@ -663,14 +567,6 @@ export default function FeatureGroupDetail() {
         <DetailTabSection fg={fg} />
       </div>
 
-      <FgConfigDiffModal
-        open={configDiffOpen}
-        onClose={() => setConfigDiffOpen(false)}
-        oldText={MOCK_FG_DIFF_OLD}
-        newText={MOCK_FG_DIFF_NEW}
-        onConfirm={() => updateFg(fg.id, { status: "Online" })}
-      />
-
       <FeatureGroupModal
         open={basicModalOpen}
         mode="edit"
@@ -678,7 +574,6 @@ export default function FeatureGroupDetail() {
         editId={fg.id}
         initialData={fd}
         modules={modules}
-        originalStatus={fg.status}
         onClose={() => setBasicModalOpen(false)}
         onSubmit={(data) => handleBasicSave(data)}
       />
@@ -689,7 +584,6 @@ export default function FeatureGroupDetail() {
         editId={fg.id}
         initialData={fd}
         modules={modules}
-        originalStatus={fg.status}
         onClose={() => setTrainingModalOpen(false)}
         onSubmit={(data) => handleTrainingSave(data)}
       />
@@ -1249,19 +1143,6 @@ function OfflineDQCTab() {
 }
 
 // ─── Version History Tab ──────────────────────────────────────────────────────
-function VersionStatusBadge({ status }: { status: string }) {
-  const cfg = STATUS_CONFIG[status as FeatureGroupStatus] ?? STATUS_CONFIG.Offline;
-  return (
-    <span
-      className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-xs border ${cfg.bg} ${cfg.text} ${cfg.border}`}
-      style={{ fontWeight: 500 }}
-    >
-      <span className={`w-1.5 h-1.5 rounded-full ${cfg.dot}`} />
-      {status}
-    </span>
-  );
-}
-
 function VersionHistoryTab() {
   const [hovered, setHovered] = useState<string | null>(null);
   const [copied, setCopied] = useState<string | null>(null);

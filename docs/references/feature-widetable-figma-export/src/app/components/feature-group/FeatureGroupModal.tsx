@@ -504,7 +504,6 @@ interface FeatureGroupModalProps {
   initialStep?: number;
   editId?: string;
   modules: string[];
-  originalStatus?: string;          // current status when editing a non-draft FG
   onClose: () => void;
   onSaveDraft?: (data: FGFormData, editId?: string) => void;
   onSubmit: (data: FGFormData, editId?: string) => void;
@@ -519,7 +518,6 @@ export default function FeatureGroupModal({
   initialStep = 0,
   editId,
   modules,
-  originalStatus,
   onClose,
   onSaveDraft,
   onSubmit,
@@ -675,10 +673,7 @@ export default function FeatureGroupModal({
   }
 
   const isLastStep = displayStep === STEPS.length - 1;
-  const showSaveDraft =
-    variant === "full" &&
-    !!onSaveDraft &&
-    (mode === "create" || originalStatus === "Draft");
+  const showSaveDraft = variant === "full" && !!onSaveDraft;
 
   const headerTitle =
     variant === "training"
@@ -747,22 +742,6 @@ export default function FeatureGroupModal({
             <h2 style={{ fontWeight: 700, fontSize: 17, color: "#1a1a2e" }}>
               {headerTitle}
             </h2>
-            {mode === "edit" && (
-              <span
-                className="text-xs px-2 py-0.5 rounded-md"
-                style={
-                  !originalStatus || originalStatus === "Draft"
-                    ? { background: "rgba(19,194,194,0.08)", color: "#0e9494", border: "1px solid rgba(19,194,194,0.18)", fontWeight: 500 }
-                    : originalStatus === "Online"
-                    ? { background: "#f6ffed", color: "#389e0d", border: "1px solid #b7eb8f", fontWeight: 500 }
-                    : originalStatus === "Online Changing"
-                    ? { background: "#fffbe6", color: "#ad4e00", border: "1px solid #ffe58f", fontWeight: 500 }
-                    : { background: "#f3f4f6", color: "#4b5563", border: "1px solid #e5e7eb", fontWeight: 500 }
-                }
-              >
-                {originalStatus ?? "Draft"}
-              </span>
-            )}
           </div>
           <button
             type="button"
@@ -858,7 +837,7 @@ export default function FeatureGroupModal({
           {displayStep === 0 && (
             <Step0BasicInfo
               form={form} setField={setField} modules={modules} err={touched}
-              mode={mode} originalStatus={originalStatus}
+              mode={mode}
               ownerInput={ownerInput} setOwnerInput={setOwnerInput}
               addOwner={addOwner} handleOwnerKeyDown={handleOwnerKeyDown}
             />
@@ -1162,7 +1141,7 @@ function ReadOnlyInput({ value, mono = false, hint }: { value: string; mono?: bo
 
 // ─── Step 0: Basic Info ───────────────────────────────────────────────────────
 function Step0BasicInfo({
-  form, setField, modules, err, mode, originalStatus,
+  form, setField, modules, err, mode,
   ownerInput, setOwnerInput, addOwner, handleOwnerKeyDown,
 }: {
   form: FGFormData;
@@ -1170,14 +1149,12 @@ function Step0BasicInfo({
   modules: string[];
   err: boolean;
   mode?: "create" | "edit";
-  originalStatus?: string;
   ownerInput: string;
   setOwnerInput: (v: string) => void;
   addOwner: () => void;
   handleOwnerKeyDown: (e: React.KeyboardEvent) => void;
 }) {
-  const isEditing      = mode === "edit";
-  const regionLocked   = isEditing && originalStatus !== "Draft";
+  const isEditing = mode === "edit";
 
   return (
     <div className="space-y-5">
@@ -1204,20 +1181,15 @@ function Step0BasicInfo({
         <FormGroup
           label="Region"
           required
-          hint={regionLocked ? "Region is locked for non-Draft FGs" : undefined}
-          error={!regionLocked && err && !form.region ? "Region is required" : undefined}
+          error={err && !form.region ? "Region is required" : undefined}
         >
-          {regionLocked ? (
-            <ReadOnlyInput value={form.region} />
-          ) : (
-            <StyledSelect
-              value={form.region}
-              onChange={v => setField("region", v)}
-              options={REGIONS.map(r => ({ label: r, value: r }))}
-              placeholder="Select region"
-              hasError={err && !form.region}
-            />
-          )}
+          <StyledSelect
+            value={form.region}
+            onChange={v => setField("region", v)}
+            options={REGIONS.map(r => ({ label: r, value: r }))}
+            placeholder="Select region"
+            hasError={err && !form.region}
+          />
         </FormGroup>
         <FormGroup label="Module" required error={err && !form.module ? "Module is required" : undefined}>
           <StyledSelect

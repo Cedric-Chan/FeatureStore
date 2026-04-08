@@ -5,9 +5,9 @@ import FeatureGroupModal, {
   type FGFormData,
   normalizeFgFormData,
 } from "./FeatureGroupModal";
-import type { FeatureGroup, FeatureGroupStatus } from "./fgSeed";
+import type { FeatureGroup } from "./fgSeed";
 
-export type { FeatureGroup, FeatureGroupStatus } from "./fgSeed";
+export type { FeatureGroup } from "./fgSeed";
 export { INITIAL_FG_LIST_SEED, INITIAL_MODULES } from "./fgSeed";
 import {
   MapPin,
@@ -28,37 +28,6 @@ import {
   Trash2,
   AlertTriangle,
 } from "lucide-react";
-import {
-  FgConfigDiffModal,
-  MOCK_FG_DIFF_NEW,
-  MOCK_FG_DIFF_OLD,
-} from "./FgConfigDiffModal";
-
-// ─── Status config ────────────────────────────────────────────────────────────
-const STATUS_CONFIG: Record<
-  FeatureGroupStatus,
-  { label: string; bg: string; text: string; dot: string; border: string }
-> = {
-  Online:            { label: "Online",          bg: "bg-emerald-50", text: "text-emerald-700", dot: "bg-emerald-500", border: "border-emerald-200" },
-  "Online Changing": { label: "Online Changing", bg: "bg-amber-50",   text: "text-amber-700",   dot: "bg-amber-500",   border: "border-amber-200"  },
-  Draft:             { label: "Draft",           bg: "bg-slate-100",  text: "text-slate-600",   dot: "bg-slate-400",   border: "border-slate-200"  },
-  Offline:           { label: "Offline",         bg: "bg-red-50",     text: "text-red-600",     dot: "bg-red-400",     border: "border-red-200"    },
-  Disable:           { label: "Offline",         bg: "bg-red-50",    text: "text-red-600",    dot: "bg-red-400",    border: "border-red-200"   },
-};
-
-function StatusTag({ status }: { status: FeatureGroupStatus }) {
-  const cfg = STATUS_CONFIG[status];
-  return (
-    <span
-      className={`inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs border ${cfg.bg} ${cfg.text} ${cfg.border}`}
-      style={{ fontWeight: 500 }}
-    >
-      <span className={`w-1.5 h-1.5 rounded-full ${cfg.dot}`} />
-      {cfg.label}
-    </span>
-  );
-}
-
 // ─── Mock downstream lineage (WideTable references) ──────────────────────────
 const MOCK_FG_DOWNSTREAM: Record<string, string[]> = {
   "1": ["risk_wide_table", "fraud_signal_table_ph"],
@@ -155,7 +124,6 @@ export default function FeatureGroupList() {
   const [modalInitData, setModalInitData] = useState<
     Partial<FGFormData> | undefined
   >();
-  const [configDiffFgId, setConfigDiffFgId] = useState<string | null>(null);
 
   function openCreateModal() {
     setModalInitData(undefined);
@@ -176,8 +144,7 @@ export default function FeatureGroupList() {
     const newId = `draft_${Date.now()}`;
     const newFg: FeatureGroup = {
       id: newId,
-      name: full.name || "(Untitled Draft)",
-      status: "Draft",
+      name: full.name || "(Untitled)",
       region: full.region || "—",
       module: full.module || "—",
       owner: full.owners.join(",") || "—",
@@ -199,11 +166,6 @@ export default function FeatureGroupList() {
         fg.owner.toLowerCase().includes(search.toLowerCase()) ||
         fg.region.toLowerCase().includes(search.toLowerCase()))
   );
-
-  const diffFg =
-    configDiffFgId != null
-      ? fgList.find((f) => f.id === configDiffFgId)
-      : undefined;
 
   const totalPages = Math.ceil(filtered.length / pageSize);
   const paged = filtered.slice((currentPage - 1) * pageSize, currentPage * pageSize);
@@ -357,15 +319,6 @@ export default function FeatureGroupList() {
         onSubmit={(data) => handleBasicModalSubmit(data)}
       />
 
-      <FgConfigDiffModal
-        open={configDiffFgId != null && !!diffFg}
-        onClose={() => setConfigDiffFgId(null)}
-        oldText={MOCK_FG_DIFF_OLD}
-        newText={MOCK_FG_DIFF_NEW}
-        onConfirm={() => {
-          if (configDiffFgId) updateFg(configDiffFgId, { status: "Online" });
-        }}
-      />
     </div>
   );
 }
@@ -632,14 +585,14 @@ function ModuleDirPopover({
     return () => document.removeEventListener("mousedown", handler);
   }, [onClose]);
 
-  function getOnlineFGsForModule(moduleName: string): string[] {
+  function getFGsForModule(moduleName: string): string[] {
     return fgList
-      .filter(fg => fg.module === moduleName && fg.status === "Online")
+      .filter(fg => fg.module === moduleName && !fg.deleted)
       .map(fg => fg.name);
   }
 
   function handleDelete(mod: string) {
-    const blocked = getOnlineFGsForModule(mod);
+    const blocked = getFGsForModule(mod);
     if (blocked.length > 0) {
       setDeleteError({ module: mod, fgs: blocked });
       return;
@@ -761,7 +714,7 @@ function ModuleDirPopover({
           >
             <AlertCircle size={12} className="flex-shrink-0 mt-px" style={{ color: "#dc2626" }} />
             <p className="text-xs leading-relaxed" style={{ color: "#b91c1c" }}>
-              已有 Online 状态的{" "}
+              The following Feature Groups are still associated with this module:{" "}
               {deleteError.fgs.map((name, i) => (
                 <span key={name}>
                   <span
@@ -772,12 +725,12 @@ function ModuleDirPopover({
                   </span>
                   {i < deleteError.fgs.length - 1 && (
                     <span className="mx-0.5">
-                      {i === deleteError.fgs.length - 2 ? " 和 " : "、"}
+                      {i === deleteError.fgs.length - 2 ? " and " : ", "}
                     </span>
                   )}
                 </span>
-              ))}{" "}
-              关联到此 Module，无法删除。
+              ))}
+              . Remove or reassign them before deleting this module.
             </p>
           </div>
         )}

@@ -12,7 +12,7 @@
 - [x] 顶栏：Teal 竖条 + 「Feature Groups」+ 条目计数
 - [x] 搜索框、Add、Module Dir、Refresh、Settings、导出 HTML
 - [x] **卡片列表**：左边条、标题/状态/Training·Serving 计数 tag、描述、Meta（Region / Module / Owner pills / Updated）
-- [x] 行内：**Sync**（`RefreshCw`，英文 tooltip / `aria-label`：**Manually refresh latest Training Config metadata**）、**Copy**、**Manage**（**Online / Draft / Delete**；**Online Changing** 时 Sync 置灰）
+- [x] 行内：**Sync**（`RefreshCw`，英文 tooltip / `aria-label`：**Manually refresh latest Training Config metadata**）、**Copy**、**Manage**（**Online / Draft / Delete**）；**Sync** 始终可用
 - [x] **Draft** 可点击标题进入详情；**软删** Draft 后卡片从列表消失
 - [x] 分页
 
@@ -26,16 +26,15 @@
 
 ## D. FG Modal & Serving（vs 参考包）
 
-**PRD 状态机设计稿**（与 `front-design/产品原型图.md` §3.3.0 一致）：[`assets/fg-feature-group-status-machine.png`](assets/fg-feature-group-status-machine.png)
+**FG 无状态**：产品不再维护 Draft / Online / Online Changing 等 FG 级状态机；交互以实现与 PRD 迭代为准。
 
 - [x] **`variant=basic`**：仅 **Basic Info**（`Step0` 字段）；**无** Step 导航条、**无 Save Draft**；Cancel + Continue
 - [x] **`variant=training`**：仅 **Training Config**（`Step1` 字段）；**无** Step 导航条；Cancel + Save
 - [x] **Add / Copy** 列表入口仅打开 **`basic`**；**不再**从列表打开四步 Wizard
-- [x] **Serving 画布**（`FgServingCanvasPage.tsx`）：平移/缩放/节点拖拽；**Publish History**；只读历史视图 + **Back to Current**；**Test Run** 抽屉（**Esc**、焦点、`aria-label`、主按钮 **44px**）；**Publish** 回详情并更新状态（Online → Online Changing）
+- [x] **Serving 画布**（`FgServingCanvasPage.tsx`）：平移/缩放/节点拖拽；**Publish History**；只读历史视图 + **Back to Current**；**Test Run** 抽屉（**Esc**、焦点、`aria-label`、主按钮 **44px**）；**Publish** 返回 FG 详情页
 - [ ] **PRD**：**Publish** 仅 **Test Run 通过后**可点；回详情 **Toast**：Serving 已更新、须 **手动 Manage > Online** 方上线（实现以迭代为准）
 - [ ] **PRD**：**START** 节点 **Entities** 只读、与 Training 入参一致；**END** 入参 **AutoComplete**（Training 字段）+ 允许手填；列表内为 **Mapped**、外为 **Custom**（实现以迭代为准）
-- [x] **Manage > Online**（Online Changing）→ **Config Diff** 弹窗 → 确认后 **Online**
-- [ ] **PRD**：**Online Changing** 态 **不可 Edit**；**Online** 自 Draft 须 **T+S 均已配置**；**Online → Draft** / **Online Changing → Online（覆盖线上）** 为 **Admin** 能力（实现以迭代为准）
+- [ ] **PRD**：**Online** 自 Draft 须 **T+S 均已配置**；**Online → Draft** 等管理能力（实现以迭代为准）
 - [x] **Feature Mapping** 全步 Wizard：**非**本期默认入口
 
 ### D.1 无障碍与交互（ui-ux 对齐）

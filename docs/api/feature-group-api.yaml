@@ -3,8 +3,9 @@ info:
   title: Feature Group API
   version: 1.0.0-mvp
   description: |
-    Feature Group 的 CRUD、Publish、Sync、Config Diff、Serving Canvas 操作。
+    Feature Group 的 CRUD、Publish、Sync、Serving Canvas 操作。
     与架构说明 §4.3/§4.5、《产品原型图》§3.3 对齐。
+    FG 为无状态设计，不存在 Draft / Online / Online Changing 等状态流转。
 
 servers:
   - url: /api/v1
@@ -24,9 +25,6 @@ paths:
         - name: bizTeam
           in: query
           schema: { type: string }
-        - name: status
-          in: query
-          schema: { $ref: "#/components/schemas/FGStatus" }
         - name: module
           in: query
           schema: { type: string }
@@ -52,7 +50,7 @@ paths:
 
     post:
       operationId: createFeatureGroup
-      summary: 新建 Feature Group（仅 Basic Info，状态 DRAFT）
+      summary: 新建 Feature Group（仅 Basic Info）
       requestBody:
         required: true
         content:
@@ -80,12 +78,12 @@ paths:
               schema: { $ref: "#/components/schemas/FeatureGroupDetail" }
     delete:
       operationId: deleteFeatureGroup
-      summary: 软删 Feature Group（仅 DRAFT）
+      summary: 软删 Feature Group（需确认下游依赖影响）
       responses:
         "204":
           description: 已删除
         "409":
-          description: 非 DRAFT 状态
+          description: 存在不可忽略的下游依赖
           content:
             application/json:
               schema: { $ref: "#/components/schemas/ErrorResponse" }
@@ -98,7 +96,7 @@ paths:
         schema: { type: string }
     put:
       operationId: updateBasicInfo
-      summary: 更新 Basic Info（不触发 Online Changing）
+      summary: 更新 Basic Info
       requestBody:
         required: true
         content:
@@ -118,7 +116,7 @@ paths:
         schema: { type: string }
     put:
       operationId: updateTrainingConfig
-      summary: 保存 Training Config（FG 为 Online 时触发 Online Changing）
+      summary: 保存 Training Config
       requestBody:
         required: true
         content:
@@ -166,14 +164,14 @@ paths:
         schema: { type: string }
     post:
       operationId: publishServingConfig
-      summary: 发布 Serving Config（需 Test Run 已通过；触发 Online Changing）
+      summary: 发布 Serving Config（需 Test Run 已通过）
       responses:
         "200":
           content:
             application/json:
               schema: { $ref: "#/components/schemas/FeatureGroupDetail" }
         "409":
-          description: Test Run 未通过或 FG 状态不允许
+          description: Test Run 未通过
           content:
             application/json:
               schema: { $ref: "#/components/schemas/ErrorResponse" }
@@ -224,65 +222,6 @@ paths:
           content:
             application/json:
               schema: { $ref: "#/components/schemas/FeatureGroupDetail" }
-        "409":
-          description: FG 处于 Online Changing（禁用 Sync）
-          content:
-            application/json:
-              schema: { $ref: "#/components/schemas/ErrorResponse" }
-
-  /feature-groups/{fgId}/manage:
-    parameters:
-      - name: fgId
-        in: path
-        required: true
-        schema: { type: string }
-    post:
-      operationId: manageFeatureGroup
-      summary: 状态流转（Online / Draft / Delete）
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              type: object
-              required: [action]
-              properties:
-                action:
-                  type: string
-                  enum: [online, draft, delete]
-                  description: |
-                    online：Draft->Online（T+S 已配置）或 OnlineChanging->Online（Admin，生成新 FG Version）。
-                    draft：Online->Draft（Admin）。
-                    delete：仅 Draft（软删）。
-      responses:
-        "200":
-          content:
-            application/json:
-              schema: { $ref: "#/components/schemas/FeatureGroupDetail" }
-        "409":
-          description: 非法状态流转或配置缺失
-          content:
-            application/json:
-              schema: { $ref: "#/components/schemas/ErrorResponse" }
-
-  /feature-groups/{fgId}/config-diff:
-    parameters:
-      - name: fgId
-        in: path
-        required: true
-        schema: { type: string }
-    get:
-      operationId: getConfigDiff
-      summary: 获取旧/新 Config Diff（Online Changing -> Online 确认用）
-      responses:
-        "200":
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  oldConfig: { type: object, additionalProperties: true }
-                  newConfig: { type: object, additionalProperties: true }
 
   /feature-groups/{fgId}/versions:
     parameters:
@@ -351,7 +290,7 @@ paths:
         schema: { type: string }
     post:
       operationId: copyFeatureGroup
-      summary: 复制 FG 为新 DRAFT（弹窗仅 Basic Info）
+      summary: 复制 FG 为新 Feature Group（弹窗仅 Basic Info）
       requestBody:
         required: true
         content:
@@ -365,16 +304,11 @@ paths:
 
 components:
   schemas:
-    FGStatus:
-      type: string
-      enum: [DRAFT, ONLINE, ONLINE_CHANGING]
-
     FeatureGroupSummary:
       type: object
       properties:
         id: { type: string }
         name: { type: string }
-        status: { $ref: "#/components/schemas/FGStatus" }
         region: { type: string }
         bizTeam: { type: string }
         module: { type: string }
@@ -392,7 +326,6 @@ components:
       properties:
         id: { type: string }
         name: { type: string }
-        status: { $ref: "#/components/schemas/FGStatus" }
         basicInfo: { $ref: "#/components/schemas/FGBasicInfo" }
         trainingConfig: { $ref: "#/components/schemas/TrainingConfig" }
         servingConfig: { $ref: "#/components/schemas/ServingConfig" }

@@ -107,21 +107,15 @@ export const FEATURE_GROUP_HTML = `<!DOCTYPE html>
 <script>
 // ── Data ─────────────────────────────────────────────────────────────────────
 var MOCK_DATA = [
-  { id:"1", name:"user_risk_score_fg",       status:"Online",          region:"TH",        module:"Credit Buyer Behavior", owner:"cedric.chencan@seamoney.com",  updateTime:"2026-02-16 08:30:00", description:"User risk scoring feature group for Thailand market, aggregates behavioral signals and transaction patterns." },
-  { id:"2", name:"mx_acard_realtime_fg",     status:"Online Changing", region:"MX",        module:"External Data",         owner:"zhengyi.loh@seamoney.com",     updateTime:"2026-02-15 11:00:00", description:"Real-time feature group for Mexico A-card model, capturing live transaction velocity and account age features." },
-  { id:"3", name:"th_embedding_fg_v3",       status:"Online",          region:"TH",        module:"External Data",         owner:"sankar.shyamal@seamoney.com",  updateTime:"2026-02-11 16:20:00", description:"Version 3 of Thailand embedding feature group, includes improved user graph embeddings and NLP-derived features." },
-  { id:"4", name:"dp_recommend_score_fg",    status:"Draft",           region:"SHOPEE_SG", module:"Credit Buyer Behavior", owner:"huangwei@shopee.com",          updateTime:"2026-02-16 13:45:00", description:"Draft feature group for Shopee Singapore recommendation scoring, currently under review and validation." },
-  { id:"5", name:"user_graph_relation_fg",   status:"Online",          region:"TH",        module:"Credit Buyer Behavior", owner:"cedric.chencan@seamoney.com",  updateTime:"2026-02-13 09:00:00", description:"User social graph and relation feature group, derives network-based features for fraud detection models." },
-  { id:"6", name:"mx_device_fingerprint_fg", status:"Online Changing", region:"MX",        module:"External Data",         owner:"xiaochen.kuang@monee.com",     updateTime:"2026-02-15 20:00:00", description:"Device fingerprint feature group for Mexico, tracks device identity signals and cross-device behavior patterns." }
+  { id:"1", name:"user_risk_score_fg",       region:"TH",        module:"Credit Buyer Behavior", owner:"cedric.chencan@seamoney.com",  updateTime:"2026-02-16 08:30:00", description:"User risk scoring feature group for Thailand market, aggregates behavioral signals and transaction patterns." },
+  { id:"2", name:"mx_acard_realtime_fg",     region:"MX",        module:"External Data",         owner:"zhengyi.loh@seamoney.com",     updateTime:"2026-02-15 11:00:00", description:"Real-time feature group for Mexico A-card model, capturing live transaction velocity and account age features." },
+  { id:"3", name:"th_embedding_fg_v3",       region:"TH",        module:"External Data",         owner:"sankar.shyamal@seamoney.com",  updateTime:"2026-02-11 16:20:00", description:"Version 3 of Thailand embedding feature group, includes improved user graph embeddings and NLP-derived features." },
+  { id:"4", name:"dp_recommend_score_fg",    region:"SHOPEE_SG", module:"Credit Buyer Behavior", owner:"huangwei@shopee.com",          updateTime:"2026-02-16 13:45:00", description:"Feature group for Shopee Singapore recommendation scoring." },
+  { id:"5", name:"user_graph_relation_fg",   region:"TH",        module:"Credit Buyer Behavior", owner:"cedric.chencan@seamoney.com",  updateTime:"2026-02-13 09:00:00", description:"User social graph and relation feature group, derives network-based features for fraud detection models." },
+  { id:"6", name:"mx_device_fingerprint_fg", region:"MX",        module:"External Data",         owner:"xiaochen.kuang@monee.com",     updateTime:"2026-02-15 20:00:00", description:"Device fingerprint feature group for Mexico, tracks device identity signals and cross-device behavior patterns." }
 ];
 
-var STATUS_CFG = {
-  "Online":          { bg:"#ecfdf5", color:"#065f46", dot:"#10b981", border:"#a7f3d0" },
-  "Online Changing": { bg:"#fffbeb", color:"#92400e", dot:"#f59e0b", border:"#fde68a" },
-  "Draft":           { bg:"#f1f5f9", color:"#475569", dot:"#94a3b8", border:"#cbd5e1" },
-  "Disable":         { bg:"#f3f4f6", color:"#6b7280", dot:"#9ca3af", border:"#e5e7eb" },
-  "Offline":         { bg:"#fef2f2", color:"#dc2626", dot:"#f87171", border:"#fecaca" }
-};
+// STATUS_CFG removed — FG is stateless
 
 // ── SVG icons ─────────────────────────────────────────────────────────────────
 var ICO_MAP_PIN       = '<svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0Z"/><circle cx="12" cy="10" r="3"/></svg>';
@@ -137,14 +131,7 @@ var ICO_TRASH2        = '<svg xmlns="http://www.w3.org/2000/svg" width="13" heig
 var ICO_ALERT         = '<svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#fa8c16" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z"/><path d="M12 9v4"/><path d="M12 17h.01"/></svg>';
 
 // ── Builders (string concatenation, no template literals) ─────────────────────
-function statusTag(s) {
-  var c = STATUS_CFG[s] || STATUS_CFG["Offline"];
-  return '<span style="display:inline-flex;align-items:center;gap:6px;padding:2px 10px;'
-    + 'border-radius:9999px;font-size:12px;font-weight:500;background:' + c.bg
-    + ';color:' + c.color + ';border:1px solid ' + c.border + ';">'
-    + '<span style="width:6px;height:6px;border-radius:50%;background:' + c.dot + ';flex-shrink:0;"></span>'
-    + s + '</span>';
-}
+// statusTag removed — FG is stateless
 
 function metaItem(icon, label, value) {
   return '<div style="display:flex;align-items:center;gap:6px;flex-shrink:0;">'
@@ -167,14 +154,9 @@ function menuItemHtml(id, action, icon, label, enabled) {
 }
 
 function buildDropdown(fg) {
-  var canOnline  = (fg.status === 'Draft' || fg.status === 'Disable' || fg.status === 'Online Changing');
-  var canDisable = (fg.status === 'Online');
-  var canDelete  = (fg.status === 'Draft' || fg.status === 'Disable');
+  var canDelete  = true;
   return '<div class="dropdown-panel" id="ddpanel-' + fg.id + '">'
     + '<div id="menu-normal-' + fg.id + '" style="padding:4px 0;">'
-    + menuItemHtml(fg.id, 'online',  ICO_CHECK_CIRCLE, 'Online',  canOnline)
-    + menuItemHtml(fg.id, 'disable', ICO_BAN,          'Disable', canDisable)
-    + '<div class="menu-divider"></div>'
     + menuItemHtml(fg.id, 'delete',  ICO_TRASH2,       'Delete',  canDelete)
     + '</div>'
     + '<div id="menu-confirm-' + fg.id + '" style="display:none;padding:16px;width:220px;">'
@@ -210,7 +192,6 @@ function buildCard(fg) {
     +             ICO_CHEVRON_RIGHT
     +           '</span>'
     +         '</button>'
-    +         statusTag(fg.status)
     +       '</div>'
     +       '<div style="display:flex;align-items:center;gap:8px;flex-shrink:0;">'
     +         '<button onclick="alert(\'Edit: ' + fg.name + '\')" '

@@ -357,13 +357,10 @@ export default function FgServingCanvasPage() {
     };
     updateFg(fgId, (prev) => {
       const hist = [record, ...(prev.servingPublishHistory ?? [])];
-      const nextStatus =
-        prev.status === "Online" ? "Online Changing" : prev.status;
       return {
         ...prev,
         servingPublishHistory: hist,
         servingCanvasState: snapshot,
-        status: nextStatus,
         updateTime: ts,
       };
     });

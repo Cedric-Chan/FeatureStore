@@ -2,13 +2,6 @@ import type { FgServingCanvasState } from "@/data/fgServingCanvasModel";
 import type { NodeDef } from "@/data/widetableCanvasModel";
 import type { FGFormData } from "./FeatureGroupModal";
 
-export type FeatureGroupStatus =
-  | "Online"
-  | "Online Changing"
-  | "Draft"
-  | "Disable"
-  | "Offline";
-
 /** Mock publish snapshot for Serving canvas history */
 export interface FgServingPublishRecord {
   id: string;
@@ -22,14 +15,13 @@ export interface FgServingPublishRecord {
 export interface FeatureGroup {
   id: string;
   name: string;
-  status: FeatureGroupStatus;
   region: string;
   module: string;
   owner: string;
   createTime: string;
   updateTime: string;
   description: string;
-  /** Soft delete: hidden from list; only Draft may be deleted */
+  /** Soft delete: hidden from list */
   deleted?: boolean;
   /** Current Serving DAG + node configs (mock) */
   servingCanvasState?: FgServingCanvasState;
@@ -63,7 +55,6 @@ export const INITIAL_FG_LIST_SEED: FeatureGroup[] = [
   {
     id: "1",
     name: "user_risk_score_fg",
-    status: "Online",
     region: "TH",
     module: "Credit Buyer Behavior",
     owner: "cedric.chencan@seamoney.com,sankar.shyamal@seamoney.com",
@@ -100,7 +91,6 @@ export const INITIAL_FG_LIST_SEED: FeatureGroup[] = [
   {
     id: "2",
     name: "mx_acard_realtime_fg",
-    status: "Online Changing",
     region: "MX",
     module: "External Data",
     owner: "zhengyi.loh@seamoney.com",
@@ -137,7 +127,6 @@ export const INITIAL_FG_LIST_SEED: FeatureGroup[] = [
   {
     id: "3",
     name: "th_embedding_fg_v3",
-    status: "Online",
     region: "TH",
     module: "External Data",
     owner: "sankar.shyamal@seamoney.com",
@@ -174,7 +163,6 @@ export const INITIAL_FG_LIST_SEED: FeatureGroup[] = [
   {
     id: "4",
     name: "dp_recommend_score_fg",
-    status: "Draft",
     region: "SHOPEE_SG",
     module: "Credit Buyer Behavior",
     owner: "huangwei@shopee.com",
@@ -206,7 +194,6 @@ export const INITIAL_FG_LIST_SEED: FeatureGroup[] = [
   {
     id: "5",
     name: "user_graph_relation_fg",
-    status: "Online",
     region: "TH",
     module: "Credit Buyer Behavior",
     owner: "cedric.chencan@seamoney.com",
@@ -243,7 +230,6 @@ export const INITIAL_FG_LIST_SEED: FeatureGroup[] = [
   {
     id: "6",
     name: "mx_device_fingerprint_fg",
-    status: "Online Changing",
     region: "MX",
     module: "External Data",
     owner: "xiaochen.kuang@monee.com",
