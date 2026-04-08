@@ -67,7 +67,7 @@ export function FgManageDropdown({
         onClick={toggle}
         className={
           compact
-            ? "inline-flex items-center gap-1.5 px-3 py-1.5 text-xs rounded-lg text-white transition-all hover:opacity-90 min-h-[44px]"
+            ? "inline-flex items-center gap-1.5 px-3 py-1.5 text-xs rounded-lg text-white transition-all hover:opacity-90 h-8"
             : "flex items-center gap-1.5 px-4 py-2 text-sm rounded-lg text-white transition-all hover:opacity-90 min-h-[44px]"
         }
         style={{ backgroundColor: "#13c2c2", fontWeight: 500 }}

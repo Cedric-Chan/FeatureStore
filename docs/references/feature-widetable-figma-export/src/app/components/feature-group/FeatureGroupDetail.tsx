@@ -457,50 +457,14 @@ export default function FeatureGroupDetail() {
                   >
                     {fg.name}
                   </h1>
-                  <StatusTag status={fg.status} />
+                  {/* StatusTag removed — FG is now stateless */}
                 </div>
                 <p className="mt-1 text-sm text-gray-500">{fg.description}</p>
               </div>
             </div>
-            <div className="flex items-center gap-2 flex-shrink-0">
-              <button
-                type="button"
-                onClick={
-                  fg.status === "Online Changing"
-                    ? undefined
-                    : () => void syncFgMetadata(fg.id)
-                }
-                disabled={fg.status === "Online Changing"}
-                className={`flex items-center gap-1.5 px-4 py-2 text-sm rounded-lg border transition-all min-h-[44px] ${
-                  fg.status === "Online Changing"
-                    ? "border-gray-100 text-gray-300 bg-gray-50 cursor-not-allowed"
-                    : "border-gray-200 text-gray-600 hover:border-teal-300 hover:text-teal-600 hover:bg-teal-50"
-                }`}
-                style={{ fontWeight: 500 }}
-                title={
-                  fg.status === "Online Changing"
-                    ? "Cannot sync while a change is pending"
-                    : SYNC_ARIA
-                }
-                aria-label={SYNC_ARIA}
-              >
-                <RefreshCw size={14} />
-                Sync
-              </button>
-              <FgManageDropdown
-                status={fg.status}
-                onOnlineIntent={() => {
-                  if (fg.status === "Online Changing") setConfigDiffOpen(true);
-                  else updateFg(fg.id, { status: "Online" });
-                }}
-                onDraftConfirm={() =>
-                  updateFg(fg.id, { status: "Draft" })
-                }
-                onDeleteConfirm={() => {
-                  updateFg(fg.id, { deleted: true });
-                  navigate("/fg");
-                }}
-              />
+            <div className="flex items-center gap-1.5 text-xs text-gray-400 flex-shrink-0 self-start mt-1">
+              <RefreshCw size={12} />
+              <span>Updated {fg.updateTime}</span>
             </div>
           </div>
         </div>
@@ -545,9 +509,7 @@ export default function FeatureGroupDetail() {
             <FieldRow label="Create Time">
               <PlainVal>{fg.createTime}</PlainVal>
             </FieldRow>
-            <FieldRow label="Update Time">
-              <PlainVal>{fg.updateTime}</PlainVal>
-            </FieldRow>
+            {/* Update Time moved to header */}
           </ConfigPanel>
 
           <ConfigPanel

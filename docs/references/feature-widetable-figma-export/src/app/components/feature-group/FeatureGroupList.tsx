@@ -1,7 +1,6 @@
 import { useState, useRef, useEffect } from "react";
 import { useNavigate } from "react-router";
 import { useFeatureGroups } from "@/app/feature-group/FeatureGroupsProvider";
-import { FEATURE_GROUP_HTML } from "./featureGroupHtml";
 import FeatureGroupModal, {
   type FGFormData,
   normalizeFgFormData,
@@ -18,7 +17,6 @@ import {
   Plus,
   FolderOpen,
   RefreshCw,
-  Settings,
   ChevronRight,
   Search,
   X,
@@ -27,8 +25,8 @@ import {
   Database,
   Zap,
   Copy,
+  Trash2,
 } from "lucide-react";
-import { FgManageDropdown } from "./FgManageDropdown";
 import {
   FgConfigDiffModal,
   MOCK_FG_DIFF_NEW,
@@ -183,17 +181,6 @@ export default function FeatureGroupList() {
     navigate(`/fg/${newId}`);
   }
 
-  function downloadHTML() {
-    const blob = new Blob([FEATURE_GROUP_HTML], { type: "text/html;charset=utf-8" });
-    const url  = URL.createObjectURL(blob);
-    const a    = document.createElement("a");
-    a.href     = url;
-    a.download = "feature-group-list.html";
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    URL.revokeObjectURL(url);
-  }
 
   const filtered = fgList.filter(
     (fg) =>
@@ -283,32 +270,6 @@ export default function FeatureGroupList() {
                 />
               )}
             </div>
-
-            <div className="w-px h-5 bg-gray-200 mx-1" />
-
-            <button
-              className="p-1.5 rounded border border-transparent text-gray-400 hover:border-gray-300 hover:text-gray-600 hover:bg-gray-50 transition-all"
-              title="Refresh"
-            >
-              <RefreshCw size={14} />
-            </button>
-            <button
-              className="p-1.5 rounded border border-transparent text-gray-400 hover:border-gray-300 hover:text-gray-600 hover:bg-gray-50 transition-all"
-              title="Settings"
-            >
-              <Settings size={14} />
-            </button>
-            <button
-              onClick={downloadHTML}
-              title="下载为 HTML 文件"
-              className="p-1.5 rounded border border-transparent text-gray-400 hover:border-gray-300 hover:text-gray-600 hover:bg-gray-50 transition-all inline-flex items-center"
-            >
-              <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
-                <polyline points="7 10 12 15 17 10"/>
-                <line x1="12" x2="12" y1="15" y2="3"/>
-              </svg>
-            </button>
           </div>
         </div>
       </div>
@@ -324,11 +285,6 @@ export default function FeatureGroupList() {
             onSync={() => void syncFgMetadata(fg.id)}
             syncTitle={SYNC_ARIA}
             onCopy={() => openCopyModal(fg)}
-            onOnlineIntent={() => {
-              if (fg.status === "Online Changing") setConfigDiffFgId(fg.id);
-              else updateFg(fg.id, { status: "Online" });
-            }}
-            onDraftConfirm={() => updateFg(fg.id, { status: "Draft" })}
             onDeleteConfirm={() => updateFg(fg.id, { deleted: true })}
           />
         ))}
@@ -412,8 +368,6 @@ function FeatureGroupCard({
   onSync,
   syncTitle,
   onCopy,
-  onOnlineIntent,
-  onDraftConfirm,
   onDeleteConfirm,
 }: {
   fg: FeatureGroup;
@@ -422,22 +376,17 @@ function FeatureGroupCard({
   onSync: () => void;
   syncTitle: string;
   onCopy: () => void;
-  onOnlineIntent: () => void;
-  onDraftConfirm: () => void;
   onDeleteConfirm: () => void;
 }) {
   const [hovered, setHovered] = useState(false);
-  const isDraft = fg.status === "Draft";
 
   return (
     <div
       className="bg-white rounded-xl border transition-all duration-200"
       style={{
-        borderColor: hovered ? (isDraft ? "#94a3b8" : "#13c2c2") : "#e5e7eb",
+        borderColor: hovered ? "#13c2c2" : "#e5e7eb",
         boxShadow: hovered
-          ? isDraft
-            ? "0 4px 16px 0 rgba(100,116,139,0.12), 0 1px 4px 0 rgba(0,0,0,0.04)"
-            : "0 4px 24px 0 rgba(19,194,194,0.10), 0 1px 4px 0 rgba(0,0,0,0.04)"
+          ? "0 4px 24px 0 rgba(19,194,194,0.10), 0 1px 4px 0 rgba(0,0,0,0.04)"
           : "0 1px 4px 0 rgba(0,0,0,0.04)",
       }}
       onMouseEnter={() => setHovered(true)}
@@ -448,9 +397,7 @@ function FeatureGroupCard({
         <div
           className="w-1.5 flex-shrink-0 rounded-l-xl transition-all duration-200"
           style={{
-            backgroundColor: isDraft
-              ? (hovered ? "#94a3b8" : "#e2e8f0")
-              : (hovered ? "#13c2c2" : "#e0f7f7"),
+            backgroundColor: hovered ? "#13c2c2" : "#e0f7f7",
           }}
         />
         <div className="flex-1 px-6 py-5">
@@ -462,22 +409,14 @@ function FeatureGroupCard({
                 type="button"
                 onClick={onNavigate}
                 className="text-left group flex items-center gap-1.5 min-w-0"
-                title={
-                  isDraft
-                    ? "Open draft detail"
-                    : "Open feature group detail"
-                }
+                title="Open feature group detail"
               >
                 <span
                   className="transition-colors group-hover:underline"
                   style={{
                     fontWeight: 700,
                     fontSize: 17,
-                    color: isDraft
-                      ? "#64748b"
-                      : hovered
-                      ? "#13c2c2"
-                      : "#1a1a2e",
+                    color: hovered ? "#13c2c2" : "#1a1a2e",
                     fontFamily: "monospace",
                     letterSpacing: "-0.01em",
                   }}
@@ -490,7 +429,7 @@ function FeatureGroupCard({
                   style={{ color: "#13c2c2" }}
                 />
               </button>
-              <StatusTag status={fg.status} />
+              {/* StatusTag removed — FG is stateless */}
               {MOCK_FT_COUNTS[fg.id] && (
                 <>
                   <FtsTag type="training" count={MOCK_FT_COUNTS[fg.id].train} />
@@ -499,35 +438,23 @@ function FeatureGroupCard({
               )}
             </div>
 
-            {/* Action buttons */}
-            <div className="flex items-center gap-2 flex-shrink-0">
+            {/* Action buttons — uniform size */}
+            <div className="flex items-center gap-1.5 flex-shrink-0">
               <button
                 type="button"
-                onClick={
-                  fg.status === "Online Changing" ? undefined : onSync
-                }
-                disabled={fg.status === "Online Changing"}
-                className={`flex items-center gap-1.5 px-3 py-1.5 text-xs rounded-lg border transition-all min-h-[44px] ${
-                  fg.status === "Online Changing"
-                    ? "border-gray-100 text-gray-300 bg-gray-50 cursor-not-allowed"
-                    : "border-gray-200 text-gray-600 hover:border-teal-300 hover:text-teal-600 hover:bg-teal-50"
-                }`}
+                onClick={onSync}
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs rounded-lg border border-gray-200 text-gray-600 hover:border-teal-300 hover:text-teal-600 hover:bg-teal-50 transition-all h-8"
                 style={{ fontWeight: 500 }}
-                title={
-                  fg.status === "Online Changing"
-                    ? "Cannot sync while a change is pending"
-                    : syncTitle
-                }
+                title={syncTitle}
                 aria-label={syncTitle}
               >
                 <RefreshCw size={12} />
                 Sync
               </button>
 
-              {/* Copy button */}
               <button
                 onClick={onCopy}
-                className="flex items-center gap-1.5 px-3 py-1.5 text-xs rounded-lg border border-gray-200 text-gray-600 hover:border-teal-300 hover:text-teal-600 hover:bg-teal-50 transition-all"
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs rounded-lg border border-gray-200 text-gray-600 hover:border-teal-300 hover:text-teal-600 hover:bg-teal-50 transition-all h-8"
                 style={{ fontWeight: 500 }}
                 title="Copy this feature group's config into a new one"
               >
@@ -535,13 +462,15 @@ function FeatureGroupCard({
                 Copy
               </button>
 
-              <FgManageDropdown
-                compact
-                status={fg.status}
-                onOnlineIntent={onOnlineIntent}
-                onDraftConfirm={onDraftConfirm}
-                onDeleteConfirm={onDeleteConfirm}
-              />
+              <button
+                onClick={onDeleteConfirm}
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs rounded-lg border border-red-200 text-red-600 bg-white hover:bg-red-50 hover:border-red-300 transition-all h-8"
+                style={{ fontWeight: 500 }}
+                title="Delete this Feature Group"
+              >
+                <Trash2 size={12} />
+                Delete
+              </button>
             </div>
           </div>
 
