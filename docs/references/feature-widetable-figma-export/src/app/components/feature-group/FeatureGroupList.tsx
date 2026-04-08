@@ -26,6 +26,7 @@ import {
   Zap,
   Copy,
   Trash2,
+  AlertTriangle,
 } from "lucide-react";
 import {
   FgConfigDiffModal,
@@ -57,6 +58,15 @@ function StatusTag({ status }: { status: FeatureGroupStatus }) {
     </span>
   );
 }
+
+// ─── Mock downstream lineage (WideTable references) ──────────────────────────
+const MOCK_FG_DOWNSTREAM: Record<string, string[]> = {
+  "1": ["risk_wide_table", "fraud_signal_table_ph"],
+  "2": ["acard_wide_table_mx"],
+  "3": ["risk_wide_table"],
+  "5": ["fraud_signal_table_ph"],
+  "6": ["acard_wide_table_mx"],
+};
 
 // ─── Fts count tags ───────────────────────────────────────────────────────────
 const MOCK_FT_COUNTS: Record<string, { train: number; serve: number }> = {
@@ -379,6 +389,20 @@ function FeatureGroupCard({
   onDeleteConfirm: () => void;
 }) {
   const [hovered, setHovered] = useState(false);
+  const [deleteOpen, setDeleteOpen] = useState(false);
+  const deleteRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!deleteOpen) return;
+    function handler(e: MouseEvent) {
+      if (deleteRef.current && !deleteRef.current.contains(e.target as Node))
+        setDeleteOpen(false);
+    }
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, [deleteOpen]);
+
+  const downstream = MOCK_FG_DOWNSTREAM[fg.id] ?? [];
 
   return (
     <div
@@ -462,15 +486,79 @@ function FeatureGroupCard({
                 Copy
               </button>
 
-              <button
-                onClick={onDeleteConfirm}
-                className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs rounded-lg border border-red-200 text-red-600 bg-white hover:bg-red-50 hover:border-red-300 transition-all h-8"
-                style={{ fontWeight: 500 }}
-                title="Delete this Feature Group"
-              >
-                <Trash2 size={12} />
-                Delete
-              </button>
+              <div className="relative" ref={deleteRef}>
+                <button
+                  onClick={() => setDeleteOpen((v) => !v)}
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs rounded-lg border border-red-200 text-red-600 bg-white hover:bg-red-50 hover:border-red-300 transition-all h-8"
+                  style={{ fontWeight: 500 }}
+                  title="Delete this Feature Group"
+                >
+                  <Trash2 size={12} />
+                  Delete
+                </button>
+
+                {deleteOpen && (
+                  <div
+                    className="absolute right-0 top-full mt-1.5 bg-white border border-gray-200 rounded-xl shadow-xl z-50 p-4"
+                    style={{ width: 320 }}
+                  >
+                    <div className="flex gap-2.5 mb-3">
+                      <AlertTriangle size={16} className="flex-shrink-0 mt-0.5 text-red-500" />
+                      <div className="text-xs text-gray-700 leading-relaxed">
+                        <p className="font-semibold text-red-600 mb-1">
+                          Delete this Feature Group?
+                        </p>
+                        <p>This action is irreversible. Please confirm downstream impact before proceeding.</p>
+                      </div>
+                    </div>
+
+                    {downstream.length > 0 && (
+                      <div className="mb-3 p-2.5 rounded-lg bg-red-50 border border-red-100">
+                        <p className="text-xs font-medium text-red-700 mb-1.5">
+                          Downstream WideTable Dependencies ({downstream.length})
+                        </p>
+                        <ul className="space-y-1">
+                          {downstream.map((wt) => (
+                            <li
+                              key={wt}
+                              className="flex items-center gap-1.5 text-xs text-red-600"
+                            >
+                              <Database size={11} className="flex-shrink-0" />
+                              <span className="font-mono">{wt}</span>
+                            </li>
+                          ))}
+                        </ul>
+                      </div>
+                    )}
+
+                    {downstream.length === 0 && (
+                      <p className="mb-3 text-xs text-gray-400 italic">
+                        No known downstream dependencies.
+                      </p>
+                    )}
+
+                    <div className="flex justify-end gap-2">
+                      <button
+                        type="button"
+                        onClick={() => setDeleteOpen(false)}
+                        className="px-3 py-1.5 text-xs rounded-lg border border-gray-300 text-gray-600 hover:bg-gray-50 transition-all"
+                      >
+                        Cancel
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          onDeleteConfirm();
+                          setDeleteOpen(false);
+                        }}
+                        className="px-3 py-1.5 text-xs rounded-lg text-white bg-red-500 hover:bg-red-600 transition-all font-medium"
+                      >
+                        Confirm Delete
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </div>
             </div>
           </div>
 
