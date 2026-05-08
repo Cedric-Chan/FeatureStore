@@ -1,10 +1,12 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import {
   ChevronDown,
   Check,
   Database,
   Download,
   Maximize2,
+  Pencil,
   Sparkles,
   Trash2,
   X,
@@ -19,7 +21,7 @@ import {
   parseColumnCount,
 } from "@/app/components/DataReportModal";
 
-const FILLNA_METHODS = ["mean", "median", "constant", "forward_fill"] as const;
+const FILLNA_METHODS = ["mean", "median", "constant", "forward_fill", "fixed_value"] as const;
 
 /** Mock cleaning task lifecycle until backend API is wired. */
 export type CleaningTaskStatus = "NONE" | "PENDING" | "RUNNING" | "SUCCESS" | "FAILED";
@@ -95,13 +97,23 @@ function FillnaFeatureNamesMultiSelect({
       </button>
       {open && (
         <div className="absolute left-0 right-0 z-50 mt-1 rounded-xl border border-gray-200 bg-white shadow-lg flex flex-col max-h-56 overflow-hidden">
-          <div className="p-2 border-b border-gray-100 shrink-0">
+          <div className="p-2 border-b border-gray-100 shrink-0 space-y-1.5">
             <input
               value={q}
               onChange={(e) => setQ(e.target.value)}
               placeholder="Search features…"
               className="w-full text-xs border border-gray-200 rounded-lg px-2 py-1.5 bg-gray-50 focus:outline-none focus:border-teal-400"
             />
+            <button
+              type="button"
+              onClick={() => {
+                const allSelected = options.every((o) => selectedSet.has(o));
+                onChange(allSelected ? "" : joinFeaturesCsv(options));
+              }}
+              className="w-full text-left text-[11px] text-teal-600 hover:text-teal-700 px-0.5"
+            >
+              {options.every((o) => selectedSet.has(o)) ? "Deselect all" : "Select all"}
+            </button>
           </div>
           <div className="overflow-y-auto py-1">
             {filtered.length === 0 && (
@@ -129,6 +141,248 @@ function FillnaFeatureNamesMultiSelect({
             })}
           </div>
         </div>
+      )}
+    </div>
+  );
+}
+
+const FILLNA_TAG_MAX = 3;
+
+function FillnaRowCompact({
+  rrow,
+  options,
+  onUpdate,
+  onDelete,
+}: {
+  rrow: { id: string; method: string; features: string; fixedValue?: string };
+  options: string[];
+  onUpdate: (patch: Partial<{ method: string; features: string; fixedValue: string }>) => void;
+  onDelete: () => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const [popoverPos, setPopoverPos] = useState<{ top: number; left: number } | null>(null);
+  const triggerRef = useRef<HTMLButtonElement>(null);
+  const popoverRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    const h = (e: MouseEvent) => {
+      if (
+        popoverRef.current && !popoverRef.current.contains(e.target as Node) &&
+        triggerRef.current && !triggerRef.current.contains(e.target as Node)
+      ) setOpen(false);
+    };
+    document.addEventListener("mousedown", h);
+    return () => document.removeEventListener("mousedown", h);
+  }, [open]);
+
+  const handleEditClick = () => {
+    if (open) { setOpen(false); return; }
+    if (triggerRef.current) {
+      const r = triggerRef.current.getBoundingClientRect();
+      setPopoverPos({ top: r.bottom + 6, left: Math.max(8, r.right - 256) });
+    }
+    setOpen(true);
+  };
+
+  const features = useMemo(() => parseFeaturesCsv(rrow.features), [rrow.features]);
+  const visibleTags = features.slice(0, FILLNA_TAG_MAX);
+  const overflow = features.length - FILLNA_TAG_MAX;
+
+  return (
+    <div className="flex items-center gap-2 px-3 py-2 rounded-xl border border-gray-200 bg-white min-w-0">
+      {rrow.method === "fixed_value" ? (
+        <span className="text-xs px-2 py-0.5 rounded-md bg-amber-50 text-amber-700 font-mono shrink-0 border border-amber-200">
+          ={rrow.fixedValue !== undefined && rrow.fixedValue !== "" ? rrow.fixedValue : <span className="italic text-amber-400">value</span>}
+        </span>
+      ) : (
+        <span className="text-xs px-2 py-0.5 rounded-md bg-teal-100 text-teal-700 font-mono shrink-0">
+          {rrow.method}
+        </span>
+      )}
+      <div className="flex items-center gap-1 flex-1 min-w-0 flex-wrap">
+        {visibleTags.map((f) => (
+          <span key={f} className="text-xs px-1.5 py-0.5 rounded-md bg-gray-100 text-gray-600 font-mono truncate max-w-[120px]">
+            {f}
+          </span>
+        ))}
+        {overflow > 0 && (
+          <span className="text-xs text-gray-400 shrink-0">+{overflow}</span>
+        )}
+        {features.length === 0 && (
+          <span className="text-xs text-gray-400 italic">No features</span>
+        )}
+      </div>
+      <div className="shrink-0 flex items-center gap-1.5">
+        <button
+          ref={triggerRef}
+          type="button"
+          onClick={handleEditClick}
+          className="text-gray-400 hover:text-teal-600 transition-colors"
+        >
+          <Pencil size={13} />
+        </button>
+        <button
+          type="button"
+          onClick={onDelete}
+          className="text-gray-300 hover:text-red-400 transition-colors"
+        >
+          <Trash2 size={13} />
+        </button>
+      </div>
+      {open && popoverPos && createPortal(
+        <div
+          ref={popoverRef}
+          style={{ position: "fixed", top: popoverPos.top, left: popoverPos.left, zIndex: 9999, width: 256 }}
+          className="rounded-xl border border-gray-200 bg-white shadow-2xl p-3 space-y-3"
+        >
+          <div>
+            <div className="text-[10px] text-gray-400 mb-1">Fill method</div>
+            <select
+              value={rrow.method}
+              onChange={(e) => onUpdate({ method: e.target.value, fixedValue: "" })}
+              className="w-full text-xs border border-gray-200 rounded-lg px-2 py-1.5 bg-gray-50 focus:outline-none focus:border-teal-400"
+            >
+              {FILLNA_METHODS.map((m) => (
+                <option key={m} value={m}>{m}</option>
+              ))}
+            </select>
+          </div>
+          {rrow.method === "fixed_value" && (
+            <div>
+              <div className="text-[10px] text-gray-400 mb-1">Value</div>
+              <input
+                type="text"
+                value={rrow.fixedValue ?? ""}
+                onChange={(e) => onUpdate({ fixedValue: e.target.value })}
+                placeholder="e.g. 0, unknown, -1"
+                className="w-full text-xs border border-gray-200 rounded-lg px-2 py-1.5 bg-gray-50 focus:outline-none focus:border-teal-400 font-mono"
+              />
+            </div>
+          )}
+          <div>
+            <div className="text-[10px] text-gray-400 mb-1">Feature names</div>
+            <FillnaFeatureNamesMultiSelect
+              value={rrow.features}
+              options={options}
+              onChange={(csv) => onUpdate({ features: csv })}
+            />
+          </div>
+        </div>,
+        document.body
+      )}
+    </div>
+  );
+}
+
+function sqlSyntaxStatus(sql: string): "ok" | "warn" | null {
+  const s = sql.trim();
+  if (!s) return null;
+  return /^(CASE|SELECT|IF|COALESCE|IIF|WHEN)\b/i.test(s) ? "ok" : "warn";
+}
+
+function VmRowCompact({
+  rrow,
+  options,
+  onUpdate,
+  onDelete,
+}: {
+  rrow: { id: string; feature: string; sql: string };
+  options: string[];
+  onUpdate: (patch: Partial<{ feature: string; sql: string }>) => void;
+  onDelete: () => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const [popoverPos, setPopoverPos] = useState<{ top: number; left: number } | null>(null);
+  const triggerRef = useRef<HTMLButtonElement>(null);
+  const popoverRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    const h = (e: MouseEvent) => {
+      if (
+        popoverRef.current && !popoverRef.current.contains(e.target as Node) &&
+        triggerRef.current && !triggerRef.current.contains(e.target as Node)
+      ) setOpen(false);
+    };
+    document.addEventListener("mousedown", h);
+    return () => document.removeEventListener("mousedown", h);
+  }, [open]);
+
+  const handleEditClick = () => {
+    if (open) { setOpen(false); return; }
+    if (triggerRef.current) {
+      const r = triggerRef.current.getBoundingClientRect();
+      setPopoverPos({ top: r.bottom + 6, left: Math.max(8, r.right - 288) });
+    }
+    setOpen(true);
+  };
+
+  const status = sqlSyntaxStatus(rrow.sql);
+
+  return (
+    <div className="flex items-center gap-2 px-3 py-2 rounded-xl border border-gray-200 bg-white min-w-0">
+      <span className="text-xs font-mono text-gray-700 truncate flex-1 min-w-0">
+        {rrow.feature || <span className="text-gray-400 italic">No feature</span>}
+      </span>
+      {status === "ok" && (
+        <span className="flex items-center gap-1 text-[11px] px-2 py-0.5 rounded-md bg-green-50 text-green-600 border border-green-200 shrink-0">
+          <Check size={10} strokeWidth={3} /> OK
+        </span>
+      )}
+      {status === "warn" && (
+        <span className="text-[11px] px-2 py-0.5 rounded-md bg-amber-50 text-amber-600 border border-amber-200 shrink-0">
+          ⚠ Check SQL
+        </span>
+      )}
+      <div className="shrink-0 flex items-center gap-1.5">
+        <button
+          ref={triggerRef}
+          type="button"
+          onClick={handleEditClick}
+          className="text-gray-400 hover:text-teal-600 transition-colors"
+        >
+          <Pencil size={13} />
+        </button>
+        <button
+          type="button"
+          onClick={onDelete}
+          className="text-gray-300 hover:text-red-400 transition-colors"
+        >
+          <Trash2 size={13} />
+        </button>
+      </div>
+      {open && popoverPos && createPortal(
+        <div
+          ref={popoverRef}
+          style={{ position: "fixed", top: popoverPos.top, left: popoverPos.left, zIndex: 9999, width: 288 }}
+          className="rounded-xl border border-gray-200 bg-white shadow-2xl p-3 space-y-3"
+        >
+          <div>
+            <div className="text-[10px] text-gray-400 mb-1">Feature name</div>
+            <select
+              value={rrow.feature}
+              onChange={(e) => onUpdate({ feature: e.target.value })}
+              className="w-full text-xs border border-gray-200 rounded-lg px-2 py-1.5 font-mono bg-gray-50 focus:outline-none focus:border-teal-400"
+            >
+              <option value="">Select feature…</option>
+              {options.map((name) => (
+                <option key={name} value={name}>{name}</option>
+              ))}
+            </select>
+          </div>
+          <div>
+            <div className="text-[10px] text-gray-400 mb-1">SQL expression</div>
+            <textarea
+              value={rrow.sql}
+              onChange={(e) => onUpdate({ sql: e.target.value })}
+              rows={4}
+              placeholder={"CASE WHEN credit_score >= 700\n  THEN 'low'\n  ELSE 'high'\nEND"}
+              className="w-full text-xs font-mono border border-gray-200 rounded-lg px-2 py-1.5 bg-gray-50 resize-y focus:outline-none focus:border-teal-400 leading-relaxed"
+            />
+          </div>
+        </div>,
+        document.body
       )}
     </div>
   );
@@ -169,7 +423,7 @@ export function DataCleaningAndReportsModal({
   const cleaningFeatureOptions = useMemo(() => getCleaningFeatureNameOptions(), []);
   const [mainTab, setMainTab] = useState<"report" | "config">("report");
   const [reportSubTab, setReportSubTab] = useState<"raw" | "clean">("raw");
-  const [fillnaRows, setFillnaRows] = useState<{ id: string; method: string; features: string }[]>(() =>
+  const [fillnaRows, setFillnaRows] = useState<{ id: string; method: string; features: string; fixedValue?: string }[]>(() =>
     initialCleaning.fillnaRows?.length ? initialCleaning.fillnaRows.map((r) => ({ ...r })) : []
   );
   const [vmRows, setVmRows] = useState<{ id: string; feature: string; sql: string }[]>(() =>
@@ -266,11 +520,11 @@ export function DataCleaningAndReportsModal({
               </div>
               <div className="min-w-0">
                 <div className="text-sm font-medium text-gray-800 truncate">Clean · {row.name}</div>
-                <div className="text-[11px] text-gray-400 mt-0.5 leading-snug">
-                  Raw table → Raw report → Cleaning config → Cleaned report
+                <div className="text-[10px] text-gray-400 mt-0.5 font-mono truncate">
+                  Raw Table Result: feature_store.dwd_{row.region[0]?.toLowerCase()}_{row.name}__raw
                 </div>
-                <div className="text-[10px] text-gray-400 mt-1 font-mono truncate" title={rawTable}>
-                  Raw: {rawTable}
+                <div className="text-[10px] text-gray-400 mt-0.5 font-mono truncate">
+                  Cleaned Table Result: feature_store.dwd_{row.region[0]?.toLowerCase()}_{row.name}__clean
                 </div>
               </div>
             </div>
@@ -389,14 +643,6 @@ export function DataCleaningAndReportsModal({
                   </div>
                 </div>
 
-                <div className="mt-2 text-[10px] text-gray-400 space-y-0.5 font-mono break-all">
-                  <div>Raw report path: {rawS3}</div>
-                  {cleanHasData ? (
-                    <div>Cleaned report path: {cleanedReportPath}</div>
-                  ) : (
-                    <div className="text-gray-300">Cleaned report path: (after a successful clean task)</div>
-                  )}
-                </div>
               </div>
             )}
 
@@ -442,47 +688,19 @@ export function DataCleaningAndReportsModal({
                       + Add row
                     </button>
                   </div>
-                  <div className="flex flex-col gap-2">
-                    {fillnaRows.map((rrow, idx) => (
-                      <div key={rrow.id} className="rounded-xl border border-gray-200 p-3 space-y-2 bg-white">
-                        <div className="flex items-center justify-between">
-                          <span className="text-xs text-gray-400">#{idx + 1}</span>
-                          <button
-                            type="button"
-                            onClick={() => setFillnaRows((p) => p.filter((r) => r.id !== rrow.id))}
-                            className="text-gray-300 hover:text-red-400"
-                          >
-                            <Trash2 size={13} />
-                          </button>
-                        </div>
-                        <select
-                          value={rrow.method}
-                          onChange={(e) =>
-                            setFillnaRows((p) =>
-                              p.map((r) => (r.id === rrow.id ? { ...r, method: e.target.value } : r))
-                            )
-                          }
-                          className="w-full text-xs border border-gray-200 rounded-lg px-2 py-1.5 bg-gray-50 focus:outline-none focus:border-teal-400"
-                        >
-                          {FILLNA_METHODS.map((m) => (
-                            <option key={m} value={m}>
-                              {m}
-                            </option>
-                          ))}
-                        </select>
-                        <div>
-                          <div className="text-[10px] text-gray-400 mb-1">Feature names</div>
-                          <FillnaFeatureNamesMultiSelect
-                            value={rrow.features}
-                            options={cleaningFeatureOptions}
-                            onChange={(csv) =>
-                              setFillnaRows((p) =>
-                                p.map((r) => (r.id === rrow.id ? { ...r, features: csv } : r))
-                              )
-                            }
-                          />
-                        </div>
-                      </div>
+                  <div className="flex flex-col gap-1.5">
+                    {fillnaRows.map((rrow) => (
+                      <FillnaRowCompact
+                        key={rrow.id}
+                        rrow={rrow}
+                        options={cleaningFeatureOptions}
+                        onUpdate={(patch) =>
+                          setFillnaRows((p) =>
+                            p.map((r) => (r.id === rrow.id ? { ...r, ...patch } : r))
+                          )
+                        }
+                        onDelete={() => setFillnaRows((p) => p.filter((r) => r.id !== rrow.id))}
+                      />
                     ))}
                     {fillnaRows.length === 0 && (
                       <p className="text-xs text-gray-400 border border-dashed border-gray-200 rounded-xl py-4 text-center">
@@ -503,63 +721,19 @@ export function DataCleaningAndReportsModal({
                       + Add row
                     </button>
                   </div>
-                  <div className="flex flex-col gap-2">
-                    {vmRows.map((rrow, idx) => (
-                      <div key={rrow.id} className="rounded-xl border border-gray-200 p-3 space-y-2 bg-white">
-                        <div className="flex items-center justify-between">
-                          <span className="text-xs text-gray-400">#{idx + 1}</span>
-                          <div className="flex items-center gap-1">
-                            <button
-                              type="button"
-                              title="Expand SQL"
-                              onClick={() => setVmFullscreen(rrow.id)}
-                              className="p-1 rounded-lg text-gray-400 hover:text-teal-600 hover:bg-teal-50"
-                            >
-                              <Maximize2 size={13} />
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => setVmRows((p) => p.filter((r) => r.id !== rrow.id))}
-                              className="text-gray-300 hover:text-red-400"
-                            >
-                              <Trash2 size={13} />
-                            </button>
-                          </div>
-                        </div>
-                        <div>
-                          <div className="text-[10px] text-gray-400 mb-1">Feature name</div>
-                          <select
-                            value={rrow.feature}
-                            onChange={(e) =>
-                              setVmRows((p) =>
-                                p.map((r) => (r.id === rrow.id ? { ...r, feature: e.target.value } : r))
-                              )
-                            }
-                            className="w-full text-xs border border-gray-200 rounded-lg px-2 py-1.5 font-mono bg-gray-50 focus:outline-none focus:border-teal-400"
-                          >
-                            <option value="">Select feature…</option>
-                            {rrow.feature.trim() && !cleaningFeatureOptions.includes(rrow.feature) ? (
-                              <option value={rrow.feature}>{rrow.feature}</option>
-                            ) : null}
-                            {cleaningFeatureOptions.map((name) => (
-                              <option key={name} value={name}>
-                                {name}
-                              </option>
-                            ))}
-                          </select>
-                        </div>
-                        <textarea
-                          value={rrow.sql}
-                          onChange={(e) =>
-                            setVmRows((p) =>
-                              p.map((r) => (r.id === rrow.id ? { ...r, sql: e.target.value } : r))
-                            )
-                          }
-                          rows={3}
-                          placeholder="SQL / CASE WHEN …"
-                          className="w-full text-xs font-mono border border-gray-200 rounded-lg px-2 py-1.5 bg-gray-50 resize-y focus:outline-none focus:border-teal-400"
-                        />
-                      </div>
+                  <div className="flex flex-col gap-1.5">
+                    {vmRows.map((rrow) => (
+                      <VmRowCompact
+                        key={rrow.id}
+                        rrow={rrow}
+                        options={cleaningFeatureOptions}
+                        onUpdate={(patch) =>
+                          setVmRows((p) =>
+                            p.map((r) => (r.id === rrow.id ? { ...r, ...patch } : r))
+                          )
+                        }
+                        onDelete={() => setVmRows((p) => p.filter((r) => r.id !== rrow.id))}
+                      />
                     ))}
                     {vmRows.length === 0 && (
                       <p className="text-xs text-gray-400 border border-dashed border-gray-200 rounded-xl py-4 text-center">
@@ -569,10 +743,6 @@ export function DataCleaningAndReportsModal({
                   </div>
                 </div>
 
-                <div className="mt-4 rounded-xl border border-violet-100 bg-violet-50/30 px-3 py-2 text-[11px] text-violet-900">
-                  Cleaned wide table (reference):{" "}
-                  <span className="font-mono text-violet-800">{cleanedTable}</span>
-                </div>
               </div>
             )}
           </div>

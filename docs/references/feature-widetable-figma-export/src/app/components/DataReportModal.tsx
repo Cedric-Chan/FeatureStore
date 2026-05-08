@@ -1,8 +1,13 @@
-import { useEffect, useMemo, useState, type ReactNode } from "react";
-import { Database, Download, Search, X } from "lucide-react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { ChevronUp, ChevronDown, Database, Download, ListFilter, Search, X } from "lucide-react";
+
+export type DataType = "FLOAT" | "INT" | "STRING" | "BOOL";
+
+const DATA_TYPES: DataType[] = ["FLOAT", "FLOAT", "FLOAT", "INT", "INT", "STRING", "STRING", "BOOL", "FLOAT", "INT"];
 
 export type ReportRow = {
   name: string;
+  dataType: DataType;
   cnt: number;
   cntUniq: number;
   max: string;
@@ -32,16 +37,19 @@ export function generateReportRows(columnCount: number): ReportRow[] {
     const name = `feature_${i + 1}`;
     const seed = hashSeed(name);
     const base = 2_500_000 + (seed % 400_000);
+    const dataType = DATA_TYPES[seed % DATA_TYPES.length];
+    const isTextual = dataType === "STRING" || dataType === "BOOL";
     return {
       name,
+      dataType,
       cnt: base + i * 13,
       cntUniq: 10 + (seed % 2000),
-      max: String(800 + (seed % 100)),
-      min: String(seed % 50),
-      avg: ((seed % 1000) / 10).toFixed(1),
-      zcnt: seed % 50_000,
+      max: isTextual ? "—" : String(800 + (seed % 100)),
+      min: isTextual ? "—" : String(seed % 50),
+      avg: isTextual ? "—" : ((seed % 1000) / 10).toFixed(1),
+      zcnt: isTextual ? 0 : seed % 50_000,
       nullcnt: seed % 2000,
-      negcnt: seed % 100,
+      negcnt: isTextual ? 0 : seed % 100,
     };
   });
 }
@@ -90,18 +98,95 @@ export function DataReportTableSection({
 }) {
   const [q, setQ] = useState("");
   const [page, setPage] = useState(1);
+  const [sort, setSort] = useState<{ col: string; dir: "asc" | "desc" } | null>(null);
+  const [dtFilter, setDtFilter] = useState<Set<DataType>>(new Set());
+  const [dtFilterOpen, setDtFilterOpen] = useState(false);
+  const dtFilterRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!dtFilterOpen) return;
+    const h = (e: MouseEvent) => {
+      if (dtFilterRef.current && !dtFilterRef.current.contains(e.target as Node)) setDtFilterOpen(false);
+    };
+    document.addEventListener("mousedown", h);
+    return () => document.removeEventListener("mousedown", h);
+  }, [dtFilterOpen]);
+
   const activeCount = Math.max(1, columnCount);
   const allRows = useMemo(() => generateReportRows(activeCount), [activeCount]);
-  const filtered = useMemo(
-    () => allRows.filter((r) => r.name.toLowerCase().includes(q.trim().toLowerCase())),
-    [allRows, q]
-  );
+
+  const sortValue = (r: ReportRow, col: string): number | string => {
+    const pct = (n: number) => r.cnt > 0 ? (n / r.cnt) * 100 : 0;
+    switch (col) {
+      case "name":     return r.name;
+      case "dataType": return r.dataType;
+      case "cnt":      return r.cnt;
+      case "cntUniq":  return r.cntUniq;
+      case "nullRate": return pct(r.nullcnt);
+      case "zRate":    return pct(r.zcnt);
+      case "negRate":  return pct(r.negcnt);
+      case "max":      return parseFloat(r.max) || 0;
+      case "min":      return parseFloat(r.min) || 0;
+      case "avg":      return parseFloat(r.avg) || 0;
+      default:         return 0;
+    }
+  };
+
+  const cycleSort = (col: string) => {
+    setSort((prev) => {
+      if (!prev || prev.col !== col) return { col, dir: "asc" };
+      if (prev.dir === "asc") return { col, dir: "desc" };
+      return null;
+    });
+    setPage(1);
+  };
+
+  const filtered = useMemo(() => {
+    let rows = allRows.filter((r) => r.name.toLowerCase().includes(q.trim().toLowerCase()));
+    if (dtFilter.size > 0) rows = rows.filter((r) => dtFilter.has(r.dataType));
+    if (sort) {
+      const { col, dir } = sort;
+      rows = [...rows].sort((a, b) => {
+        const av = sortValue(a, col), bv = sortValue(b, col);
+        if (typeof av === "string" && typeof bv === "string")
+          return dir === "asc" ? av.localeCompare(bv) : bv.localeCompare(av);
+        return dir === "asc" ? (av as number) - (bv as number) : (bv as number) - (av as number);
+      });
+    }
+    return rows;
+  }, [allRows, q, dtFilter, sort]);
+
   const totalPages = Math.max(1, Math.ceil(filtered.length / pageSize));
   const pageSafe = Math.min(page, totalPages);
   const paged = useMemo(() => {
     const start = (pageSafe - 1) * pageSize;
     return filtered.slice(start, start + pageSize);
   }, [filtered, pageSafe, pageSize]);
+
+  const SortTh = ({ col, label }: { col: string; label: string }) => {
+    const active = sort?.col === col;
+    const dir = sort?.dir;
+    return (
+      <th
+        className="px-3 py-2.5 font-medium whitespace-nowrap cursor-pointer select-none group"
+        onClick={() => cycleSort(col)}
+      >
+        <span className="inline-flex items-center gap-1">
+          {label}
+          {active ? (
+            dir === "asc"
+              ? <ChevronUp size={11} strokeWidth={2.5} className="text-teal-600 shrink-0" />
+              : <ChevronDown size={11} strokeWidth={2.5} className="text-teal-600 shrink-0" />
+          ) : (
+            <span className="inline-flex flex-col gap-0 leading-none text-gray-300 group-hover:text-gray-400 shrink-0">
+              <ChevronUp size={8} strokeWidth={2} />
+              <ChevronDown size={8} strokeWidth={2} />
+            </span>
+          )}
+        </span>
+      </th>
+    );
+  };
 
   return (
     <>
@@ -114,7 +199,7 @@ export function DataReportTableSection({
               setQ(e.target.value);
               setPage(1);
             }}
-            placeholder="Search feature / column name…"
+            placeholder="Search feature name…"
             className="w-full pl-9 pr-3 py-2 text-sm border border-gray-200 rounded-xl bg-gray-50 focus:outline-none focus:border-teal-400 focus:bg-white transition-all"
           />
         </div>
@@ -127,27 +212,105 @@ export function DataReportTableSection({
         <table className="w-full text-xs">
           <thead className="sticky top-0 bg-gray-50 border-b border-gray-100 z-[1]">
             <tr className="text-left text-gray-500">
-              {DATA_REPORT_TABLE_HEADERS.map((h) => (
-                <th key={h} className="px-3 py-2.5 font-medium whitespace-nowrap">
-                  {h}
-                </th>
-              ))}
+              <SortTh col="name" label="Feature Name" />
+              <th className="px-3 py-2.5 font-medium whitespace-nowrap">
+                <div className="inline-flex items-center gap-1">
+                  <span className="cursor-pointer select-none group inline-flex items-center gap-1" onClick={() => cycleSort("dataType")}>
+                    Data Type
+                    {sort?.col === "dataType" ? (
+                      sort.dir === "asc"
+                        ? <ChevronUp size={11} strokeWidth={2.5} className="text-teal-600 shrink-0" />
+                        : <ChevronDown size={11} strokeWidth={2.5} className="text-teal-600 shrink-0" />
+                    ) : (
+                      <span className="inline-flex flex-col gap-0 leading-none text-gray-300 group-hover:text-gray-400 shrink-0">
+                        <ChevronUp size={8} strokeWidth={2} />
+                        <ChevronDown size={8} strokeWidth={2} />
+                      </span>
+                    )}
+                  </span>
+                  <div className="relative" ref={dtFilterRef}>
+                    <button
+                      type="button"
+                      onClick={() => setDtFilterOpen((o) => !o)}
+                      className={`p-0.5 rounded transition-colors ${dtFilter.size > 0 ? "text-teal-600" : "text-gray-300 hover:text-gray-500"}`}
+                      title="Filter by type"
+                    >
+                      <ListFilter size={11} />
+                    </button>
+                    {dtFilterOpen && (
+                      <div className="absolute left-0 top-full mt-1 z-20 w-32 rounded-xl border border-gray-200 bg-white shadow-lg p-2 space-y-1">
+                        {(["FLOAT", "INT", "STRING", "BOOL"] as DataType[]).map((t) => {
+                          const on = dtFilter.has(t);
+                          return (
+                            <button
+                              key={t}
+                              type="button"
+                              onClick={() => {
+                                setDtFilter((prev) => {
+                                  const next = new Set(prev);
+                                  on ? next.delete(t) : next.add(t);
+                                  return next;
+                                });
+                                setPage(1);
+                              }}
+                              className="w-full flex items-center gap-2 px-1.5 py-1 rounded-lg hover:bg-teal-50 text-left"
+                            >
+                              <span className={`flex h-3.5 w-3.5 shrink-0 items-center justify-center rounded border text-[8px] ${on ? "border-teal-500 bg-teal-500 text-white" : "border-gray-300 bg-white"}`}>
+                                {on ? "✓" : ""}
+                              </span>
+                              <span className="text-[11px] font-mono text-gray-700">{t}</span>
+                            </button>
+                          );
+                        })}
+                        {dtFilter.size > 0 && (
+                          <button type="button" onClick={() => { setDtFilter(new Set()); setPage(1); }}
+                            className="w-full text-[10px] text-teal-600 hover:text-teal-700 text-center pt-1 border-t border-gray-100 mt-1">
+                            Clear
+                          </button>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </th>
+              <SortTh col="cnt" label="Cnt" />
+              <SortTh col="cntUniq" label="Cnt Uniq" />
+              <SortTh col="nullRate" label="null rate" />
+              <SortTh col="zRate" label="0 rate" />
+              <SortTh col="negRate" label="neg rate" />
+              <SortTh col="max" label="Max" />
+              <SortTh col="min" label="Min" />
+              <SortTh col="avg" label="Avg" />
             </tr>
           </thead>
           <tbody>
-            {paged.map((r) => (
-              <tr key={r.name} className="border-b border-gray-50 hover:bg-teal-50/30">
-                <td className="px-3 py-2 font-mono text-gray-800">{r.name}</td>
-                <td className="px-3 py-2 tabular-nums text-gray-700">{r.cnt.toLocaleString()}</td>
-                <td className="px-3 py-2 tabular-nums text-gray-700">{r.cntUniq.toLocaleString()}</td>
-                <td className="px-3 py-2 font-mono text-gray-600">{r.max}</td>
-                <td className="px-3 py-2 font-mono text-gray-600">{r.min}</td>
-                <td className="px-3 py-2 font-mono text-gray-600">{r.avg}</td>
-                <td className="px-3 py-2 tabular-nums">{r.zcnt.toLocaleString()}</td>
-                <td className="px-3 py-2 tabular-nums">{r.nullcnt.toLocaleString()}</td>
-                <td className="px-3 py-2 tabular-nums">{r.negcnt.toLocaleString()}</td>
-              </tr>
-            ))}
+            {paged.map((r) => {
+              const isTextual = r.dataType === "STRING" || r.dataType === "BOOL";
+              const dtColor = {
+                FLOAT: "bg-blue-50 text-blue-700 border-blue-100",
+                INT: "bg-violet-50 text-violet-700 border-violet-100",
+                STRING: "bg-amber-50 text-amber-700 border-amber-100",
+                BOOL: "bg-teal-50 text-teal-700 border-teal-100",
+              }[r.dataType];
+              const dash = <span className="text-gray-300">—</span>;
+              const pct = (n: number) => r.cnt > 0 ? `${((n / r.cnt) * 100).toFixed(2)}%` : "0.00%";
+              return (
+                <tr key={r.name} className="border-b border-gray-50 hover:bg-teal-50/30">
+                  <td className="px-3 py-2 font-mono text-gray-800">{r.name}</td>
+                  <td className="px-3 py-2">
+                    <span className={`text-[10px] font-mono px-1.5 py-0.5 rounded border ${dtColor}`}>{r.dataType}</span>
+                  </td>
+                  <td className="px-3 py-2 tabular-nums text-gray-700">{r.cnt.toLocaleString()}</td>
+                  <td className="px-3 py-2 tabular-nums text-gray-700">{r.cntUniq.toLocaleString()}</td>
+                  <td className="px-3 py-2 tabular-nums text-gray-600">{pct(r.nullcnt)}</td>
+                  <td className="px-3 py-2 tabular-nums text-gray-600">{isTextual ? dash : pct(r.zcnt)}</td>
+                  <td className="px-3 py-2 tabular-nums text-gray-600">{isTextual ? dash : pct(r.negcnt)}</td>
+                  <td className="px-3 py-2 font-mono text-gray-600">{isTextual ? dash : r.max}</td>
+                  <td className="px-3 py-2 font-mono text-gray-600">{isTextual ? dash : r.min}</td>
+                  <td className="px-3 py-2 font-mono text-gray-600">{isTextual ? dash : r.avg}</td>
+                </tr>
+              );
+            })}
           </tbody>
         </table>
         {filtered.length === 0 && (
@@ -159,7 +322,7 @@ export function DataReportTableSection({
         <span className="text-xs text-gray-500">
           Showing {(pageSafe - 1) * pageSize + 1}–{Math.min(pageSafe * pageSize, filtered.length)} of{" "}
           {filtered.length} rows
-          {q.trim() ? ` (filtered from ${allRows.length})` : ""}
+          {(q.trim() || dtFilter.size > 0) ? ` (filtered from ${allRows.length})` : ""}
         </span>
         <div className="flex items-center gap-2">
           <button

@@ -891,6 +891,7 @@ function FeatureGroupPanel({
   const [joinType, setJoinType] = useState(() => initialFg?.joinType ?? JOIN_TYPES[0]);
   const [entityJoinCol, setEntityJoinCol] = useState(() => initialFg?.entityJoinCol ?? "");
   const [eventTimeJoinCol, setEventTimeJoinCol] = useState(() => initialFg?.eventTimeJoinCol ?? "");
+  const [timeOp, setTimeOp] = useState<">" | ">=">(">");
   const prevFgRef = useRef<string | null>(null);
 
   const fg = FG_CATALOG.find((f) => f.name === selectedFg) ?? null;
@@ -1120,7 +1121,10 @@ function FeatureGroupPanel({
                   <span className="text-xs px-1.5 py-0.5 rounded-md bg-teal-100 text-teal-700 shrink-0 leading-none" style={{fontSize:10}}>PK</span>
                 </div>
                 <div className="flex items-center justify-center">
-                  <span className="text-xs text-gray-500 font-mono">=</span>
+                  <select disabled
+                    className="appearance-none border border-gray-200 rounded-lg px-1.5 py-1 text-xs text-gray-400 bg-gray-50 font-mono text-center cursor-not-allowed">
+                    <option value="=">{"="}</option>
+                  </select>
                 </div>
                 <div className="relative">
                   <select value={entityJoinCol} onChange={e => setEntityJoinCol(e.target.value)}
@@ -1139,7 +1143,11 @@ function FeatureGroupPanel({
                   <span className="text-xs px-1.5 py-0.5 rounded-md bg-amber-100 text-amber-700 shrink-0 leading-none" style={{fontSize:10}}>ET</span>
                 </div>
                 <div className="flex items-center justify-center">
-                  <span className="text-xs text-gray-500 font-mono">&gt;=</span>
+                  <select value={timeOp} onChange={e => setTimeOp(e.target.value as ">" | ">=")}
+                    className="appearance-none border border-gray-200 rounded-lg px-1.5 py-1 text-xs text-gray-600 bg-gray-50 focus:outline-none focus:border-teal-400 font-mono text-center">
+                    <option value=">">{">"}</option>
+                    <option value=">=">{">="}</option>
+                  </select>
                 </div>
                 <div className="relative">
                   <select value={eventTimeJoinCol} onChange={e => setEventTimeJoinCol(e.target.value)}

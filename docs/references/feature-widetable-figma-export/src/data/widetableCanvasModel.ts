@@ -47,7 +47,7 @@ export interface FrameTableSnapshot {
 
 export interface DataCleaningSnapshot {
   enabled: boolean;
-  fillnaRows: { id: string; method: string; features: string }[];
+  fillnaRows: { id: string; method: string; features: string; fixedValue?: string }[];
   vmRows: { id: string; feature: string; sql: string }[];
 }
 
