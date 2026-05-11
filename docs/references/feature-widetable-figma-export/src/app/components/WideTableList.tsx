@@ -219,6 +219,7 @@ function WideTableRowComponent({
   onClean,
   onView,
   onTask,
+  cleanConfig,
 }: {
   row: WideTableRow;
   isExpanded: boolean;
@@ -228,6 +229,7 @@ function WideTableRowComponent({
   onClean?: () => void;
   onView?: (instanceId: string) => void;
   onTask?: (inst: Instance) => void;
+  cleanConfig: boolean;
 }) {
   return (
     <>
@@ -293,6 +295,12 @@ function WideTableRowComponent({
 
         <td className="px-3 py-4 whitespace-nowrap">
           <span className="text-xs text-gray-500">{row.updateTime}</span>
+        </td>
+
+        <td className="px-3 py-4 whitespace-nowrap">
+          <span className={`text-xs font-mono ${cleanConfig ? "text-teal-600" : "text-gray-400"}`}>
+            {cleanConfig ? "TRUE" : "FALSE"}
+          </span>
         </td>
 
         <td
@@ -390,6 +398,7 @@ interface WideTableListProps {
   onTask?: (row: WideTableRow, inst: Instance) => void;
   ownedByMe?: boolean;
   onOwnedByMeChange?: (v: boolean) => void;
+  cleanTaskStatusById?: Record<string, string>;
 }
 
 export function WideTableList({
@@ -402,6 +411,7 @@ export function WideTableList({
   onTask,
   ownedByMe = false,
   onOwnedByMeChange,
+  cleanTaskStatusById = {},
 }: WideTableListProps) {
   const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set());
 
@@ -495,6 +505,9 @@ export function WideTableList({
               <th className="px-3 py-3 text-left text-xs text-gray-500 tracking-wide whitespace-nowrap">
                 UPDATE TIME
               </th>
+              <th className="px-3 py-3 text-left text-xs text-gray-500 tracking-wide whitespace-nowrap">
+                CLEAN CONFIG
+              </th>
               <th className="px-3 py-3 text-left text-xs text-gray-500 tracking-wide">
                 ACTION
               </th>
@@ -512,6 +525,7 @@ export function WideTableList({
                 onClean={onClean ? () => onClean(row) : undefined}
                 onView={onView ? (instId) => onView(row, instId) : undefined}
                 onTask={onTask ? (inst) => onTask(row, inst) : undefined}
+                cleanConfig={cleanTaskStatusById[row.id] === "SUCCESS"}
               />
             ))}
           </tbody>

@@ -32,7 +32,10 @@ export function WideTableListPage() {
   const [copySourceRow, setCopySourceRow] = useState<WideTableRow | null>(null);
   const [cleaningRow, setCleaningRow] = useState<WideTableRow | null>(null);
   const [cleaningByTableId, setCleaningByTableId] = useState<Record<string, DataCleaningSnapshot>>({});
-  const [cleaningTaskByTableId, setCleaningTaskByTableId] = useState<Record<string, CleaningTaskState>>({});
+  const [cleaningTaskByTableId, setCleaningTaskByTableId] = useState<Record<string, CleaningTaskState>>({
+    "1": { taskId: "task-risk-clean-001", status: "SUCCESS", finishedAt: "2026-02-17 15:32" },
+    "3": { taskId: "task-rec-clean-007", status: "SUCCESS", finishedAt: "2026-02-20 09:11" },
+  });
 
   const cleaningSnapshotForRow = useCallback(
     (row: WideTableRow): DataCleaningSnapshot => {
@@ -196,6 +199,9 @@ export function WideTableListPage() {
             setOwnedByMe(v);
             setCurrentPage(1);
           }}
+          cleanTaskStatusById={Object.fromEntries(
+            Object.entries(cleaningTaskByTableId).map(([id, task]) => [id, task.status])
+          )}
         />
 
         <Pagination
