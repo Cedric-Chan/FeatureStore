@@ -319,7 +319,7 @@ function WideTableRowComponent({
       {/* Expanded Sub-Table */}
       {isExpanded && (
         <tr>
-          <td colSpan={8} className="p-0 bg-slate-50/80">
+          <td colSpan={9} className="p-0 bg-slate-50/80">
             <div className="ml-10 mr-4 my-2 rounded-lg border border-slate-200 overflow-hidden shadow-inner">
               {/* Sub-table header */}
               <table className="w-full">
