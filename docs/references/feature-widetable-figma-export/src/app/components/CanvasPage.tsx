@@ -57,7 +57,7 @@ function getMockNodeStatuses(s: InstanceStatus): Record<NodeId, NodeStatus> {
     case "SUCCESS": return { B: "success",      C: "success",      D: "success",      E: "success", F: "success" };
     case "FAILED":  return { B: "success",      C: "success",      D: "failed",       E: "waiting", F: "waiting" };
     case "RUNNING": return { B: "success",      C: "cache_skipped",D: "running",      E: "waiting", F: "waiting" };
-    case "PENDING": return { B: "waiting",      C: "waiting",      D: "waiting",      E: "waiting", F: "waiting" };
+    case "QUEUING": return { B: "waiting",      C: "waiting",      D: "waiting",      E: "waiting", F: "waiting" };
     case "KILLED":  return { B: "cache_skipped",C: "failed",       D: "waiting",      E: "waiting", F: "waiting" };
   }
 }
@@ -68,7 +68,7 @@ function InstanceStatusBadge({ status, small }: { status: InstanceStatus; small?
     SUCCESS: { bg: "bg-emerald-50",  text: "text-emerald-700", dot: "bg-emerald-500" },
     FAILED:  { bg: "bg-red-50",      text: "text-red-600",     dot: "bg-red-500"     },
     RUNNING: { bg: "bg-blue-50",     text: "text-blue-600",    dot: "bg-blue-500"    },
-    PENDING: { bg: "bg-amber-50",    text: "text-amber-600",   dot: "bg-amber-500"   },
+    QUEUING: { bg: "bg-amber-50",    text: "text-amber-600",   dot: "bg-amber-500"   },
     KILLED:  { bg: "bg-gray-100",    text: "text-gray-500",    dot: "bg-gray-400"    },
   };
   const c = cfg[status];
@@ -1514,8 +1514,8 @@ export function CanvasPage({
   // ── Trigger Instance ───────────────────────────────────────────────────────
   const handleTriggerClick = () => {
     setActiveDropdown(null); setActionError(null);
-    if (instances.some(i => i.status === "RUNNING" || i.status === "PENDING")) {
-      setActionError("Cannot trigger: a RUNNING or PENDING instance exists. Kill it first.");
+    if (instances.some(i => i.status === "RUNNING" || i.status === "QUEUING")) {
+      setActionError("Cannot trigger: a RUNNING or QUEUING instance exists. Kill it first.");
       return;
     }
     setShowTriggerModal(true);
@@ -1535,7 +1535,7 @@ export function CanvasPage({
 
   // ── Kill ──────────────────────────────────────────────────────────────────
   const canKill = viewMode === "instance-view" && selectedInst !== null &&
-    (selectedInst.status === "RUNNING" || selectedInst.status === "PENDING");
+    (selectedInst.status === "RUNNING" || selectedInst.status === "QUEUING");
   const handleKill = () => {
     setActiveDropdown(null);
     if (!canKill || !selectedInst) return;

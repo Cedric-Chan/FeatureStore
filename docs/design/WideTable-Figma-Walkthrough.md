@@ -33,11 +33,13 @@
 ## 2. WideTable 列表（WideTableList）
 
 
-| 项                             | 导出稿 | 原型  |
-| ----------------------------- | --- | --- |
-| 表头 WIDETABLE NAME … ACTION    | 同左  | 已对齐 |
-| 工具栏 Add WideTable、Owned by me | 同左  | 已对齐 |
-| 行操作 Edit / Copy / Delete      | 同左  | 已对齐 |
+| 项                                                                    | 导出稿                                                                                                                                       | 原型  |
+| -------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------- | --- |
+| 表头 WIDETABLE NAME … **CLEAN CONFIG** … ACTION                         | 在 `UPDATE TIME` 与 `ACTION` 之间新增 **CLEAN CONFIG**（TRUE / FALSE）列，标记该 WideTable 是否存在「保存且成功执行过」的 Cleaning Background Task；TRUE 以 `teal-600` mono 展示，FALSE 灰色 | 已对齐 |
+| 工具栏 Add WideTable、Owned by me、Refresh、Column Settings                 | 同左                                                                                                                                       | 已对齐 |
+| 行操作 **Edit / Copy / Clean / Delete**                                  | 现行为：**Add** 入口收敛至工具栏 `+ Add WideTable`；**Clean** 打开 Data Cleaning & Reports 弹窗（紧凑 Fillna / Value Mapping + Raw / Cleaned Data Report 入口）           | 已对齐 |
+| 内层 Action **View / Kill / Debug / Task**                              | **Debug** 在 Kill 与 Task 之间；仅 `status === FAILED` 可点。点击后右上角浮窗（slide-in drawer，~440px × max `calc(100vh-6rem)`）显示自动记录的失败原因，需用户手动关闭             | 已对齐 |
+| Instance 状态枚举 `SUCCESS / FAILED / RUNNING / QUEUING / KILLED`         | `QUEUING` 替代旧 `PENDING`，语义为「等待 Spark 队列释放资源后执行」                                                                                            | 已对齐 |
 
 
 ### 2.1 Copy → 快速新建（New WideTable）

@@ -118,8 +118,8 @@ export const MOCK_WIDE_TABLES: WideTableRow[] = [
     instances: [
       {
         id: "inst-rec-sg-20260220",
-        status: "PENDING",
-        notes: "Waiting for upstream data.",
+        status: "QUEUING",
+        notes: "Waiting for Spark queue resources to free up.",
         createTime: "2026-02-20 08:50",
         startTime: "",
         finishTime: "",

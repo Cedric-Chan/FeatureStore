@@ -44,7 +44,7 @@ export type InstanceStatus =
   | "SUCCESS"
   | "FAILED"
   | "RUNNING"
-  | "PENDING"
+  | "QUEUING"
   | "KILLED";
 
 export interface Instance {
@@ -95,8 +95,8 @@ const STATUS_CONFIG: Record<
     text: "text-blue-600",
     dot: "bg-blue-500",
   },
-  PENDING: {
-    label: "PENDING",
+  QUEUING: {
+    label: "QUEUING",
     bg: "bg-amber-50",
     text: "text-amber-600",
     dot: "bg-amber-500",
