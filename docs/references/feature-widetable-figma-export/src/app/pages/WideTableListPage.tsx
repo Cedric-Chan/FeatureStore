@@ -35,6 +35,9 @@ export function WideTableListPage() {
   const [cleaningTaskByTableId, setCleaningTaskByTableId] = useState<Record<string, CleaningTaskState>>({
     "1": { taskId: "task-risk-clean-001", status: "SUCCESS", finishedAt: "2026-02-17 15:32" },
     "3": { taskId: "task-rec-clean-007", status: "SUCCESS", finishedAt: "2026-02-20 09:11" },
+    "4": { taskId: "task-credit-clean-012", status: "SUCCESS", finishedAt: "2026-02-18 11:04" },
+    "6": { taskId: "task-userprof-clean-003", status: "SUCCESS", finishedAt: "2026-02-19 22:47" },
+    "8": { taskId: "task-payment-clean-019", status: "SUCCESS", finishedAt: "2026-02-21 08:15" },
   });
 
   const cleaningSnapshotForRow = useCallback(
