@@ -10,11 +10,12 @@ import {
   ExternalLink,
   CheckCircle2,
   ShieldCheck,
+  Code2,
 } from "lucide-react";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
-type TaskType = "SparkBatch" | "FlinkStream" | "HiveETL";
-type LogicLanguage = "SQL" | "Flink SQL" | "Python";
+type TaskType = "SparkBatch" | "FlinkStream" | "HiveETL" | "FGServingCanvas";
+type LogicLanguage = "SQL" | "Flink SQL" | "Python" | "Groovy";
 
 export interface FeatureLineageNode {
   id: string;
@@ -23,14 +24,15 @@ export interface FeatureLineageNode {
   inputAssets: string[];
   outputAsset: string;
   ownerTeam: string;
-  dataverseUrl: string;
-  featureLogicSnippet: string; // AI-extracted, feature-relevant only
+  dataverseUrl?: string; // absent for FGServingCanvas (internal to FS)
+  featureLogicSnippet: string;
   logicLanguage: LogicLanguage;
   reviewStatus: "AI-Draft" | "Human-Reviewed" | "Auto-Merged";
 }
 
 export interface FeatureLineageChain {
-  nodes: FeatureLineageNode[]; // in upstream → downstream order
+  nodes: FeatureLineageNode[]; // upstream → FeatureSource, in order
+  fgNode?: FeatureLineageNode;  // FeatureStore-layer: FG Serving Canvas Groovy logic
 }
 
 export interface FeatureLineagePayload {
@@ -41,16 +43,19 @@ export interface FeatureLineagePayload {
 
 // ─── Visual config ────────────────────────────────────────────────────────────
 const TASK_TYPE_STYLE: Record<TaskType, { label: string; cls: string; icon: React.ReactNode }> = {
-  SparkBatch:  { label: "Spark Batch",   cls: "bg-blue-50 text-blue-700 border-blue-200",     icon: <Layers className="w-3 h-3" /> },
-  FlinkStream: { label: "Flink Stream",  cls: "bg-violet-50 text-violet-700 border-violet-200", icon: <Zap className="w-3 h-3" /> },
-  HiveETL:     { label: "Hive ETL",      cls: "bg-amber-50 text-amber-700 border-amber-200",   icon: <Database className="w-3 h-3" /> },
+  SparkBatch:      { label: "Spark Batch",      cls: "bg-blue-50 text-blue-700 border-blue-200",       icon: <Layers className="w-3 h-3" /> },
+  FlinkStream:     { label: "Flink Stream",     cls: "bg-violet-50 text-violet-700 border-violet-200", icon: <Zap className="w-3 h-3" /> },
+  HiveETL:         { label: "Hive ETL",         cls: "bg-amber-50 text-amber-700 border-amber-200",    icon: <Database className="w-3 h-3" /> },
+  FGServingCanvas: { label: "FG Serving Canvas",cls: "bg-teal-50 text-teal-700 border-teal-300",       icon: <Code2 className="w-3 h-3" /> },
 };
 
 const REVIEW_STYLE: Record<FeatureLineageNode["reviewStatus"], { cls: string; icon: React.ReactNode }> = {
-  "AI-Draft":       { cls: "bg-sky-50 text-sky-700 border-sky-200",                 icon: <Sparkles className="w-3 h-3" /> },
-  "Human-Reviewed": { cls: "bg-emerald-50 text-emerald-700 border-emerald-200",     icon: <ShieldCheck className="w-3 h-3" /> },
-  "Auto-Merged":    { cls: "bg-teal-50 text-teal-700 border-teal-200",              icon: <CheckCircle2 className="w-3 h-3" /> },
+  "AI-Draft":       { cls: "bg-sky-50 text-sky-700 border-sky-200",             icon: <Sparkles className="w-3 h-3" /> },
+  "Human-Reviewed": { cls: "bg-emerald-50 text-emerald-700 border-emerald-200", icon: <ShieldCheck className="w-3 h-3" /> },
+  "Auto-Merged":    { cls: "bg-teal-50 text-teal-700 border-teal-200",          icon: <CheckCircle2 className="w-3 h-3" /> },
 };
+
+const FG_TERMINAL_ID = "__fg__";
 
 // ─── Mock lineage payloads ────────────────────────────────────────────────────
 const MOCK_FEATURE_LINEAGE: Record<string, FeatureLineagePayload> = {
@@ -119,6 +124,7 @@ FROM dwd.user_credit_30d_features
 WHERE dt = '\${dt}';`,
         },
       ],
+      // Training side has no FG Serving Canvas step — reads directly from Hive
     },
     serving: {
       nodes: [
@@ -146,24 +152,61 @@ WHERE dt = '\${dt}';`,
           taskName: "credit_risk_score_realtime",
           taskType: "FlinkStream",
           inputAssets: ["stream.credit_events_enriched"],
-          outputAsset: "hbase.user_risk:risk_score",
+          outputAsset: "hbase.user_risk:cf:risk_score_raw",
           ownerTeam: "realtime-team",
           dataverseUrl: "#",
           logicLanguage: "Flink SQL",
           reviewStatus: "Human-Reviewed",
           featureLogicSnippet:
-`-- AI-extracted: only the part writing \`risk_score\` to HBase
-INSERT INTO user_risk_sink /* hbase.user_risk:risk_score */
+`-- AI-extracted: writes raw risk_score_raw to HBase (FeatureSource)
+INSERT INTO user_risk_hbase_sink
 SELECT user_id,
        LEAST(999,
              GREATEST(300,
                 ROUND(600
                   + 1.5 * repay_cnt_30d_rt
                   - 0.8 * overdue_amt_30d_rt/100)
-             )) AS risk_score
+             )) AS risk_score_raw
 FROM TABLE(TUMBLE(TABLE credit_events_src, DESCRIPTOR(event_ts), INTERVAL '1' MINUTE));`,
         },
       ],
+      // FG Serving Canvas applies Groovy on top of the HBase FeatureSource
+      fgNode: {
+        id: FG_TERMINAL_ID,
+        taskName: "credit_hbase_user_risk · ID · V1",
+        taskType: "FGServingCanvas",
+        inputAssets: ["hbase.user_risk:cf:risk_score_raw  (via FeatureSource credit_hbase_user_risk)"],
+        outputAsset: "feature: risk_score",
+        ownerTeam: "risk-team",
+        logicLanguage: "Groovy",
+        reviewStatus: "Human-Reviewed",
+        featureLogicSnippet:
+`// FG Serving Canvas — Groovy region script (ID · V1)
+// Input:  hbase.user_risk:cf:risk_score_raw
+// Output: feature risk_score (fine feature after filter + cap)
+
+def raw = HBaseCall.query(
+    tableName: "user_risk",
+    rowKey: input.user_id,
+    qualifier: "cf:risk_score_raw"
+)
+
+if (raw == null || raw.risk_score_raw == null) {
+    output.risk_score = -1
+    return
+}
+
+def score = raw.risk_score_raw as int
+
+// Filter: treat blacklisted users as highest risk
+if (input.is_blacklisted) {
+    output.risk_score = 999
+    return
+}
+
+// Cap: clamp to valid range [300, 900]
+output.risk_score = Math.max(300, Math.min(900, score))`,
+      },
     },
   },
 };
@@ -192,7 +235,6 @@ WHERE dt = '\${dt}';`,
           featureLogicSnippet:
 `-- AI-extracted: derivation of ${featureName}
 SELECT entity_id,
-       /* feature: ${featureName} */
        AVG(raw_value) AS ${featureName}
 FROM ods.${featureName}_raw
 WHERE dt BETWEEN DATE_SUB('\${dt}',7) AND '\${dt}'
@@ -204,15 +246,28 @@ GROUP BY entity_id;`,
       nodes: [
         {
           id: "g-s-1", taskName: `${featureName}_stream`, taskType: "FlinkStream",
-          inputAssets: [`kafka.${featureName}_events`], outputAsset: `hbase.feat:${featureName}`,
+          inputAssets: [`kafka.${featureName}_events`], outputAsset: `hbase.feat:${featureName}_raw`,
           ownerTeam: "realtime-team", dataverseUrl: "#", logicLanguage: "Flink SQL", reviewStatus: "AI-Draft",
           featureLogicSnippet:
-`-- Realtime computation for ${featureName}
-INSERT INTO feat_sink /* hbase.feat:${featureName} */
-SELECT entity_id, /* feature: ${featureName} */ LAST_VALUE(raw_value) AS ${featureName}
+`INSERT INTO feat_sink
+SELECT entity_id, LAST_VALUE(raw_value) AS ${featureName}_raw
 FROM TABLE(TUMBLE(TABLE ${featureName}_events_src, DESCRIPTOR(event_ts), INTERVAL '1' MINUTE));`,
         },
       ],
+      fgNode: {
+        id: FG_TERMINAL_ID,
+        taskName: `FG Serving Canvas · ${featureName}`,
+        taskType: "FGServingCanvas",
+        inputAssets: [`hbase.feat:${featureName}_raw  (via FeatureSource)`],
+        outputAsset: `feature: ${featureName}`,
+        ownerTeam: "feature-team",
+        logicLanguage: "Groovy",
+        reviewStatus: "AI-Draft",
+        featureLogicSnippet:
+`// FG Serving Canvas — Groovy region script
+def raw = HBaseCall.query(tableName: "feat", rowKey: input.entity_id, qualifier: "${featureName}_raw")
+output.${featureName} = raw?.${featureName}_raw ?: -1`,
+      },
     },
   };
 }
@@ -251,15 +306,20 @@ export function FeatureLineageModal({
   const chain = tab === "training" ? payload.training : payload.serving;
 
   const effectiveSelected = useMemo(() => {
-    if (!chain || chain.nodes.length === 0) return null;
+    if (!chain) return null;
+    if (selectedId === FG_TERMINAL_ID) return chain.fgNode ?? null;
     if (selectedId) {
       const found = chain.nodes.find((n) => n.id === selectedId);
       if (found) return found;
     }
-    return chain.nodes[chain.nodes.length - 1];
+    // default: FG node if present, else last pipeline node
+    if (chain.fgNode) return chain.fgNode;
+    return chain.nodes[chain.nodes.length - 1] ?? null;
   }, [chain, selectedId]);
 
   if (!open) return null;
+
+  const isFgNodeSelected = effectiveSelected?.id === FG_TERMINAL_ID;
 
   return (
     <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/40 backdrop-blur-sm" onClick={onClose}>
@@ -319,6 +379,7 @@ export function FeatureLineageModal({
                   <span className="text-slate-400">click a node to inspect feature-relevant logic</span>
                 </div>
                 <div className="flex items-stretch gap-2 overflow-x-auto pb-2">
+                  {/* Pipeline nodes */}
                   {chain.nodes.map((n, idx) => {
                     const isSel = effectiveSelected?.id === n.id;
                     const ts = TASK_TYPE_STYLE[n.taskType];
@@ -334,32 +395,48 @@ export function FeatureLineageModal({
                         >
                           <div className="flex items-center justify-between gap-2 mb-1.5">
                             <span className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-medium border ${ts.cls}`}>
-                              {ts.icon}
-                              {ts.label}
+                              {ts.icon}{ts.label}
                             </span>
                             <span className="text-[10px] text-slate-400 font-mono">#{idx + 1}</span>
                           </div>
                           <div className="text-xs font-mono text-slate-800 truncate" title={n.taskName}>{n.taskName}</div>
                           <div className="text-[10px] text-slate-400 font-mono truncate mt-1" title={n.outputAsset}>→ {n.outputAsset}</div>
                         </button>
-                        {idx < chain.nodes.length - 1 && (
-                          <div className="flex items-center px-0.5">
-                            <ArrowRight className="w-4 h-4 text-slate-300" />
-                          </div>
-                        )}
+                        <div className="flex items-center px-0.5">
+                          <ArrowRight className="w-4 h-4 text-slate-300" />
+                        </div>
                       </div>
                     );
                   })}
-                  {/* Final feature node */}
-                  <div className="flex items-stretch gap-2">
-                    <div className="flex items-center px-0.5">
-                      <ArrowRight className="w-4 h-4 text-slate-300" />
-                    </div>
+
+                  {/* FG Serving Canvas node (if present) */}
+                  {chain.fgNode ? (
+                    <>
+                      <button
+                        onClick={() => setSelectedId(FG_TERMINAL_ID)}
+                        className={`min-w-[200px] text-left rounded-xl border-2 px-3.5 py-3 transition-all ${
+                          isFgNodeSelected
+                            ? "border-teal-500 bg-teal-50/60 shadow-sm shadow-teal-100"
+                            : "border-dashed border-teal-400 bg-teal-50/40 hover:border-teal-500 hover:bg-teal-50/70"
+                        }`}
+                      >
+                        <div className="flex items-center justify-between gap-2 mb-1.5">
+                          <span className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-medium border ${TASK_TYPE_STYLE.FGServingCanvas.cls}`}>
+                            {TASK_TYPE_STYLE.FGServingCanvas.icon}
+                            {TASK_TYPE_STYLE.FGServingCanvas.label}
+                          </span>
+                        </div>
+                        <div className="text-[10px] uppercase tracking-wide text-teal-600 mb-0.5">Feature</div>
+                        <div className="text-xs font-mono text-teal-700 truncate" title={featureName}>{featureName}</div>
+                      </button>
+                    </>
+                  ) : (
+                    /* Terminal feature node — no FG logic for this tab */
                     <div className="min-w-[180px] rounded-xl border-2 border-dashed border-teal-400 bg-teal-50/40 px-3.5 py-3 flex flex-col justify-center">
                       <div className="text-[10px] uppercase tracking-wide text-teal-600 mb-0.5">Feature</div>
                       <div className="text-xs font-mono text-teal-700 truncate" title={featureName}>{featureName}</div>
                     </div>
-                  </div>
+                  )}
                 </div>
               </div>
 
@@ -380,15 +457,14 @@ export function FeatureLineageModal({
                           {effectiveSelected.reviewStatus}
                         </span>
                       </div>
-                      <a
-                        href={effectiveSelected.dataverseUrl}
-                        target="_blank"
-                        rel="noreferrer"
-                        className="inline-flex items-center gap-1 text-[11px] text-teal-600 hover:text-teal-800"
-                      >
-                        View in DataVerse
-                        <ExternalLink className="w-3 h-3" />
-                      </a>
+                      {effectiveSelected.dataverseUrl ? (
+                        <a href={effectiveSelected.dataverseUrl} target="_blank" rel="noreferrer"
+                          className="inline-flex items-center gap-1 text-[11px] text-teal-600 hover:text-teal-800">
+                          View in DataVerse <ExternalLink className="w-3 h-3" />
+                        </a>
+                      ) : (
+                        <span className="text-[11px] text-slate-400 italic">FeatureStore internal · no DataVerse entry</span>
+                      )}
                     </div>
 
                     {/* Detail body */}
@@ -415,11 +491,14 @@ export function FeatureLineageModal({
                       </div>
                     </div>
 
-                    {/* SQL snippet */}
+                    {/* Code snippet */}
                     <div className="bg-slate-900 text-slate-100 px-4 py-3 font-mono text-[11.5px] leading-relaxed overflow-x-auto">
                       <div className="flex items-center gap-2 mb-2 text-[10px] uppercase tracking-wide text-slate-400">
                         <Sparkles className="w-3 h-3 text-amber-300" />
-                        <span>AI-extracted · only fragments related to <span className="text-teal-300">{featureName}</span></span>
+                        {isFgNodeSelected
+                          ? <span>FG Serving Canvas · Groovy script for <span className="text-teal-300">{featureName}</span></span>
+                          : <span>AI-extracted · only fragments related to <span className="text-teal-300">{featureName}</span></span>
+                        }
                       </div>
                       <pre className="whitespace-pre">{effectiveSelected.featureLogicSnippet}</pre>
                     </div>
