@@ -38,12 +38,6 @@ import FeatureGroupModal, {
 } from "./FeatureGroupModal";
 import { FgServingCanvasThumbnail } from "./FgServingCanvasThumbnail";
 import { trainingFeatureNamesFromForm } from "./fgSeed";
-import {
-  FgFeatureListAttestPopover,
-  CONSISTENCY_BADGE,
-  type ConsistencyStatus,
-  type AttestSubmission,
-} from "./FgFeatureListAttestPopover";
 import { fmFeatureLink } from "@/lib/links";
 import { FeatureLineageModal } from "./FeatureLineageModal";
 import {
@@ -837,20 +831,7 @@ function FeatureListTab({ fg }: { fg: FeatureGroup }) {
   const [page, setPage] = useState(1);
   const PAGE_SIZE = 20;
 
-  // ─── v2: Consistency Attestation state ──────────────────────────────────────
-  // Mock per-FG state (in real impl, fetched from API). Demo: seed first 2 T+S rows as `attested`.
-  const [consistencyMap, setConsistencyMap] = useState<Record<string, ConsistencyStatus>>({});
-  const [attestAnchor, setAttestAnchor] = useState<{ featureName: string; rect: DOMRect } | null>(null);
   const [lineageTarget, setLineageTarget] = useState<{ featureName: string; hasTraining: boolean; hasServing: boolean } | null>(null);
-  const CURRENT_USER = "cedric.chencan@seamoney.com";
-  function getConsistency(f: { name: string; training: boolean; serving: boolean }): ConsistencyStatus {
-    if (!f.training || !f.serving) return "na";
-    return consistencyMap[f.name] ?? "pending";
-  }
-  function handleAttestSubmit(featureName: string, s: AttestSubmission) {
-    setConsistencyMap((m) => ({ ...m, [featureName]: s.status }));
-    setAttestAnchor(null);
-  }
 
   const features = buildFeatureRowsFromFg(fg);
 
@@ -1085,30 +1066,9 @@ function FeatureListTab({ fg }: { fg: FeatureGroup }) {
                       : <span className="text-gray-300">—</span>
                     }
                   </td>
-                  {/* v2 — Action: Attest + View in FeatureMap */}
+                  {/* Action */}
                   <td className="px-5 py-3 text-xs">
                     <div className="flex items-center gap-2">
-                      <button
-                        disabled={!f.training || !f.serving}
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          if (!f.training || !f.serving) return;
-                          const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
-                          setAttestAnchor({ featureName: f.name, rect });
-                        }}
-                        className={`text-[11px] transition-colors ${
-                          f.training && f.serving
-                            ? "text-teal-600 hover:text-teal-800 hover:underline cursor-pointer"
-                            : "text-gray-300 cursor-not-allowed"
-                        }`}
-                        title={
-                          f.training && f.serving
-                            ? "Submit consistency attestation"
-                            : "Attestation only applies to T+S features"
-                        }
-                      >
-                        Attest ▾
-                      </button>
                       <button
                         onClick={(e) => {
                           e.stopPropagation();
@@ -1165,17 +1125,6 @@ function FeatureListTab({ fg }: { fg: FeatureGroup }) {
           <span className="ml-2 text-xs text-gray-400">20 / page</span>
         </div>
       </div>
-
-      {/* v2 — Inline Attest Popover */}
-      {attestAnchor && (
-        <FgFeatureListAttestPopover
-          featureName={attestAnchor.featureName}
-          anchorRect={attestAnchor.rect}
-          currentUserEmail={CURRENT_USER}
-          onSubmit={(s) => handleAttestSubmit(attestAnchor.featureName, s)}
-          onClose={() => setAttestAnchor(null)}
-        />
-      )}
 
       {/* v2 — Feature Lineage Modal */}
       <FeatureLineageModal
