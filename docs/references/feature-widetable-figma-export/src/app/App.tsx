@@ -12,6 +12,7 @@ import { FeatureGroupDetailPage } from "@/app/pages/FeatureGroupDetailPage";
 import FgServingCanvasPage from "@/app/pages/FgServingCanvasPage";
 import { FeatureGroupListPage } from "@/app/pages/FeatureGroupListPage";
 import { FeatureMapPage } from "@/app/pages/FeatureMapPage";
+import { FeatureMapDetailPage } from "@/app/pages/FeatureMapDetailPage";
 import { TaskMonitorPage } from "@/app/pages/TaskMonitorPage";
 import { TransformationFormPage } from "@/app/pages/TransformationFormPage";
 import { TransformationListPage } from "@/app/pages/TransformationListPage";
@@ -38,6 +39,7 @@ export default function App() {
           <Route path="/fg/:fgId" element={<FeatureGroupDetailPage />} />
         </Route>
         <Route path="/fm" element={<FeatureMapPage />} />
+        <Route path="/fm/feature/:fqid" element={<FeatureMapDetailPage />} />
         <Route path="/wt" element={<WideTableListPage />} />
         <Route path="/wt/task/:instanceId" element={<TaskMonitorPage />} />
       </Route>

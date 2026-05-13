@@ -15,6 +15,7 @@ import {
   Layers,
   Zap,
   Globe,
+  Table2,
   AlertTriangle,
   X,
   Trash2,
@@ -29,6 +30,10 @@ import {
   Play,
   Copy,
   FileEdit,
+  GitBranch,
+  Mail,
+  Link2Off,
+  ExternalLink,
 } from "lucide-react";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
@@ -44,6 +49,7 @@ interface SubRow {
   id: string;
   region: string;
   version: string;
+  scriptType: string;
   callFunction: string;
   inputParams: ParamRow[];
   outputParams: ParamRow[];
@@ -82,6 +88,7 @@ interface MetaFormData {
 interface RegionFormData {
   region: string;
   version: string;
+  scriptType: string;
   inputParams: ParamRow[];
   callFunction: string;
   outputParams: ParamRow[];
@@ -94,12 +101,42 @@ const DATA_TYPES = ["string", "int", "long", "double", "float", "boolean", "list
 const p = (name: string, dataType = "string"): ParamRow => ({ name, dataType });
 
 const CF = {
-  hbase_id:  JSON.stringify({ table_name: "credit_user_risk_id",   qualifier: "cf:risk_score",   row_missing_value: -1, value_missing_value: -1, output_values: ["risk_score", "raw_map"] }, null, 2),
-  hbase_th:  JSON.stringify({ table_name: "credit_user_risk_th",   qualifier: "cf:data_status",  row_missing_value: -1, value_missing_value: -1, output_values: ["raw_map", "data_status"] }, null, 2),
-  grpc_mx:   JSON.stringify({ table_name: "acard_realtime_mx",     qualifier: "svc:predict",     row_missing_value: -1, value_missing_value: -1, output_values: ["acard_score", "acard_tier"] }, null, 2),
-  grpc_id:   JSON.stringify({ table_name: "acard_realtime_id",     qualifier: "svc:predict",     row_missing_value: -1, value_missing_value: -1, output_values: ["acard_score", "acard_tier"] }, null, 2),
-  redis_sg:  JSON.stringify({ table_name: "recommend_v2_sg",       qualifier: "cf:item_list",    row_missing_value: -1, value_missing_value: -1, output_values: ["item_list", "score_map"] }, null, 2),
-  nebula_th: JSON.stringify({ table_name: "relation_graph_th",     qualifier: "cf:node_list",    row_missing_value: -1, value_missing_value: -1, output_values: ["node_list", "edge_list", "relation_score"] }, null, 2),
+  hbase_id:  [
+    'def result = HBaseCall.query(tableName: "credit_user_risk_id", rowKey: input.user_id, qualifier: "cf:risk_score")',
+    'output.risk_score = result.risk_score ?: -1',
+    'output.raw_map = result',
+  ].join('\n'),
+  hbase_th:  [
+    'def result = HBaseCall.query(tableName: "credit_user_risk_th", rowKey: input.user_id, qualifier: "cf:data_status")',
+    'output.data_status = result.data_status ?: -1',
+    'output.raw_map = result',
+  ].join('\n'),
+  grpc_mx:   [
+    'def url = "http://acard_realtime_mx/api/predict"',
+    'def body = [id_card_no: input.id_card_no, platform_user_id: input.platform_user_id, phone_number: input.phone_number]',
+    'def result = grpcCall.invoke(url, body)',
+    'output.acard_score = result.score ?: -1',
+    'output.acard_tier = result.tier ?: "Unknown"',
+  ].join('\n'),
+  grpc_id:   [
+    'def url = "http://acard_realtime_id/api/predict"',
+    'def body = [id_card_no: input.id_card_no, platform_user_id: input.platform_user_id]',
+    'def result = grpcCall.invoke(url, body)',
+    'output.acard_score = result.score ?: -1',
+    'output.acard_tier = result.tier ?: "Unknown"',
+  ].join('\n'),
+  redis_sg:  [
+    'def key = input.user_id + ":" + input.scene_id',
+    'def result = RedisCall.get(table: "recommend_v2_sg", key: key)',
+    'output.item_list = result.item_list ?: []',
+    'output.score_map = result.score_map ?: [:]',
+  ].join('\n'),
+  nebula_th: [
+    'def result = NebulaCall.query(graphSpace: "relation_graph_th", vertexId: input.user_id, depth: input.depth)',
+    'output.node_list = result.nodes ?: []',
+    'output.edge_list = result.edges ?: []',
+    'output.relation_score = result.score ?: -1',
+  ].join('\n'),
 };
 
 const INITIAL_DATA: FeatureRow[] = [
@@ -114,13 +151,13 @@ const INITIAL_DATA: FeatureRow[] = [
     description: "HBase-based user risk score f...",
     subRows: [
       {
-        id: "1-1", region: "ID", version: "V1", callFunction: CF.hbase_id,
+        id: "1-1", region: "ID", version: "V1", scriptType: "Groovy", callFunction: CF.hbase_id,
         inputParams: [p("user_id"), p("id_card_no"), p("platform_user_id")],
         outputParams: [p("raw_map", "map"), p("risk_score", "int")],
         status: "ENABLE", updateTime: "2026-02-16 14:00",
       },
       {
-        id: "1-2", region: "TH", version: "V1", callFunction: CF.hbase_th,
+        id: "1-2", region: "TH", version: "V1", scriptType: "Groovy", callFunction: CF.hbase_th,
         inputParams: [p("user_id")],
         outputParams: [p("raw_map", "map"), p("data_status", "int")],
         status: "DRAFT", updateTime: "2026-02-15 10:30",
@@ -138,13 +175,13 @@ const INITIAL_DATA: FeatureRow[] = [
     description: "gRPC-based realtime Acard sc...",
     subRows: [
       {
-        id: "2-1", region: "MX", version: "V2", callFunction: CF.grpc_mx,
+        id: "2-1", region: "MX", version: "V2", scriptType: "Groovy", callFunction: CF.grpc_mx,
         inputParams: [p("id_card_no"), p("platform_user_id"), p("phone_number")],
         outputParams: [p("acard_score", "int"), p("acard_tier", "string")],
         status: "ENABLE", updateTime: "2026-02-14 18:45",
       },
       {
-        id: "2-2", region: "ID", version: "V1", callFunction: CF.grpc_id,
+        id: "2-2", region: "ID", version: "V1", scriptType: "Groovy", callFunction: CF.grpc_id,
         inputParams: [p("id_card_no"), p("platform_user_id")],
         outputParams: [p("acard_score", "int"), p("acard_tier", "string")],
         status: "DISABLE", updateTime: "2026-02-13 16:00",
@@ -162,7 +199,7 @@ const INITIAL_DATA: FeatureRow[] = [
     description: "Redis-backed recommendation...",
     subRows: [
       {
-        id: "3-1", region: "SHOPEE_SG", version: "V1", callFunction: CF.redis_sg,
+        id: "3-1", region: "SHOPEE_SG", version: "V1", scriptType: "Groovy", callFunction: CF.redis_sg,
         inputParams: [p("user_id"), p("scene_id")],
         outputParams: [p("item_list", "list"), p("score_map", "map")],
         status: "ENABLE", updateTime: "2026-02-05 09:20",
@@ -180,7 +217,7 @@ const INITIAL_DATA: FeatureRow[] = [
     description: "Graph DB relation features fro...",
     subRows: [
       {
-        id: "4-1", region: "TH", version: "V1", callFunction: CF.nebula_th,
+        id: "4-1", region: "TH", version: "V1", scriptType: "Groovy", callFunction: CF.nebula_th,
         inputParams: [p("user_id"), p("depth", "int"), p("relation_type")],
         outputParams: [p("node_list", "list"), p("edge_list", "list"), p("relation_score", "int")],
         status: "DISABLE", updateTime: "2026-02-12 22:10",
@@ -198,17 +235,95 @@ const DOWNSTREAM_FEATURE_GROUPS: Record<string, string[]> = {
   "4-1": ["graph_relation_th_fg"],
 };
 
-const SOURCE_TYPES = ["HBase", "gRPC", "Redis", "GraphDB", "MySQL", "Kafka"];
+// ─── Lineage Types & Mock Data ────────────────────────────────────────────────
+
+interface LineageDP {
+  id: string;
+  name: string;
+  pipelineType: "SparkBatch" | "FlinkStream";
+  sourceTable: string;
+  schedule: string;
+  lastSuccessAt?: string;
+  lag?: string;
+  ownerEmail: string;
+  dataverseUrl: string;
+  syncState: "InSync" | "NotFound";
+  taskStatus?: string;
+}
+
+interface LineageFG {
+  name: string;
+  owners: string[];
+}
+
+const PIPELINE_TYPE_LABEL: Record<string, string> = {
+  SparkBatch: "Spark Batch",
+  FlinkStream: "Flink Streaming",
+};
+
+const SPARK_STATUS_COLOR: Record<string, string> = {
+  Online:  "bg-emerald-50 text-emerald-700 border-emerald-200",
+  Freeze:  "bg-amber-50 text-amber-700 border-amber-200",
+  Offline: "bg-slate-100 text-slate-500 border-slate-200",
+};
+
+const FLINK_STATUS_COLOR: Record<string, string> = {
+  Running: "bg-emerald-50 text-emerald-700 border-emerald-200",
+  Killed:  "bg-slate-100 text-slate-500 border-slate-200",
+  Failed:  "bg-red-50 text-red-600 border-red-200",
+};
+
+const LINEAGE_DP_MAP: Record<string, LineageDP[]> = {
+  "1-1": [
+    { id: "ldp-1-1-a", name: "credit_risk_etl_id", pipelineType: "SparkBatch", sourceTable: "ods.credit_user_id_raw", schedule: "0 6 * * *", lastSuccessAt: "2026-05-12 06:00:00", ownerEmail: "alice.wang@company.com", dataverseUrl: "#", syncState: "InSync", taskStatus: "Online" },
+    { id: "ldp-1-1-b", name: "credit_risk_stream_id", pipelineType: "FlinkStream", sourceTable: "kafka.credit_events_id", schedule: "Continuous", lag: "320 ms", ownerEmail: "bob.chen@company.com", dataverseUrl: "#", syncState: "InSync", taskStatus: "Running" },
+  ],
+  "1-2": [
+    { id: "ldp-1-2-a", name: "credit_risk_etl_th", pipelineType: "SparkBatch", sourceTable: "ods.credit_user_th_raw", schedule: "0 6 * * *", lastSuccessAt: "2026-05-11 14:30:00", ownerEmail: "alice.wang@company.com", dataverseUrl: "#", syncState: "InSync", taskStatus: "Offline" },
+  ],
+  "2-1": [
+    { id: "ldp-2-1-a", name: "acard_score_stream_mx", pipelineType: "FlinkStream", sourceTable: "kafka.acard_events_mx", schedule: "Continuous", lag: "540 ms", ownerEmail: "zhengyi.loh@seamoney.com", dataverseUrl: "#", syncState: "InSync", taskStatus: "Running" },
+  ],
+  "2-2": [
+    { id: "ldp-2-2-a", name: "acard_score_stream_id", pipelineType: "FlinkStream", sourceTable: "kafka.acard_events_id", schedule: "Continuous", ownerEmail: "zhengyi.loh@seamoney.com", dataverseUrl: "#", syncState: "NotFound" },
+  ],
+  "3-1": [
+    { id: "ldp-3-1-a", name: "recommend_batch_sg", pipelineType: "SparkBatch", sourceTable: "dwd.user_behavior_sg", schedule: "0 2 * * *", lastSuccessAt: "2026-05-12 02:45:00", ownerEmail: "huangwei@shopee.com", dataverseUrl: "#", syncState: "InSync", taskStatus: "Online" },
+  ],
+  "4-1": [
+    { id: "ldp-4-1-a", name: "graph_builder_th", pipelineType: "SparkBatch", sourceTable: "dwd.user_phone_relations", schedule: "0 3 * * *", lastSuccessAt: "2026-05-12 03:20:00", ownerEmail: "cedric.chencan@seamoney.com", dataverseUrl: "#", syncState: "InSync", taskStatus: "Online" },
+  ],
+};
+
+const LINEAGE_FG_MAP: Record<string, LineageFG[]> = {
+  "1-1": [
+    { name: "credit_score_v2_fg",   owners: ["alice.wang@company.com", "bob.chen@company.com"] },
+    { name: "risk_model_online_fg", owners: ["diana.xu@company.com"] },
+  ],
+  "1-2": [{ name: "risk_th_realtime_fg",      owners: ["alice.wang@company.com"] }],
+  "2-1": [{ name: "acard_mx_scoring_fg",       owners: ["zhengyi.loh@seamoney.com"] }],
+  "2-2": [
+    { name: "acard_id_v3_fg",           owners: ["zhengyi.loh@seamoney.com", "huangwei@shopee.com"] },
+    { name: "credit_acard_combined_fg", owners: ["cedric.chencan@seamoney.com"] },
+  ],
+  "3-1": [{ name: "recommend_shopee_sg_fg", owners: ["huangwei@shopee.com"] }],
+  "4-1": [{ name: "graph_relation_th_fg",   owners: ["cedric.chencan@seamoney.com"] }],
+};
+
+const SOURCE_TYPES = ["HBase", "gRPC", "Redis", "GraphDB", "Hive", "MySQL", "Kafka"];
 const REGIONS = ["ID", "TH", "MX", "SG", "PH", "VN", "SHOPEE_SG"];
 const DATA_LATENCY_OPTIONS = ["Online", "Nearline", "Offline"];
 
-const CF_TEMPLATE: Record<string, object> = {
-  HBase:   { table_name: "", qualifier: "cf:score",   row_missing_value: -1, value_missing_value: -1, output_values: [] },
-  gRPC:    { table_name: "", qualifier: "svc:predict", row_missing_value: -1, value_missing_value: -1, output_values: [] },
-  Redis:   { table_name: "", qualifier: "cf:value",   row_missing_value: -1, value_missing_value: -1, output_values: [] },
-  GraphDB: { table_name: "", qualifier: "cf:node",    row_missing_value: -1, value_missing_value: -1, output_values: [] },
-  MySQL:   { table_name: "", qualifier: "col:value",  row_missing_value: -1, value_missing_value: -1, output_values: [] },
-  Kafka:   { table_name: "", qualifier: "topic:key",  row_missing_value: -1, value_missing_value: -1, output_values: [] },
+const SCRIPT_TYPES = ["Groovy", "Python", "Java", "Scala"];
+
+const SCRIPT_TEMPLATE: Record<string, string> = {
+  HBase:   'def result = HBaseCall.query(tableName: "", qualifier: "cf:score", rowKey: input.user_id)\noutput.result = result ?: -1',
+  gRPC:    'def url = ""\ndef body = [user_id: input.user_id]\ndef result = grpcCall.invoke(url, body)\noutput.result = result ?: -1',
+  Redis:   'def result = RedisCall.get(table: "", key: input.user_id)\noutput.result = result ?: -1',
+  GraphDB: 'def result = NebulaCall.query(graphSpace: "", vertexId: input.user_id)\noutput.result = result ?: -1',
+  Hive:    'def result = HiveScan.query(table: "", partition: input.date)\noutput.result = result',
+  MySQL:   'def result = MysqlCall.query(table: "", where: [user_id: input.user_id])\noutput.result = result',
+  Kafka:   'def result = KafkaCall.fetch(topic: "", key: input.user_id)\noutput.result = result',
 };
 
 const sourceTypeIconMap: Record<string, React.ReactNode> = {
@@ -216,6 +331,7 @@ const sourceTypeIconMap: Record<string, React.ReactNode> = {
   gRPC: <Zap className="w-3.5 h-3.5" />,
   Redis: <Database className="w-3.5 h-3.5" />,
   GraphDB: <Globe className="w-3.5 h-3.5" />,
+  Hive: <Table2 className="w-3.5 h-3.5" />,
 };
 
 const SOURCE_TYPE_CALL_LABEL: Record<string, string> = {
@@ -223,6 +339,7 @@ const SOURCE_TYPE_CALL_LABEL: Record<string, string> = {
   gRPC:    "grpcCall",
   Redis:   "RedisCall",
   GraphDB: "NebulaCall",
+  Hive:    "HiveScan",
   MySQL:   "MysqlCall",
   Kafka:   "KafkaCall",
 };
@@ -348,30 +465,20 @@ function CallFunctionDisplay({ value, sourceType }: { value: string; sourceType:
 
 // ─── JSON Code Editor ─────────────────────────────────────────────────────────
 
-function JsonCodeEditor({ value, onChange, disabled, placeholder }: {
-  value: string; onChange: (v: string) => void; disabled?: boolean; placeholder?: string;
+function JsonCodeEditor({ value, onChange, disabled, placeholder, language = "groovy" }: {
+  value: string; onChange: (v: string) => void; disabled?: boolean; placeholder?: string; language?: string;
 }) {
-  const { ok } = tryParseJson(value);
-  const hasContent = value.trim().length > 0;
   return (
     <div className={`rounded-xl overflow-hidden border transition-all ${
-      disabled ? "border-slate-200"
-        : !hasContent ? "border-slate-200 focus-within:border-teal-400 focus-within:ring-2 focus-within:ring-teal-100"
-        : ok ? "border-emerald-300 focus-within:ring-2 focus-within:ring-emerald-100"
-        : "border-red-300 focus-within:ring-2 focus-within:ring-red-100"
+      disabled ? "border-slate-200" : "border-teal-300 focus-within:border-teal-400 focus-within:ring-2 focus-within:ring-teal-100"
     }`}>
-      <div className="flex items-center justify-between px-3 py-1.5 border-b border-slate-100 bg-slate-50">
+      <div className="flex items-center px-3 py-1.5 border-b border-slate-100 bg-slate-50">
         <div className="flex items-center gap-1.5">
-          <span className={`w-2.5 h-2.5 rounded-full ${disabled ? "bg-slate-300" : "bg-red-400"}`} />
-          <span className={`w-2.5 h-2.5 rounded-full ${disabled ? "bg-slate-300" : "bg-amber-400"}`} />
-          <span className={`w-2.5 h-2.5 rounded-full ${disabled ? "bg-slate-300" : "bg-emerald-400"}`} />
-          <span className="ml-2 text-[11px] font-mono text-slate-400">call-function.json</span>
+          <span className="w-2.5 h-2.5 rounded-full bg-red-400" />
+          <span className="w-2.5 h-2.5 rounded-full bg-amber-400" />
+          <span className="w-2.5 h-2.5 rounded-full bg-emerald-400" />
+          <span className="ml-2 text-[11px] font-mono text-slate-400">{language}</span>
         </div>
-        {hasContent && (
-          <span className={`text-[10px] font-mono px-1.5 py-0.5 rounded border ${ok ? "bg-emerald-50 text-emerald-600 border-emerald-200" : "bg-red-50 text-red-500 border-red-200"}`}>
-            {ok ? "✓ valid JSON" : "✗ invalid JSON"}
-          </span>
-        )}
       </div>
       <textarea
         disabled={disabled} value={value} onChange={(e) => onChange(e.target.value)}
@@ -529,20 +636,19 @@ function RegionFormModal({ open, mode, parentRow, subRow, onClose, onSubmit }: {
 
   const buildInitial = (): RegionFormData => {
     if (isEdit && subRow) return {
-      region: subRow.region, version: subRow.version,
+      region: subRow.region, version: subRow.version, scriptType: subRow.scriptType,
       inputParams: subRow.inputParams.length > 0 ? subRow.inputParams : [{ name: "", dataType: "string" }],
       callFunction: subRow.callFunction,
       outputParams: subRow.outputParams.length > 0 ? subRow.outputParams : [{ name: "", dataType: "string" }],
     };
     if (isCopy && subRow) return {
-      region: "", version: "",
+      region: "", version: "", scriptType: subRow.scriptType,
       inputParams: subRow.inputParams.length > 0 ? subRow.inputParams : [{ name: "", dataType: "string" }],
       callFunction: subRow.callFunction,
       outputParams: subRow.outputParams.length > 0 ? subRow.outputParams : [{ name: "", dataType: "string" }],
     };
-    const cfTemplate = parentRow.sourceType && CF_TEMPLATE[parentRow.sourceType]
-      ? JSON.stringify(CF_TEMPLATE[parentRow.sourceType], null, 2) : "";
-    return { region: "", version: "", inputParams: [{ name: "", dataType: "string" }], callFunction: cfTemplate, outputParams: [{ name: "", dataType: "string" }] };
+    const cfTemplate = parentRow.sourceType ? (SCRIPT_TEMPLATE[parentRow.sourceType] ?? "") : "";
+    return { region: "", version: "", scriptType: "Groovy", inputParams: [{ name: "", dataType: "string" }], callFunction: cfTemplate, outputParams: [{ name: "", dataType: "string" }] };
   };
 
   const [form, setForm] = useState<RegionFormData>(buildInitial);
@@ -608,40 +714,42 @@ function RegionFormModal({ open, mode, parentRow, subRow, onClose, onSubmit }: {
               className={`w-full px-3 py-2 text-sm border rounded-lg outline-none ${inputDisabled}`} />
           </div>
 
-          {/* Region + Version — same row */}
+          {/* Script Type */}
+          <div className="grid grid-cols-[116px_1fr] items-start gap-3">
+            <label className={labelCls}>Script Type: <span className="text-red-400">*</span></label>
+            <div className="relative">
+              <select value={form.scriptType} onChange={(e) => setForm(f => ({ ...f, scriptType: e.target.value }))}
+                className={`${selectBase} ${inputActive}`}>
+                {SCRIPT_TYPES.map(t => <option key={t} value={t}>{t}</option>)}
+              </select>
+              <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 pointer-events-none" />
+            </div>
+          </div>
+
+          {/* Region */}
           <div className="grid grid-cols-[116px_1fr] items-start gap-3">
             <label className={labelCls}>Region: <span className="text-red-400">*</span></label>
             <div className="space-y-1">
-              <div className="flex items-center gap-3">
-                {/* Region dropdown */}
-                <div className="relative flex-1">
-                  <select
-                    disabled={isEdit}
-                    value={form.region}
-                    onChange={(e) => { setErrors(err => ({ ...err, region: undefined })); setForm(f => ({ ...f, region: e.target.value })); }}
-                    className={`${selectBase} ${isEdit ? inputDisabled : inputActive} ${errors.region ? "border-red-300" : ""}`}
-                  >
-                    <option value="">Please select</option>
-                    {REGIONS.map((r) => <option key={r} value={r}>{r}</option>)}
-                  </select>
-                  <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 pointer-events-none" />
-                </div>
-                {/* Version badge */}
-                <div className="flex items-center gap-2 flex-shrink-0">
-                  <span className="text-xs text-slate-400 whitespace-nowrap">Version:</span>
-                  <span className="px-3 py-2 rounded-lg bg-slate-100 border border-slate-200 text-xs text-slate-600 font-mono whitespace-nowrap min-w-[44px] text-center">
-                    {form.version || "—"}
-                  </span>
-                </div>
+              <div className="relative">
+                <select
+                  disabled={isEdit}
+                  value={form.region}
+                  onChange={(e) => { setErrors(err => ({ ...err, region: undefined })); setForm(f => ({ ...f, region: e.target.value })); }}
+                  className={`${selectBase} ${isEdit ? inputDisabled : inputActive} ${errors.region ? "border-red-300" : ""}`}
+                >
+                  <option value="">Please select</option>
+                  {REGIONS.map((r) => <option key={r} value={r}>{r}</option>)}
+                </select>
+                <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 pointer-events-none" />
               </div>
               {errors.region && <p className="text-xs text-red-500">{errors.region}</p>}
             </div>
           </div>
 
-          {/* Call Function */}
+          {/* Version — separate read-only row */}
           <div className="grid grid-cols-[116px_1fr] items-start gap-3">
-            <label className={labelCls}>Call Function:</label>
-            <JsonCodeEditor value={form.callFunction} onChange={(v) => setForm(f => ({ ...f, callFunction: v }))} placeholder={'{\n  "table_name": "",\n  "qualifier": "cf:score"\n}'} />
+            <label className={labelCls}>Version:</label>
+            <span className="px-3 py-2 rounded-lg bg-slate-100 border border-slate-200 text-xs text-slate-600 font-mono inline-block">{form.version || "—"}</span>
           </div>
 
           {/* Input Params */}
@@ -652,6 +760,12 @@ function RegionFormModal({ open, mode, parentRow, subRow, onClose, onSubmit }: {
               onChange={(v) => setForm((f) => ({ ...f, inputParams: v }))}
               dataTypeOptions={DATA_TYPES}
             />
+          </div>
+
+          {/* Script */}
+          <div className="grid grid-cols-[116px_1fr] items-start gap-3">
+            <label className={labelCls}>Script:</label>
+            <JsonCodeEditor value={form.callFunction} onChange={(v) => setForm(f => ({ ...f, callFunction: v }))} language={form.scriptType.toLowerCase()} placeholder={'def result = ...'} />
           </div>
 
           {/* Output Params */}
@@ -691,8 +805,6 @@ function ViewRegionModal({ open, parentRow, subRow, onClose }: {
 
   if (!open) return null;
 
-  const { ok, parsed } = tryParseJson(subRow.callFunction);
-  const pillLabel = SOURCE_TYPE_CALL_LABEL[parentRow.sourceType] ?? parentRow.sourceType;
   const labelCls = "text-sm text-slate-600 text-right whitespace-nowrap pt-2";
 
   return (
@@ -710,7 +822,7 @@ function ViewRegionModal({ open, parentRow, subRow, onClose }: {
           <button onClick={onClose} className="p-1.5 rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-100 transition-all"><X className="w-4 h-4" /></button>
         </div>
 
-        {/* Body — mirrors RegionFormModal layout, all read-only */}
+        {/* Body */}
         <div className="px-6 py-5 space-y-5 overflow-y-auto flex-1">
           {/* Feature Source */}
           <div className="grid grid-cols-[116px_1fr] items-start gap-3">
@@ -719,40 +831,25 @@ function ViewRegionModal({ open, parentRow, subRow, onClose }: {
               className="w-full px-3 py-2 text-sm border rounded-lg outline-none bg-slate-50 border-slate-200 text-slate-400 cursor-not-allowed" />
           </div>
 
-          {/* Region + Version — same row */}
+          {/* Script Type */}
           <div className="grid grid-cols-[116px_1fr] items-start gap-3">
-            <p className={labelCls}>Region:</p>
-            <div className="flex items-center gap-3">
-              <div className="relative flex-1">
-                <input type="text" disabled value={subRow.region}
-                  className="w-full px-3 py-2 text-sm border rounded-lg outline-none bg-slate-50 border-slate-200 text-slate-400 cursor-not-allowed" />
-              </div>
-              <div className="flex items-center gap-2 flex-shrink-0">
-                <span className="text-xs text-slate-400 whitespace-nowrap">Version:</span>
-                <span className="px-3 py-2 rounded-lg bg-slate-100 border border-slate-200 text-xs text-slate-600 font-mono whitespace-nowrap min-w-[44px] text-center">
-                  {subRow.version}
-                </span>
-              </div>
+            <p className={labelCls}>Script Type:</p>
+            <div className="pt-2">
+              <span className="px-2 py-0.5 rounded text-xs bg-violet-50 text-violet-700 border border-violet-200">{subRow.scriptType}</span>
             </div>
           </div>
 
-          {/* Call Function */}
+          {/* Region */}
           <div className="grid grid-cols-[116px_1fr] items-start gap-3">
-            <p className={labelCls}>Call Function:</p>
-            <div className="rounded-xl overflow-hidden border border-slate-200">
-              <div className="flex items-center gap-2 px-3 py-1.5 bg-slate-50 border-b border-slate-100">
-                <span className="w-2.5 h-2.5 rounded-full bg-slate-300" />
-                <span className="w-2.5 h-2.5 rounded-full bg-slate-300" />
-                <span className="w-2.5 h-2.5 rounded-full bg-slate-300" />
-                <span className="ml-2 text-[11px] font-mono text-slate-400">call-function.json</span>
-                <span className={`ml-auto text-[10px] font-mono px-1.5 py-0.5 rounded border ${ok ? "bg-emerald-50 text-emerald-600 border-emerald-200" : "bg-red-50 text-red-500 border-red-200"}`}>
-                  {ok ? "✓ valid JSON" : "✗ invalid JSON"}
-                </span>
-              </div>
-              <pre className="px-4 py-3 text-xs font-mono text-slate-700 leading-relaxed bg-white whitespace-pre overflow-x-auto max-h-40">
-                {ok ? JSON.stringify(parsed, null, 2) : subRow.callFunction || "—"}
-              </pre>
-            </div>
+            <p className={labelCls}>Region:</p>
+            <input type="text" disabled value={subRow.region}
+              className="w-full px-3 py-2 text-sm border rounded-lg outline-none bg-slate-50 border-slate-200 text-slate-400 cursor-not-allowed" />
+          </div>
+
+          {/* Version — separate read-only row */}
+          <div className="grid grid-cols-[116px_1fr] items-start gap-3">
+            <p className={labelCls}>Version:</p>
+            <span className="px-3 py-2 rounded-lg bg-slate-100 border border-slate-200 text-xs text-slate-600 font-mono inline-block">{subRow.version}</span>
           </div>
 
           {/* Input Params */}
@@ -762,6 +859,17 @@ function ViewRegionModal({ open, parentRow, subRow, onClose }: {
               params={subRow.inputParams.length > 0 ? subRow.inputParams : []}
               disabled
               dataTypeOptions={DATA_TYPES}
+            />
+          </div>
+
+          {/* Script */}
+          <div className="grid grid-cols-[116px_1fr] items-start gap-3">
+            <p className={labelCls}>Script:</p>
+            <JsonCodeEditor
+              value={subRow.callFunction}
+              onChange={() => {}}
+              disabled
+              language={subRow.scriptType.toLowerCase()}
             />
           </div>
 
@@ -866,19 +974,42 @@ function ManageDropdown({ subRow, onEnable, onDisable, onDraft }: {
 
 // ─── Nested Sub-Table ─────────────────────────────────────────────────────────
 
-function SubTable({ rows, sourceType, onStatusChange, onEdit, onView, onCopy }: {
-  rows: SubRow[]; sourceType: string;
+function pipelineHealth(subRowId: string): "Healthy" | "Warning" | "No Records" {
+  const dps = LINEAGE_DP_MAP[subRowId];
+  if (!dps || dps.length === 0) return "No Records";
+  const normalTaskStatus = (dp: LineageDP) =>
+    dp.pipelineType === "FlinkStream" ? dp.taskStatus === "Running" : dp.taskStatus === "Online";
+  const anyWarning = dps.some((dp) => dp.syncState === "NotFound" || !normalTaskStatus(dp));
+  return anyWarning ? "Warning" : "Healthy";
+}
+
+function PipelineHealthBadge({ subRowId }: { subRowId: string }) {
+  const health = pipelineHealth(subRowId);
+  const style =
+    health === "Healthy"    ? "bg-emerald-50 text-emerald-700 border-emerald-200" :
+    health === "Warning"    ? "bg-red-50 text-red-600 border-red-200" :
+                              "bg-yellow-50 text-yellow-700 border-yellow-200";
+  return (
+    <span className={`inline-flex items-center px-2 py-0.5 rounded text-xs border ${style}`}>
+      {health}
+    </span>
+  );
+}
+
+function SubTable({ rows, onStatusChange, onEdit, onView, onCopy, onLineage }: {
+  rows: SubRow[];
   onStatusChange: (subRowId: string, newStatus: SubStatus) => void;
   onEdit: (subRow: SubRow) => void;
   onView: (subRow: SubRow) => void;
   onCopy: (subRow: SubRow) => void;
+  onLineage: (subRow: SubRow) => void;
 }) {
   return (
     <div className="mx-4 mb-3 rounded-xl border border-slate-200 shadow-sm overflow-visible">
       <table className="w-full text-sm border-collapse">
         <thead>
           <tr className="bg-gradient-to-r from-slate-50 to-slate-100">
-            {["Region", "Call Function", "Input Params", "Output Params", "Status", "UpdateTime", "Action"].map((h, i, arr) => (
+            {["Region", "Script Type", "Version", "Input Params", "Output Params", "Status", "UpdateTime", "Source Pipeline", "Action"].map((h, i, arr) => (
               <th key={h} className={`px-4 py-2.5 text-left text-xs text-slate-500 whitespace-nowrap border-b border-slate-200 bg-slate-50 ${i === 0 ? "rounded-tl-xl" : i === arr.length - 1 ? "rounded-tr-xl" : ""}`}>{h}</th>
             ))}
           </tr>
@@ -886,31 +1017,38 @@ function SubTable({ rows, sourceType, onStatusChange, onEdit, onView, onCopy }: 
         <tbody>
           {rows.map((row, i) => (
             <tr key={row.id} className={`transition-colors duration-150 ${i % 2 === 0 ? "bg-white" : "bg-slate-50/60"} hover:bg-teal-50/40`}>
-              {/* Region + Version */}
               <td className="px-4 py-3 whitespace-nowrap">
-                <div className="flex items-center gap-1.5">
-                  <span className="text-xs text-slate-600">{row.region}</span>
-                  <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-teal-50 text-teal-600 border border-teal-200">{row.version}</span>
-                </div>
+                <span className="text-xs text-slate-600">{row.region}</span>
               </td>
-              <td className="px-4 py-3"><CallFunctionDisplay value={row.callFunction} sourceType={sourceType} /></td>
-              <td className="px-4 py-3">
-                <div className="flex flex-wrap gap-1">
-                  {row.inputParams.map((p) => <ParamTag key={p.name} label={p.name} />)}
-                </div>
+              <td className="px-4 py-3 whitespace-nowrap">
+                <span className="inline-flex items-center px-2 py-0.5 rounded text-xs bg-violet-50 text-violet-700 border border-violet-200">{row.scriptType}</span>
+              </td>
+              <td className="px-4 py-3 whitespace-nowrap">
+                <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-teal-50 text-teal-600 border border-teal-200">{row.version}</span>
               </td>
               <td className="px-4 py-3">
                 <div className="flex flex-wrap gap-1">
-                  {row.outputParams.map((p) => <ParamTag key={p.name} label={p.name} />)}
+                  {row.inputParams.map((p) => (
+                    <span key={p.name} className="inline-flex items-center px-2 py-0.5 rounded text-xs bg-slate-100 text-slate-600 border border-slate-200 whitespace-nowrap">{p.name} ({p.dataType})</span>
+                  ))}
+                </div>
+              </td>
+              <td className="px-4 py-3">
+                <div className="flex flex-wrap gap-1">
+                  {row.outputParams.map((p) => (
+                    <span key={p.name} className="inline-flex items-center px-2 py-0.5 rounded text-xs bg-slate-100 text-slate-600 border border-slate-200 whitespace-nowrap">{p.name} ({p.dataType})</span>
+                  ))}
                 </div>
               </td>
               <td className="px-4 py-3"><StatusBadge status={row.status} /></td>
               <td className="px-4 py-3 text-xs text-slate-500 whitespace-nowrap">{row.updateTime}</td>
+              <td className="px-4 py-3 whitespace-nowrap"><PipelineHealthBadge subRowId={row.id} /></td>
               <td className="px-4 py-3">
                 <div className="flex items-center gap-3">
-                  <button onClick={() => onEdit(row)} className="text-xs text-teal-600 hover:text-teal-800 hover:underline transition-colors">Edit</button>
                   <button onClick={() => onView(row)} className="text-xs text-teal-600 hover:text-teal-800 hover:underline transition-colors">View</button>
+                  <button onClick={() => onEdit(row)} className="text-xs text-teal-600 hover:text-teal-800 hover:underline transition-colors">Edit</button>
                   <button onClick={() => onCopy(row)} className="text-xs text-teal-600 hover:text-teal-800 hover:underline transition-colors">Copy</button>
+                  <button onClick={() => onLineage(row)} className="text-xs text-teal-600 hover:text-teal-800">Lineage</button>
                   <ManageDropdown
                     subRow={row}
                     onEnable={() => onStatusChange(row.id, "ENABLE")}
@@ -1224,6 +1362,197 @@ function TestModal({ open, row, onClose }: { open: boolean; row: FeatureRow | nu
   );
 }
 
+// ─── Lineage Modal ────────────────────────────────────────────────────────────
+
+function LineageModal({ open, fsRow, subRow, onClose }: {
+  open: boolean; fsRow: FeatureRow; subRow: SubRow; onClose: () => void;
+}) {
+  const [tab, setTab] = useState<"upstream" | "usedby">("upstream");
+  const [refreshedAt] = useState(() => new Date());
+
+  useEffect(() => { if (open) setTab("upstream"); }, [open, subRow?.id]);
+  useEffect(() => {
+    if (!open) return;
+    const h = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
+    window.addEventListener("keydown", h);
+    return () => window.removeEventListener("keydown", h);
+  }, [open, onClose]);
+
+  if (!open) return null;
+
+  const dps = LINEAGE_DP_MAP[subRow.id] ?? [];
+  const fgs = LINEAGE_FG_MAP[subRow.id] ?? [];
+
+  const relativeTime = (() => {
+    const diff = Math.floor((Date.now() - refreshedAt.getTime()) / 1000);
+    if (diff < 10) return "just now";
+    if (diff < 60) return `${diff}s ago`;
+    return `${Math.floor(diff / 60)}m ago`;
+  })();
+
+  return (
+    <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/40 backdrop-blur-sm" onClick={onClose}>
+      <div className="bg-white rounded-2xl shadow-2xl border border-slate-100 w-full max-w-2xl mx-4 max-h-[88vh] flex flex-col overflow-hidden" onClick={e => e.stopPropagation()}>
+        {/* Header */}
+        <div className="flex items-start justify-between px-6 py-5 border-b border-slate-100 flex-shrink-0">
+          <div className="flex items-start gap-3">
+            <div className="w-9 h-9 rounded-xl bg-indigo-500 flex items-center justify-center flex-shrink-0 shadow-sm shadow-indigo-200 mt-0.5">
+              <GitBranch className="w-4 h-4 text-white" />
+            </div>
+            <div>
+              <h2 className="text-slate-800 text-base font-semibold">Lineage</h2>
+              <p className="text-xs text-slate-400 mt-0.5 font-mono">
+                {fsRow.featureSource}
+                <span className="mx-1.5 text-slate-300">·</span>
+                <span className="text-slate-500">{subRow.region}</span>
+                <span className="ml-1.5 px-1.5 py-0.5 rounded bg-teal-50 text-teal-600 border border-teal-200 text-[11px]">{subRow.version}</span>
+              </p>
+            </div>
+          </div>
+          <button onClick={onClose} className="p-1.5 rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-100 transition-all flex-shrink-0"><X className="w-4 h-4" /></button>
+        </div>
+
+        {/* Tabs */}
+        <div className="flex border-b border-slate-100 px-6 flex-shrink-0">
+          {([
+            { key: "upstream" as const, label: "Upstream Pipeline", count: dps.length },
+            { key: "usedby"   as const, label: "Used By",           count: fgs.length },
+          ]).map(t => (
+            <button key={t.key} onClick={() => setTab(t.key)}
+              className={`relative flex items-center gap-1.5 px-1 py-3 mr-7 text-sm transition-colors ${tab === t.key ? "text-indigo-600" : "text-slate-500 hover:text-slate-700"}`}>
+              {t.label}
+              <span className={`inline-flex items-center justify-center min-w-[1.25rem] h-5 px-1.5 rounded-full text-[11px] font-medium ${tab === t.key ? "bg-indigo-100 text-indigo-700" : "bg-slate-100 text-slate-500"}`}>{t.count}</span>
+              {tab === t.key && <span className="absolute bottom-0 left-0 right-0 h-0.5 bg-indigo-500 rounded-full" />}
+            </button>
+          ))}
+        </div>
+
+        {/* Body */}
+        <div className="flex-1 overflow-y-auto px-6 py-4">
+          {tab === "upstream" && (
+            <div className="space-y-3">
+              {dps.length === 0 && (
+                <p className="text-sm text-slate-400 py-8 text-center">No upstream pipelines linked.</p>
+              )}
+              {dps.map(dp => {
+                const isNotFound = dp.syncState === "NotFound";
+                const isFlink = dp.pipelineType === "FlinkStream";
+                const statusColorMap = isFlink ? FLINK_STATUS_COLOR : SPARK_STATUS_COLOR;
+                const statusCls = dp.taskStatus ? (statusColorMap[dp.taskStatus] ?? "bg-slate-100 text-slate-500 border-slate-200") : "";
+                return (
+                  <div key={dp.id} className="rounded-xl border border-slate-200 overflow-hidden">
+                    {/* Card header */}
+                    <div className="flex items-center justify-between px-4 py-3 bg-slate-50/60">
+                      <div className="flex items-center gap-2.5">
+                        <span className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded text-[11px] font-medium border ${isFlink ? "bg-violet-50 text-violet-700 border-violet-200" : "bg-blue-50 text-blue-700 border-blue-200"}`}>
+                          {isFlink ? <Zap className="w-3 h-3" /> : <Layers className="w-3 h-3" />}
+                          {PIPELINE_TYPE_LABEL[dp.pipelineType]}
+                        </span>
+                        <span className="text-sm font-mono text-slate-800">{dp.name}</span>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <span className={`inline-flex items-center gap-1.5 text-xs ${isNotFound ? "text-slate-400" : "text-emerald-600"}`}>
+                          <span className={`w-1.5 h-1.5 rounded-full ${isNotFound ? "bg-slate-400" : "bg-emerald-500"}`} />
+                          {isNotFound ? "Not Found" : "In Sync"}
+                        </span>
+                        {!isNotFound && dp.taskStatus && (
+                          <span className={`inline-flex items-center px-2 py-0.5 rounded text-xs border ${statusCls}`}>{dp.taskStatus}</span>
+                        )}
+                      </div>
+                    </div>
+                    {/* Card body — hidden when NotFound */}
+                    {!isNotFound && (
+                      <div className="px-4 py-3 grid grid-cols-3 gap-x-6 gap-y-1.5 border-b border-slate-100">
+                        <div>
+                          <p className="text-[10px] text-slate-400 uppercase tracking-wide mb-0.5">Source Table</p>
+                          <p className="text-xs text-slate-700 font-mono">{dp.sourceTable}</p>
+                        </div>
+                        <div>
+                          <p className="text-[10px] text-slate-400 uppercase tracking-wide mb-0.5">Schedule</p>
+                          <p className="text-xs text-slate-700 font-mono">{dp.schedule}</p>
+                        </div>
+                        <div>
+                          {dp.lag !== undefined ? (
+                            <>
+                              <p className="text-[10px] text-slate-400 uppercase tracking-wide mb-0.5">Lag</p>
+                              <p className="text-xs text-slate-700 font-mono">{dp.lag}</p>
+                            </>
+                          ) : dp.lastSuccessAt ? (
+                            <>
+                              <p className="text-[10px] text-slate-400 uppercase tracking-wide mb-0.5">Last Success</p>
+                              <p className="text-xs text-slate-700">{dp.lastSuccessAt}</p>
+                            </>
+                          ) : null}
+                        </div>
+                      </div>
+                    )}
+                    {/* Card footer */}
+                    <div className="flex items-center justify-between px-4 py-2.5">
+                      <div className="flex items-center gap-4 text-xs text-slate-500">
+                        <span className="flex items-center gap-1"><Mail className="w-3 h-3 text-slate-400" />{dp.ownerEmail}</span>
+                        <a href={dp.dataverseUrl} target="_blank" rel="noreferrer" className="flex items-center gap-1 text-indigo-500 hover:text-indigo-700 transition-colors" onClick={e => e.stopPropagation()}>
+                          <ExternalLink className="w-3 h-3" />View in DataVerse
+                        </a>
+                      </div>
+                      <button className="flex items-center gap-1 text-xs text-red-400 hover:text-red-600 transition-colors">
+                        <Link2Off className="w-3 h-3" />Unbind
+                      </button>
+                    </div>
+                  </div>
+                );
+              })}
+              <button className="w-full flex items-center justify-center gap-2 py-3 rounded-xl border border-dashed border-slate-300 text-sm text-slate-500 hover:border-indigo-400 hover:text-indigo-600 transition-colors">
+                <Plus className="w-4 h-4" />Bind another pipeline...
+              </button>
+            </div>
+          )}
+
+          {tab === "usedby" && (
+            <div>
+              {fgs.length === 0 ? (
+                <p className="text-sm text-slate-400 py-8 text-center">No Feature Groups using this config.</p>
+              ) : (
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="border-b border-slate-200">
+                      <th className="pb-2.5 text-left text-xs text-slate-500 font-medium">Feature Group</th>
+                      <th className="pb-2.5 text-left text-xs text-slate-500 font-medium">Owner</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100">
+                    {fgs.map(fg => (
+                      <tr key={fg.name} className="hover:bg-slate-50/60 transition-colors">
+                        <td className="py-3 pr-4 text-xs font-mono text-slate-700">{fg.name}</td>
+                        <td className="py-3">
+                          <div className="flex flex-wrap gap-1.5">
+                            {fg.owners.map(o => (
+                              <span key={o} className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px] bg-slate-100 text-slate-600 border border-slate-200">
+                                <Mail className="w-2.5 h-2.5 text-slate-400" />{o}
+                              </span>
+                            ))}
+                          </div>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              )}
+            </div>
+          )}
+        </div>
+
+        {/* Footer */}
+        <div className="flex items-center justify-between px-6 py-3 border-t border-slate-100 bg-slate-50/40 flex-shrink-0">
+          <span className="flex items-center gap-1.5 text-xs text-slate-400">
+            <RefreshCw className="w-3 h-3" />Last refreshed: {relativeTime}
+          </span>
+          <button onClick={onClose} className="px-5 py-2 text-sm text-slate-600 bg-white border border-slate-200 rounded-lg hover:bg-slate-50 hover:border-slate-300 transition-all">Close</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ─── Main Page ────────────────────────────────────────────────────────────────
 
 export function FeatureSourcePage() {
@@ -1247,6 +1576,7 @@ export function FeatureSourcePage() {
   const [regionFormModal, setRegionFormModal] = useState<{ open: boolean; mode: RegionFormMode; parentRow?: FeatureRow; subRow?: SubRow }>({ open: false, mode: "add" });
   const [viewModal, setViewModal]       = useState<{ open: boolean; parentRow?: FeatureRow; subRow?: SubRow }>({ open: false });
   const [testModal, setTestModal]       = useState<{ open: boolean; row: FeatureRow | null }>({ open: false, row: null });
+  const [lineageModal, setLineageModal] = useState<{ open: boolean; parentRow?: FeatureRow; subRow?: SubRow }>({ open: false });
 
   const closeModal      = () => setModal(m => ({ ...m, open: false }));
   const closeMetaForm   = () => setMetaFormModal({ open: false, mode: "add" });
@@ -1307,6 +1637,7 @@ export function FeatureSourcePage() {
   const handleSubEdit       = (parentRow: FeatureRow, subRow: SubRow) => setRegionFormModal({ open: true, mode: "edit", parentRow, subRow });
   const handleSubView       = (parentRow: FeatureRow, subRow: SubRow) => setViewModal({ open: true, parentRow, subRow });
   const handleSubCopy       = (parentRow: FeatureRow, subRow: SubRow) => setRegionFormModal({ open: true, mode: "copy", parentRow, subRow });
+  const handleSubLineage    = (parentRow: FeatureRow, subRow: SubRow) => setLineageModal({ open: true, parentRow, subRow });
 
   const handleMetaSubmit = (data: MetaFormData, mode: "add" | "editMeta", rowId?: string) => {
     if (mode === "add") {
@@ -1335,7 +1666,7 @@ export function FeatureSourcePage() {
           ...row,
           regions: row.regions.includes(data.region) ? row.regions : [...row.regions, data.region],
           subRows: [...row.subRows, {
-            id: newSubId, region: data.region, version: data.version,
+            id: newSubId, region: data.region, version: data.version, scriptType: data.scriptType,
             callFunction: data.callFunction, inputParams: data.inputParams,
             outputParams: data.outputParams, status: "DRAFT", updateTime: nowString(),
           }],
@@ -1347,7 +1678,7 @@ export function FeatureSourcePage() {
         return {
           ...row,
           subRows: row.subRows.map(sub => sub.id !== editingSubRow.id ? sub : {
-            ...sub, callFunction: data.callFunction, inputParams: data.inputParams,
+            ...sub, scriptType: data.scriptType, callFunction: data.callFunction, inputParams: data.inputParams,
             outputParams: data.outputParams, updateTime: nowString(),
           }),
         };
@@ -1360,7 +1691,7 @@ export function FeatureSourcePage() {
           ...row,
           regions: row.regions.includes(data.region) ? row.regions : [...row.regions, data.region],
           subRows: [...row.subRows, {
-            id: newSubId, region: data.region, version: data.version,
+            id: newSubId, region: data.region, version: data.version, scriptType: data.scriptType,
             callFunction: data.callFunction, inputParams: data.inputParams,
             outputParams: data.outputParams, status: "DRAFT", updateTime: nowString(),
           }],
@@ -1439,6 +1770,9 @@ export function FeatureSourcePage() {
         <ViewRegionModal open={viewModal.open} parentRow={viewModal.parentRow} subRow={viewModal.subRow} onClose={closeViewModal} />
       )}
       <TestModal open={testModal.open} row={testModal.row} onClose={() => setTestModal({ open: false, row: null })} />
+      {lineageModal.open && lineageModal.parentRow && lineageModal.subRow && (
+        <LineageModal open={lineageModal.open} fsRow={lineageModal.parentRow} subRow={lineageModal.subRow} onClose={() => setLineageModal({ open: false })} />
+      )}
 
       <header className="bg-white border-b border-gray-100 px-6 py-3 flex items-center gap-3 shadow-sm">
         <div className="flex items-center gap-2.5">
@@ -1614,12 +1948,11 @@ export function FeatureSourcePage() {
                         </td>
                         <td className="px-4 py-4"><span className="text-slate-800 font-mono text-xs">{row.featureSource}</span></td>
                         <td className="px-4 py-4">
-                          <span className="inline-flex items-center gap-1.5 text-xs text-slate-600">
-                            <span className="text-teal-500">{sourceTypeIconMap[row.sourceType] ?? <Database className="w-3.5 h-3.5" />}</span>
-                            {row.sourceType}
-                          </span>
+                          <span className="inline-flex items-center px-2 py-0.5 rounded text-xs bg-slate-50 text-slate-600 border border-slate-200 whitespace-nowrap">{row.sourceType}</span>
                         </td>
-                        <td className="px-4 py-4 text-xs text-slate-600 whitespace-nowrap">{row.dataLatency}</td>
+                        <td className="px-4 py-4">
+                          <span className="inline-flex items-center px-2 py-0.5 rounded text-xs bg-sky-50 text-sky-600 border border-sky-200 whitespace-nowrap">{row.dataLatency}</span>
+                        </td>
                         <td className="px-4 py-4">
                           <div className="flex flex-wrap gap-1">
                             {row.regions.map(r => {
@@ -1645,11 +1978,11 @@ export function FeatureSourcePage() {
                           <td colSpan={9} className="bg-slate-50/60 py-2">
                             <SubTable
                               rows={row.subRows}
-                              sourceType={row.sourceType}
                               onStatusChange={(subRowId, newStatus) => handleStatusChange(row.id, subRowId, newStatus)}
                               onEdit={(subRow) => handleSubEdit(row, subRow)}
                               onView={(subRow) => handleSubView(row, subRow)}
                               onCopy={(subRow) => handleSubCopy(row, subRow)}
+                              onLineage={(subRow) => handleSubLineage(row, subRow)}
                             />
                           </td>
                         </tr>
