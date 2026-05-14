@@ -1,14 +1,32 @@
 import { useState } from "react";
 import { NavLink, Outlet } from "react-router";
-import { ChevronsLeft, ChevronsRight } from "lucide-react";
+import {
+  ChevronsLeft,
+  ChevronsRight,
+  Database,
+  GitBranch,
+  Globe,
+  Layers,
+  Table2,
+  Zap,
+} from "lucide-react";
 import { Toaster } from "sonner";
 
-const NAV_ITEMS: { to: string; label: string; end?: boolean }[] = [
-  { to: "/fs", label: "Feature Source", end: true },
-  { to: "/tf", label: "Transformation", end: true },
-  { to: "/fg", label: "Feature Group", end: false },
-  { to: "/fm", label: "Feature Map", end: true },
-  { to: "/wt", label: "WideTable", end: false },
+type NavItem = {
+  to: string;
+  label: string;
+  end?: boolean;
+  Icon: React.ComponentType<{ className?: string }>;
+  accent: string;
+};
+
+const NAV_ITEMS: NavItem[] = [
+  { to: "/ds", label: "Data Source", end: true, Icon: Database, accent: "text-sky-700" },
+  { to: "/fs", label: "Feature Source", end: true, Icon: Globe, accent: "text-indigo-700" },
+  { to: "/tf", label: "Transformation", end: true, Icon: Zap, accent: "text-amber-700" },
+  { to: "/fg", label: "Feature Group", end: false, Icon: Layers, accent: "text-violet-700" },
+  { to: "/fm", label: "Feature Map", end: true, Icon: GitBranch, accent: "text-rose-700" },
+  { to: "/wt", label: "WideTable", end: false, Icon: Table2, accent: "text-teal-700" },
 ];
 
 export function AppShell() {
@@ -44,19 +62,35 @@ export function AppShell() {
               title={sidebarCollapsed ? item.label : undefined}
               className={({ isActive }) =>
                 [
-                  "flex items-center cursor-pointer border-l-[3px] transition-colors",
+                  "group flex items-center cursor-pointer border-l-[3px] transition-colors",
                   sidebarCollapsed ? "justify-center gap-0 px-2 py-2.5" : "gap-2.5 px-4 py-2.5",
                   isActive
-                    ? "bg-teal-500 text-white border-teal-500"
-                    : "border-transparent text-gray-600 hover:bg-black/[0.04] hover:text-gray-900",
+                    ? "bg-gradient-to-r from-teal-500 to-teal-600 text-white border-teal-500 shadow-sm"
+                    : "border-transparent text-gray-600 hover:bg-white/60 hover:text-gray-900",
                 ].join(" ")
               }
             >
-              <span className="w-5 text-center text-[15px] opacity-90 shrink-0">◇</span>
-              {!sidebarCollapsed && (
-                <span className="whitespace-nowrap overflow-hidden text-ellipsis min-w-0">
-                  {item.label}
-                </span>
+              {({ isActive }) => (
+                <>
+                  <span
+                    className={[
+                      "shrink-0 grid place-items-center rounded-xl ring-1 transition-colors",
+                      sidebarCollapsed ? "w-9 h-9" : "w-8 h-8",
+                      isActive
+                        ? "bg-white/15 ring-white/25"
+                        : "bg-white/60 ring-black/[0.05] group-hover:bg-white/80",
+                    ].join(" ")}
+                  >
+                    <item.Icon
+                      className={["w-[18px] h-[18px]", isActive ? "text-white" : item.accent].join(" ")}
+                    />
+                  </span>
+                  {!sidebarCollapsed && (
+                    <span className="whitespace-nowrap overflow-hidden text-ellipsis min-w-0">
+                      {item.label}
+                    </span>
+                  )}
+                </>
               )}
             </NavLink>
           ))}

@@ -1,0 +1,660 @@
+import { useState, useEffect } from "react";
+import {
+  Search, ChevronRight, Plus, Database, Zap, Globe,
+  ArrowRight, RotateCcw, ExternalLink, Pencil, Unlink, X,
+  Loader2, CheckCircle2, XCircle, Mail, FlaskConical, Trash2,
+  Clock, Users, UserPlus,
+} from "lucide-react";
+
+// ─── Types ────────────────────────────────────────────────────────────────────
+
+type ConfigType = "offline" | "nearline" | "online";
+
+interface OfflineConfig  { hiveTable: string;        status: "Healthy"|"Warning"|"Offline"; lastUpdated: string; }
+interface NearlineConfig { kafkaTopic: string;        status: "Healthy"|"Warning"|"Offline"; lag: string; }
+interface OnlineConfig   { featureSourceName: string; status: "Healthy"|"Warning"|"Offline"; protocol: "HTTP"|"gRPC"; }
+
+interface DataSourceEntry {
+  id: string; region: string; logicalName: string; description: string; updateTime: string;
+  owners: string[];
+  offline?: OfflineConfig; nearline?: NearlineConfig; online?: OnlineConfig;
+}
+
+// ─── Mock data ────────────────────────────────────────────────────────────────
+
+const INIT_DATA: DataSourceEntry[] = [
+  { id:"ds-1", region:"ID",        logicalName:"user_risk_hbase_id",    description:"User risk score HBase data source for Indonesia",  updateTime:"2026-05-10 09:00",
+    owners:["alice.wang@company.com", "bob.chen@company.com"],
+    offline: { hiveTable:"ods.credit_user_id_binlog",      status:"Healthy", lastUpdated:"2h ago"  },
+    nearline:{ kafkaTopic:"kafka.credit_events_id",         status:"Healthy", lag:"320 ms"          } },
+  { id:"ds-2", region:"TH",        logicalName:"user_risk_hbase_th",    description:"User risk score HBase data source for Thailand",    updateTime:"2026-05-09 14:30",
+    owners:["alice.wang@company.com"],
+    offline: { hiveTable:"ods.credit_user_th_binlog",       status:"Warning", lastUpdated:"6h ago"  },
+    nearline:{ kafkaTopic:"kafka.credit_events_th",          status:"Warning", lag:"4.2 min"         } },
+  { id:"ds-3", region:"MX",        logicalName:"acard_feature_mx",      description:"ACard scoring feature data source for Mexico",      updateTime:"2026-05-11 18:00",
+    owners:["carlos.li@company.com"],
+    offline: { hiveTable:"ods.acard_user_mx_binlog",        status:"Healthy", lastUpdated:"4h ago"  },
+    nearline:{ kafkaTopic:"kafka.acard_events_mx",           status:"Healthy", lag:"85 ms"           },
+    online:  { featureSourceName:"acard_grpc_mx_source",    status:"Healthy", protocol:"gRPC"       } },
+  { id:"ds-4", region:"ID",        logicalName:"acard_feature_id",      description:"ACard scoring feature data source for Indonesia",   updateTime:"2026-05-08 11:00",
+    owners:["carlos.li@company.com", "diana.xu@company.com"],
+    offline: { hiveTable:"ods.acard_user_id_binlog",        status:"Healthy", lastUpdated:"3h ago"  },
+    nearline:{ kafkaTopic:"kafka.acard_events_id",           status:"Offline", lag:"—"               } },
+  { id:"ds-5", region:"SHOPEE_SG", logicalName:"recommend_behavior_sg", description:"Recommendation behavior data source for Shopee SG", updateTime:"2026-05-12 02:00",
+    owners:["diana.xu@company.com"],
+    offline: { hiveTable:"ods.user_behavior_sg_binlog",     status:"Healthy", lastUpdated:"2h ago"  },
+    nearline:{ kafkaTopic:"kafka.user_behavior_sg",          status:"Healthy", lag:"120 ms"          },
+    online:  { featureSourceName:"recommend_http_sg_source", status:"Healthy", protocol:"HTTP"      } },
+  { id:"ds-6", region:"TH",        logicalName:"graph_relation_th",     description:"Graph relation feature data source for Thailand",   updateTime:"2026-05-07 22:00",
+    owners:["evan.park@company.com", "bob.chen@company.com"],
+    offline: { hiveTable:"ods.relation_events_th_binlog",   status:"Warning", lastUpdated:"8h ago"  },
+    nearline:{ kafkaTopic:"kafka.relation_events_th",         status:"Warning", lag:"4.2 min"         } },
+];
+
+const AVAILABLE_ONLINE_SOURCES: { name: string; protocol: "HTTP"|"gRPC" }[] = [
+  { name: "credit_risk_hbase_source",    protocol: "gRPC" },
+  { name: "acard_grpc_mx_source",        protocol: "gRPC" },
+  { name: "acard_grpc_id_source",        protocol: "gRPC" },
+  { name: "recommend_http_sg_source",    protocol: "HTTP" },
+  { name: "recommend_http_th_source",    protocol: "HTTP" },
+  { name: "graph_flink_stream_th",       protocol: "gRPC" },
+];
+
+const ALL_REGIONS = ["ID", "TH", "MX", "SHOPEE_SG", "PH", "VN", "BR"];
+
+const KNOWN_HIVE_TABLES = new Set([
+  "ods.credit_user_id_binlog", "ods.credit_user_th_binlog", "ods.credit_user_mx_binlog",
+  "ods.acard_user_mx_binlog",  "ods.acard_user_id_binlog",  "ods.acard_user_th_binlog",
+  "ods.user_behavior_sg_binlog", "ods.relation_events_th_binlog",
+  "dwd.user_profile_sg", "dwd.transaction_id_features", "dwd.acard_mx_features",
+]);
+
+const KNOWN_KAFKA_TOPICS = new Set([
+  "kafka.credit_events_id", "kafka.credit_events_th", "kafka.credit_events_mx",
+  "kafka.acard_events_mx",  "kafka.acard_events_id",  "kafka.acard_events_th",
+  "kafka.user_behavior_sg", "kafka.user_behavior_id",
+  "kafka.relation_events_th",
+]);
+
+// ─── Style helpers ────────────────────────────────────────────────────────────
+
+const S = {
+  Healthy: { dot:"bg-emerald-500", text:"text-emerald-600", pill:"bg-emerald-50 border-emerald-200 text-emerald-700" },
+  Warning: { dot:"bg-amber-400",   text:"text-amber-600",   pill:"bg-amber-50   border-amber-200   text-amber-700"   },
+  Offline: { dot:"bg-slate-300",   text:"text-slate-400",   pill:"bg-slate-100  border-slate-200   text-slate-400"   },
+};
+
+const inputCls = "w-full px-3 py-2 text-xs rounded-lg border border-slate-200 bg-white focus:outline-none focus:ring-2 focus:ring-teal-400 focus:border-teal-400 transition-all";
+const labelCls = "block text-xs text-slate-500 mb-1";
+
+function nowString() {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")} ${String(d.getHours()).padStart(2,"0")}:${String(d.getMinutes()).padStart(2,"0")}`;
+}
+
+// ─── Modal shell (shared style) ───────────────────────────────────────────────
+
+function ModalShell({ title, icon, onClose, children, footer }: {
+  title: string; icon: React.ReactNode; onClose: () => void;
+  children: React.ReactNode; footer: React.ReactNode;
+}) {
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center" onMouseDown={e => { if (e.target === e.currentTarget) onClose(); }}>
+      <div className="absolute inset-0 bg-black/40" />
+      <div className="relative bg-white rounded-2xl shadow-2xl w-full max-w-sm mx-4 overflow-hidden">
+        <div className="flex items-center justify-between px-5 py-4 border-b border-slate-100">
+          <div className="flex items-center gap-2.5">
+            <div className="w-7 h-7 rounded-lg bg-teal-500 flex items-center justify-center flex-shrink-0">{icon}</div>
+            <h2 className="text-slate-800 text-sm">{title}</h2>
+          </div>
+          <button onClick={onClose} className="p-1.5 rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-100 transition-all">
+            <X className="w-4 h-4" />
+          </button>
+        </div>
+        <div className="px-5 py-4 space-y-3">{children}</div>
+        <div className="px-5 py-3 border-t border-slate-100 flex justify-end gap-2">{footer}</div>
+      </div>
+    </div>
+  );
+}
+
+// ─── New Mapping Modal ────────────────────────────────────────────────────────
+
+const CURRENT_USER = "current.user@seamoney.com";
+
+function NewMappingModal({ onClose, onSave }: { onClose: () => void; onSave: (e: Omit<DataSourceEntry,"offline"|"nearline"|"online">) => void }) {
+  const [region,      setRegion]      = useState("");
+  const [logicalName, setLogicalName] = useState("");
+  const [description, setDescription] = useState("");
+  const [owners,      setOwners]      = useState<string[]>([CURRENT_USER]);
+  const [ownerInput,  setOwnerInput]  = useState("");
+
+  const valid = region && logicalName.trim() && description.trim();
+  const isValidEmail = (v: string) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v.trim());
+  const canAddOwner  = isValidEmail(ownerInput) && !owners.includes(ownerInput.trim());
+
+  const addOwner    = () => { if (!canAddOwner) return; setOwners(o => [...o, ownerInput.trim()]); setOwnerInput(""); };
+  const removeOwner = (email: string) => setOwners(o => o.filter(e => e !== email));
+
+  return (
+    <ModalShell
+      title="New DataSource Mapping"
+      icon={<Plus className="w-4 h-4 text-white" />}
+      onClose={onClose}
+      footer={<>
+        <button onClick={onClose} className="px-4 py-1.5 text-xs text-slate-600 bg-white border border-slate-200 rounded-lg hover:bg-slate-50 transition-all">Cancel</button>
+        <button disabled={!valid} onClick={() => valid && onSave({ id:`ds-${Date.now()}`, region, logicalName: logicalName.trim(), description: description.trim(), owners, updateTime: nowString() })}
+          className={`px-4 py-1.5 text-xs text-white rounded-lg transition-all ${valid ? "bg-teal-500 hover:bg-teal-600" : "bg-slate-200 text-slate-400 cursor-not-allowed"}`}>
+          Create
+        </button>
+      </>}
+    >
+      <div>
+        <label className={labelCls}><span className="text-red-500 mr-0.5">*</span>Region</label>
+        <select value={region} onChange={e => setRegion(e.target.value)} className={inputCls}>
+          <option value="">Select region…</option>
+          {ALL_REGIONS.map(r => <option key={r} value={r}>{r}</option>)}
+        </select>
+      </div>
+      <div>
+        <label className={labelCls}><span className="text-red-500 mr-0.5">*</span>Logical Name</label>
+        <input value={logicalName} onChange={e => setLogicalName(e.target.value)} placeholder="e.g. user_risk_hbase_id" className={inputCls} />
+      </div>
+      <div>
+        <label className={labelCls}><span className="text-red-500 mr-0.5">*</span>Description</label>
+        <input value={description} onChange={e => setDescription(e.target.value)} placeholder="Short description…" className={inputCls} />
+      </div>
+
+      {/* Owners */}
+      <div>
+        <label className={labelCls}><span className="text-red-500 mr-0.5">*</span>Owners</label>
+        <div className="space-y-1.5 mb-2">
+          {owners.map(email => (
+            <div key={email} className="flex items-center justify-between gap-2 px-2.5 py-1.5 rounded-lg bg-slate-50 border border-slate-200">
+              <div className="flex items-center gap-1.5 min-w-0">
+                <Mail className="w-3 h-3 text-slate-400 flex-shrink-0" />
+                <span className="text-xs text-slate-700 truncate font-mono">{email}</span>
+                {email === CURRENT_USER && (
+                  <span className="text-[9px] px-1.5 py-0.5 rounded bg-teal-50 text-teal-600 border border-teal-200 whitespace-nowrap flex-shrink-0">You</span>
+                )}
+              </div>
+              <button onClick={() => removeOwner(email)} className="flex-shrink-0 text-slate-400 hover:text-red-500 transition-colors">
+                <X className="w-3.5 h-3.5" />
+              </button>
+            </div>
+          ))}
+        </div>
+        <div className="flex gap-2">
+          <input
+            value={ownerInput} onChange={e => setOwnerInput(e.target.value)}
+            onKeyDown={e => e.key === "Enter" && addOwner()}
+            placeholder="Add another owner…"
+            className={`${inputCls} flex-1 font-mono`}
+          />
+          <button onClick={addOwner} disabled={!canAddOwner}
+            className={`flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs transition-all flex-shrink-0 ${canAddOwner ? "bg-teal-500 text-white hover:bg-teal-600" : "bg-slate-100 text-slate-400 cursor-not-allowed"}`}>
+            <UserPlus className="w-3.5 h-3.5" />Add
+          </button>
+        </div>
+      </div>
+    </ModalShell>
+  );
+}
+
+// ─── Config Bind / Edit Modal ─────────────────────────────────────────────────
+
+function ConfigModal({ type, current, onClose, onSave }: {
+  type: ConfigType;
+  current?: OfflineConfig | NearlineConfig | OnlineConfig;
+  onClose: () => void;
+  onSave: (cfg: OfflineConfig | NearlineConfig | OnlineConfig) => void;
+}) {
+  const isEdit = !!current;
+
+  // Offline
+  const [hiveTable,      setHiveTable]      = useState((current as OfflineConfig  | undefined)?.hiveTable         ?? "");
+  const [hiveVal,        setHiveVal]        = useState<"idle"|"checking"|"found"|"not-found">("idle");
+  // Nearline
+  const [kafkaTopic,     setKafkaTopic]     = useState((current as NearlineConfig | undefined)?.kafkaTopic        ?? "");
+  const [kafkaVal,       setKafkaVal]       = useState<"idle"|"checking"|"found"|"not-found">("idle");
+  // Online
+  const [selectedSrc,    setSelectedSrc]    = useState((current as OnlineConfig   | undefined)?.featureSourceName ?? "");
+  const derivedProtocol = AVAILABLE_ONLINE_SOURCES.find(s => s.name === selectedSrc)?.protocol;
+
+  useEffect(() => {
+    if (type !== "offline") return;
+    if (!hiveTable.trim()) { setHiveVal("idle"); return; }
+    setHiveVal("checking");
+    const t = setTimeout(() => setHiveVal(KNOWN_HIVE_TABLES.has(hiveTable.trim()) ? "found" : "not-found"), 600);
+    return () => clearTimeout(t);
+  }, [hiveTable, type]);
+
+  useEffect(() => {
+    if (type !== "nearline") return;
+    if (!kafkaTopic.trim()) { setKafkaVal("idle"); return; }
+    setKafkaVal("checking");
+    const t = setTimeout(() => setKafkaVal(KNOWN_KAFKA_TOPICS.has(kafkaTopic.trim()) ? "found" : "not-found"), 600);
+    return () => clearTimeout(t);
+  }, [kafkaTopic, type]);
+
+  const META: Record<ConfigType, { title: string; icon: React.ReactNode }> = {
+    offline:  { title: `${isEdit ? "Edit" : "Bind"} Offline Config`,  icon: <Database className="w-4 h-4 text-white" /> },
+    nearline: { title: `${isEdit ? "Edit" : "Bind"} Nearline Config`, icon: <Zap     className="w-4 h-4 text-white" /> },
+    online:   { title: `${isEdit ? "Edit" : "Bind"} Online Config`,   icon: <Globe   className="w-4 h-4 text-white" /> },
+  };
+
+  const valid =
+    type === "offline"  ? hiveVal  === "found" :
+    type === "nearline" ? kafkaVal === "found" :
+    !!selectedSrc;
+
+  const handleSave = () => {
+    if (!valid) return;
+    if (type === "offline")  onSave({ hiveTable:  hiveTable.trim(),  status:"Healthy", lastUpdated:"just now" });
+    if (type === "nearline") onSave({ kafkaTopic: kafkaTopic.trim(), status:"Healthy", lag:"—" });
+    if (type === "online")   onSave({ featureSourceName: selectedSrc, protocol: derivedProtocol!, status:"Healthy" });
+  };
+
+  return (
+    <ModalShell
+      title={META[type].title}
+      icon={META[type].icon}
+      onClose={onClose}
+      footer={<>
+        <button onClick={onClose} className="px-4 py-1.5 text-xs text-slate-600 bg-white border border-slate-200 rounded-lg hover:bg-slate-50 transition-all">Cancel</button>
+        <button disabled={!valid} onClick={handleSave}
+          className={`px-4 py-1.5 text-xs text-white rounded-lg transition-all ${valid ? "bg-teal-500 hover:bg-teal-600" : "bg-slate-200 text-slate-400 cursor-not-allowed"}`}>
+          {isEdit ? "Save" : "Bind"}
+        </button>
+      </>}
+    >
+      {type === "offline" && (
+        <div>
+          <label className={labelCls}><span className="text-red-500 mr-0.5">*</span>Hive Table (Binlog)</label>
+          <div className="relative">
+            <input value={hiveTable} onChange={e => setHiveTable(e.target.value)} placeholder="e.g. ods.user_id_binlog" className={`${inputCls} font-mono pr-8`} />
+            <span className="absolute right-2.5 top-1/2 -translate-y-1/2 pointer-events-none">
+              {hiveVal === "checking"  && <Loader2      className="w-3.5 h-3.5 text-slate-400 animate-spin" />}
+              {hiveVal === "found"     && <CheckCircle2 className="w-3.5 h-3.5 text-emerald-500" />}
+              {hiveVal === "not-found" && <XCircle      className="w-3.5 h-3.5 text-red-500" />}
+            </span>
+          </div>
+          {hiveVal === "not-found" && <p className="mt-1 text-[10px] text-red-500">Not found in the Hive metastore.</p>}
+          <p className="mt-1.5 text-[10px] text-slate-400">Binlog Hive table path used for offline feature computation.</p>
+        </div>
+      )}
+      {type === "nearline" && (
+        <div>
+          <label className={labelCls}><span className="text-red-500 mr-0.5">*</span>Kafka Topic</label>
+          <div className="relative">
+            <input value={kafkaTopic} onChange={e => setKafkaTopic(e.target.value)} placeholder="e.g. kafka.credit_events_id" className={`${inputCls} font-mono pr-8`} />
+            <span className="absolute right-2.5 top-1/2 -translate-y-1/2 pointer-events-none">
+              {kafkaVal === "checking"  && <Loader2      className="w-3.5 h-3.5 text-slate-400 animate-spin" />}
+              {kafkaVal === "found"     && <CheckCircle2 className="w-3.5 h-3.5 text-emerald-500" />}
+              {kafkaVal === "not-found" && <XCircle      className="w-3.5 h-3.5 text-red-500" />}
+            </span>
+          </div>
+          {kafkaVal === "not-found" && <p className="mt-1 text-[10px] text-red-500">Not found in the Kafka registry.</p>}
+          <p className="mt-1.5 text-[10px] text-slate-400">Kafka topic consumed by the Flink Streaming job for nearline sync.</p>
+        </div>
+      )}
+      {type === "online" && (
+        <div className="space-y-3">
+          <div>
+            <label className={labelCls}><span className="text-red-500 mr-0.5">*</span>FeatureSource</label>
+            <select value={selectedSrc} onChange={e => setSelectedSrc(e.target.value)} className={inputCls}>
+              <option value="">Select registered source…</option>
+              {AVAILABLE_ONLINE_SOURCES.map(s => (
+                <option key={s.name} value={s.name}>{s.name} ({s.protocol})</option>
+              ))}
+            </select>
+            <p className="mt-1.5 text-[10px] text-slate-400">Only HTTP / gRPC FeatureSource entries are eligible for Online binding.</p>
+          </div>
+          {selectedSrc && (
+            <div className="flex items-center gap-2 px-3 py-2 rounded-lg bg-slate-50 border border-slate-200">
+              <Globe className="w-3.5 h-3.5 text-slate-400 flex-shrink-0" />
+              <span className="text-xs text-slate-600 font-mono">{selectedSrc}</span>
+              <span className="ml-auto text-[10px] px-1.5 py-0.5 rounded bg-indigo-50 text-indigo-600 border border-indigo-200">{derivedProtocol}</span>
+            </div>
+          )}
+        </div>
+      )}
+    </ModalShell>
+  );
+}
+
+// ─── Edit Owners Modal ────────────────────────────────────────────────────────
+
+function EditOwnersModal({ current, onClose, onSave }: {
+  current: string[];
+  onClose: () => void;
+  onSave: (owners: string[]) => void;
+}) {
+  const [owners, setOwners] = useState<string[]>(current);
+  const [input,  setInput]  = useState("");
+  const isValidEmail = (v: string) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v.trim());
+  const canAdd = isValidEmail(input) && !owners.includes(input.trim());
+
+  const add    = () => { if (!canAdd) return; setOwners(o => [...o, input.trim()]); setInput(""); };
+  const remove = (email: string) => setOwners(o => o.filter(e => e !== email));
+
+  return (
+    <ModalShell
+      title="Edit Owners"
+      icon={<Users className="w-4 h-4 text-white" />}
+      onClose={onClose}
+      footer={<>
+        <button onClick={onClose} className="px-4 py-1.5 text-xs text-slate-600 bg-white border border-slate-200 rounded-lg hover:bg-slate-50 transition-all">Cancel</button>
+        <button onClick={() => onSave(owners)} className="px-4 py-1.5 text-xs text-white bg-teal-500 rounded-lg hover:bg-teal-600 transition-all">Save</button>
+      </>}
+    >
+      {/* Current owners */}
+      <div className="space-y-1.5">
+        {owners.length === 0 && (
+          <p className="text-[11px] text-slate-400 py-2 text-center">No owners assigned.</p>
+        )}
+        {owners.map(email => (
+          <div key={email} className="flex items-center justify-between gap-2 px-2.5 py-1.5 rounded-lg bg-slate-50 border border-slate-200">
+            <div className="flex items-center gap-1.5 min-w-0">
+              <Mail className="w-3 h-3 text-slate-400 flex-shrink-0" />
+              <span className="text-xs text-slate-700 truncate font-mono">{email}</span>
+            </div>
+            <button onClick={() => remove(email)} className="flex-shrink-0 text-slate-400 hover:text-red-500 transition-colors">
+              <X className="w-3.5 h-3.5" />
+            </button>
+          </div>
+        ))}
+      </div>
+
+      {/* Add owner */}
+      <div className="border-t border-slate-100 pt-3">
+        <label className={labelCls}>Add owner</label>
+        <div className="flex gap-2">
+          <input
+            value={input} onChange={e => setInput(e.target.value)}
+            onKeyDown={e => e.key === "Enter" && add()}
+            placeholder="name@company.com"
+            className={`${inputCls} flex-1 font-mono`}
+          />
+          <button onClick={add} disabled={!canAdd}
+            className={`flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs transition-all flex-shrink-0 ${canAdd ? "bg-teal-500 text-white hover:bg-teal-600" : "bg-slate-100 text-slate-400 cursor-not-allowed"}`}>
+            <UserPlus className="w-3.5 h-3.5" />Add
+          </button>
+        </div>
+      </div>
+    </ModalShell>
+  );
+}
+
+// ─── Sub-components ───────────────────────────────────────────────────────────
+
+function BindingTag({ label, status }: { label: string; status?: "Healthy"|"Warning"|"Offline" }) {
+  if (!status) return null;
+  const s = S[status];
+  return (
+    <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] border ${s.pill} whitespace-nowrap`}>
+      <span className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${s.dot}`} />{label}
+    </span>
+  );
+}
+
+function SyncConnector({ status }: { status: "Healthy"|"Warning"|"Offline" }) {
+  const s = S[status];
+  const label = status === "Healthy" ? "In Sync" : status === "Warning" ? "Lagging" : "Down";
+  return (
+    <div className={`flex flex-col items-center justify-center gap-0.5 px-2 flex-shrink-0 ${s.text}`}>
+      <ArrowRight className="w-3.5 h-3.5" />
+      <span className="text-[9px] whitespace-nowrap">{label}</span>
+    </div>
+  );
+}
+
+function ConfigBlock({ label, icon, typeLabel, value, meta, onEdit, onUnbind }: {
+  label: string; icon: React.ReactNode; typeLabel: string; value: string; meta: string;
+  onEdit: () => void; onUnbind: () => void;
+}) {
+  return (
+    <div className="flex-1 min-w-0 border border-slate-200 rounded-lg p-3 bg-white flex flex-col gap-1.5">
+      <div className="flex items-center justify-between">
+        <span className="text-[9px] uppercase tracking-widest text-slate-400 font-semibold">{label}</span>
+        <a href="#" target="_blank" rel="noopener noreferrer" onClick={e => e.stopPropagation()} className="text-slate-400 hover:text-indigo-500 transition-colors">
+          <ExternalLink className="w-3.5 h-3.5" />
+        </a>
+      </div>
+      <div className="flex items-center gap-1">
+        <span className="text-slate-400">{icon}</span>
+        <span className="text-[10px] text-slate-500">{typeLabel}</span>
+      </div>
+      <p className="font-mono text-xs text-slate-700 truncate">{value}</p>
+      <p className="text-[10px] text-slate-400 flex-1">{meta}</p>
+      <div className="flex items-center gap-2.5 pt-1 border-t border-slate-100">
+        <button onClick={e => { e.stopPropagation(); onEdit(); }} className="flex items-center gap-1 text-[10px] text-slate-500 hover:text-teal-600 transition-colors">
+          <Pencil className="w-2.5 h-2.5" />Edit
+        </button>
+        <button onClick={e => { e.stopPropagation(); onUnbind(); }} className="flex items-center gap-1 text-[10px] text-slate-500 hover:text-red-500 transition-colors">
+          <Unlink className="w-2.5 h-2.5" />Unbind
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function UnboundSlot({ label, icon, onBind }: { label: string; icon: React.ReactNode; onBind: () => void }) {
+  return (
+    <div className="flex-1 min-w-0 border border-dashed border-slate-300 rounded-lg p-3 bg-white/50 flex flex-col items-center justify-center gap-2 min-h-[100px]">
+      <span className="text-[9px] uppercase tracking-widest text-slate-300 font-semibold">{label}</span>
+      <span className="text-slate-300">{icon}</span>
+      <button onClick={e => { e.stopPropagation(); onBind(); }}
+        className="flex items-center gap-1 px-2.5 py-1 rounded text-[10px] border border-slate-300 text-slate-500 hover:border-teal-400 hover:text-teal-600 transition-colors bg-white">
+        <Plus className="w-2.5 h-2.5" />Bind
+      </button>
+    </div>
+  );
+}
+
+// ─── Card ─────────────────────────────────────────────────────────────────────
+
+function DataSourceCard({ entry, onBind, onUnbind, onTest, onDelete, onEditOwners }: {
+  entry: DataSourceEntry;
+  onBind:       (type: ConfigType) => void;
+  onUnbind:     (type: ConfigType) => void;
+  onTest:       () => void;
+  onDelete:     () => void;
+  onEditOwners: () => void;
+}) {
+  const [open, setOpen] = useState(false);
+
+  return (
+    <div className="bg-white border border-slate-200 rounded-xl overflow-hidden shadow-sm">
+      {/* Header */}
+      <div onClick={() => setOpen(v => !v)}
+        className="flex items-center gap-3 px-4 py-2.5 cursor-pointer hover:bg-slate-50/70 transition-colors select-none">
+        <span className="inline-flex px-2 py-0.5 rounded text-[10px] border bg-sky-50 text-sky-700 border-sky-200 whitespace-nowrap flex-shrink-0">
+          {entry.region}
+        </span>
+        <span className="font-mono text-sm text-slate-800 whitespace-nowrap flex-shrink-0">{entry.logicalName}</span>
+        <span className="text-xs text-slate-400 truncate min-w-0 flex-1">{entry.description}</span>
+        <div className="flex items-center gap-1.5 flex-shrink-0">
+          <BindingTag label="Offline"  status={entry.offline  ? "Healthy" : undefined} />
+          <BindingTag label="Nearline" status={entry.nearline ? "Healthy" : undefined} />
+          <BindingTag label="Online"   status={entry.online   ? "Healthy" : undefined} />
+        </div>
+        <span className="flex items-center gap-1 text-[11px] text-slate-400 whitespace-nowrap flex-shrink-0 ml-2">
+          <Clock className="w-3 h-3" />
+          <span className="text-slate-300">Last edited</span>
+          {entry.updateTime}
+        </span>
+        <ChevronRight className={`w-3.5 h-3.5 text-slate-400 flex-shrink-0 transition-transform duration-150 ${open ? "rotate-90" : ""}`} />
+      </div>
+
+      {/* Body */}
+      {open && (
+        <div className="px-4 py-3 border-t border-slate-100 bg-slate-50/40">
+          <div className="flex items-stretch gap-1.5">
+            {entry.offline
+              ? <ConfigBlock label="Offline" icon={<Database className="w-3 h-3" />} typeLabel="Hive Table (Binlog)"
+                  value={entry.offline.hiveTable} meta={`Updated ${entry.offline.lastUpdated}`}
+                  onEdit={() => onBind("offline")} onUnbind={() => onUnbind("offline")} />
+              : <UnboundSlot label="Offline" icon={<Database className="w-5 h-5" />} onBind={() => onBind("offline")} />}
+
+            {(entry.offline || entry.nearline) && entry.nearline &&
+              <SyncConnector status={entry.nearline.status} />}
+
+            {entry.nearline
+              ? <ConfigBlock label="Nearline" icon={<Zap className="w-3 h-3" />} typeLabel="Kafka Topic"
+                  value={entry.nearline.kafkaTopic} meta={`Lag ${entry.nearline.lag}`}
+                  onEdit={() => onBind("nearline")} onUnbind={() => onUnbind("nearline")} />
+              : <UnboundSlot label="Nearline" icon={<Zap className="w-5 h-5" />} onBind={() => onBind("nearline")} />}
+
+            {entry.online && <SyncConnector status={entry.online.status} />}
+
+            {entry.online
+              ? <ConfigBlock label="Online" icon={<Globe className="w-3 h-3" />} typeLabel={`FeatureSource · ${entry.online.protocol}`}
+                  value={entry.online.featureSourceName} meta="Manually bound"
+                  onEdit={() => onBind("online")} onUnbind={() => onUnbind("online")} />
+              : <UnboundSlot label="Online" icon={<Globe className="w-5 h-5" />} onBind={() => onBind("online")} />}
+          </div>
+        </div>
+      )}
+
+      {/* Footer */}
+      <div className="flex items-center justify-between px-4 py-2 border-t border-slate-100 bg-slate-50/30 gap-3">
+        {/* Owners */}
+        <div className="flex items-center gap-1.5 flex-wrap min-w-0">
+          {entry.owners.length > 0 ? entry.owners.map(email => (
+            <span key={email} className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] bg-white text-slate-500 border border-slate-200 whitespace-nowrap">
+              <Mail className="w-2.5 h-2.5 text-slate-400" />{email}
+            </span>
+          )) : (
+            <span className="text-[11px] text-slate-400 italic">No owners</span>
+          )}
+          <button onClick={e => { e.stopPropagation(); onEditOwners(); }}
+            className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] bg-white text-slate-400 border border-dashed border-slate-300 hover:border-teal-400 hover:text-teal-600 transition-colors whitespace-nowrap">
+            <Pencil className="w-2.5 h-2.5" />Edit
+          </button>
+        </div>
+        {/* Actions */}
+        <div className="flex items-center gap-0.5 flex-shrink-0">
+          <button onClick={e => { e.stopPropagation(); onTest(); }}
+            className="flex items-center gap-1 px-2.5 py-1 text-[11px] text-teal-600 hover:text-teal-800 hover:bg-teal-50 rounded-lg transition-colors">
+            <FlaskConical className="w-3 h-3" />Test
+          </button>
+          <span className="text-slate-200 text-xs select-none">|</span>
+          <button onClick={e => { e.stopPropagation(); onDelete(); }}
+            className="flex items-center gap-1 px-2.5 py-1 text-[11px] text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors">
+            <Trash2 className="w-3 h-3" />Delete
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─── Page ─────────────────────────────────────────────────────────────────────
+
+export function DataSourceMappingPage() {
+  const [data, setData]               = useState<DataSourceEntry[]>(INIT_DATA);
+  const [search, setSearch]           = useState("");
+  const [regionFilter, setRegionFilter] = useState("");
+  const [showNewModal, setShowNewModal]   = useState(false);
+  const [configModal, setConfigModal]     = useState<{ entryId: string; type: ConfigType } | null>(null);
+  const [ownersModal, setOwnersModal]     = useState<string | null>(null); // entryId
+
+  const regions  = [...new Set(data.map(d => d.region))];
+  const filtered = data.filter(d => {
+    if (regionFilter && d.region !== regionFilter) return false;
+    if (search && !d.logicalName.includes(search) && !d.description.toLowerCase().includes(search.toLowerCase())) return false;
+    return true;
+  });
+
+  const handleBind   = (entryId: string, type: ConfigType) => setConfigModal({ entryId, type });
+  const handleUnbind = (entryId: string, type: ConfigType) =>
+    setData(prev => prev.map(e => e.id !== entryId ? e : { ...e, [type]: undefined, updateTime: nowString() }));
+  const handleDelete      = (entryId: string) => setData(prev => prev.filter(e => e.id !== entryId));
+  const handleTest        = (_entryId: string) => { /* test connection — no-op in mock */ };
+  const handleOwnersSave  = (entryId: string, owners: string[]) => {
+    setData(prev => prev.map(e => e.id !== entryId ? e : { ...e, owners, updateTime: nowString() }));
+    setOwnersModal(null);
+  };
+
+  const handleConfigSave = (cfg: OfflineConfig | NearlineConfig | OnlineConfig) => {
+    if (!configModal) return;
+    setData(prev => prev.map(e => e.id !== configModal.entryId ? e : { ...e, [configModal.type]: cfg, updateTime: nowString() }));
+    setConfigModal(null);
+  };
+
+  const handleNewMapping = (entry: Omit<DataSourceEntry,"offline"|"nearline"|"online">) => {
+    setData(prev => [...prev, entry]);
+    setShowNewModal(false);
+  };
+
+  const activeEntry = configModal ? data.find(e => e.id === configModal.entryId) : undefined;
+
+  return (
+    <div className="p-6" style={{ background: "#f5f6f8", minHeight: "100%" }}>
+      <div className="max-w-6xl">
+        {/* Header */}
+        <div className="flex items-start justify-between mb-5">
+          <div>
+            <h1 className="text-lg text-slate-800 mb-0.5">DataSource Mapping</h1>
+            <p className="text-xs text-slate-400">Manage upstream Online / Nearline / Offline data source bindings per region</p>
+          </div>
+          <button onClick={() => setShowNewModal(true)}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-teal-500 text-white text-xs hover:bg-teal-600 transition-colors">
+            <Plus className="w-3.5 h-3.5" />New Mapping
+          </button>
+        </div>
+
+        {/* Filters */}
+        <div className="flex items-center gap-2 mb-4">
+          <div className="relative">
+            <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-400" />
+            <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search logical name…"
+              className="pl-8 pr-3 py-1.5 text-xs rounded-lg border border-slate-200 bg-white focus:outline-none focus:ring-1 focus:ring-teal-400 w-52" />
+          </div>
+          <select value={regionFilter} onChange={e => setRegionFilter(e.target.value)}
+            className="px-2.5 py-1.5 text-xs rounded-lg border border-slate-200 bg-white focus:outline-none focus:ring-1 focus:ring-teal-400">
+            <option value="">All Regions</option>
+            {regions.map(r => <option key={r} value={r}>{r}</option>)}
+          </select>
+          {(search || regionFilter) && (
+            <button onClick={() => { setSearch(""); setRegionFilter(""); }}
+              className="flex items-center gap-1 text-xs text-slate-500 hover:text-slate-700 transition-colors">
+              <RotateCcw className="w-3 h-3" />Reset
+            </button>
+          )}
+          <span className="text-xs text-slate-400 ml-auto">{filtered.length} entries</span>
+        </div>
+
+        {/* Cards */}
+        <div className="space-y-2">
+          {filtered.map(entry => (
+            <DataSourceCard key={entry.id} entry={entry}
+              onBind={type    => handleBind(entry.id, type)}
+              onUnbind={type  => handleUnbind(entry.id, type)}
+              onTest={()      => handleTest(entry.id)}
+              onDelete={()    => handleDelete(entry.id)}
+              onEditOwners={() => setOwnersModal(entry.id)} />
+          ))}
+          {filtered.length === 0 && (
+            <div className="py-16 text-center text-sm text-slate-400">No data sources match the current filter.</div>
+          )}
+        </div>
+      </div>
+
+      {/* Modals */}
+      {showNewModal && <NewMappingModal onClose={() => setShowNewModal(false)} onSave={handleNewMapping} />}
+      {ownersModal && (() => { const e = data.find(d => d.id === ownersModal); return e ? (
+        <EditOwnersModal current={e.owners} onClose={() => setOwnersModal(null)} onSave={owners => handleOwnersSave(ownersModal, owners)} />
+      ) : null; })()}
+      {configModal && activeEntry && (
+        <ConfigModal
+          type={configModal.type}
+          current={activeEntry[configModal.type]}
+          onClose={() => setConfigModal(null)}
+          onSave={handleConfigSave}
+        />
+      )}
+    </div>
+  );
+}

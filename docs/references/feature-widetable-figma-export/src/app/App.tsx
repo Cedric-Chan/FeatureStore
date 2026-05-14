@@ -16,6 +16,7 @@ import { FeatureMapDetailPage } from "@/app/pages/FeatureMapDetailPage";
 import { TaskMonitorPage } from "@/app/pages/TaskMonitorPage";
 import { TransformationFormPage } from "@/app/pages/TransformationFormPage";
 import { TransformationListPage } from "@/app/pages/TransformationListPage";
+import { DataSourceMappingPage } from "@/app/pages/DataSourceMappingPage";
 
 export default function App() {
   return (
@@ -28,6 +29,7 @@ export default function App() {
       />
 
       <Route element={<AppShell />}>
+        <Route path="/ds" element={<DataSourceMappingPage />} />
         <Route path="/" element={<Navigate to="/wt" replace />} />
         <Route path="/fs" element={<FeatureSourceListPage />} />
         <Route path="/tf" element={<TransformationListPage />} />
