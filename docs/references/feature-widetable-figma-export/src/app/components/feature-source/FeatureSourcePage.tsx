@@ -233,13 +233,13 @@ const INITIAL_DATA: FeatureRow[] = [
     featureSource: "reg_sg_hive",
     sourceType: "Hive",
     dataLatency: "Offline",
-    regions: ["SG"],
+    regions: ["SHOPEE_SG"],
     creator: "cedric.chencan@seamoney.com",
     createTime: "2026-05-14 10:00",
-    description: "SG region hive table features for demo",
+    description: "Shopee SG region hive table features for demo",
     subRows: [
       {
-        id: "5-1", region: "SG", version: "V1", scriptType: "Groovy", callFunction: CF.hive_sg,
+        id: "5-1", region: "SHOPEE_SG", version: "V1", scriptType: "Groovy", callFunction: CF.hive_sg,
         inputParams: [p("date")],
         outputParams: [p("result", "map")],
         status: "ENABLE", updateTime: "2026-05-14 10:00",
