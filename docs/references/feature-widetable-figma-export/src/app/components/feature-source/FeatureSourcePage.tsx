@@ -333,7 +333,7 @@ const LINEAGE_FG_MAP: Record<string, LineageFG[]> = {
 };
 
 const SOURCE_TYPES = ["HBase", "gRPC", "Redis", "GraphDB", "Hive", "MySQL", "Kafka"];
-const REGIONS = ["ID", "TH", "MX", "SG", "PH", "VN", "SHOPEE_SG"];
+const REGIONS = ["ID", "TH", "MX", "SG", "PH", "VN", "SHOPEE_SG", "SHOPEE_US"];
 const DATA_LATENCY_OPTIONS = ["Online", "Nearline", "Offline"];
 
 const SCRIPT_TYPES = ["Groovy", "Python", "Java", "Scala"];
