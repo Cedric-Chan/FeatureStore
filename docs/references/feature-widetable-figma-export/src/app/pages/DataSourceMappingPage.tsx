@@ -84,8 +84,8 @@ const S = {
   Offline: { dot:"bg-slate-300",   text:"text-slate-400",   pill:"bg-slate-100  border-slate-200   text-slate-400"   },
 };
 
-const inputCls = "w-full px-3 py-2 text-xs rounded-lg border border-slate-200 bg-white focus:outline-none focus:ring-2 focus:ring-teal-400 focus:border-teal-400 transition-all";
-const labelCls = "block text-xs text-slate-500 mb-1";
+const inputCls = "w-full px-3 py-2.5 text-sm rounded-xl border border-slate-200 bg-white focus:outline-none focus:ring-2 focus:ring-teal-400 focus:border-teal-400 transition-all";
+const labelCls = "block text-[12px] text-slate-500 mb-1";
 
 function nowString() {
   const d = new Date();
@@ -101,18 +101,18 @@ function ModalShell({ title, icon, onClose, children, footer }: {
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center" onMouseDown={e => { if (e.target === e.currentTarget) onClose(); }}>
       <div className="absolute inset-0 bg-black/40" />
-      <div className="relative bg-white rounded-2xl shadow-2xl w-full max-w-sm mx-4 overflow-hidden">
-        <div className="flex items-center justify-between px-5 py-4 border-b border-slate-100">
+      <div className="relative bg-white rounded-2xl shadow-2xl w-full max-w-md mx-4 overflow-hidden">
+        <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100">
           <div className="flex items-center gap-2.5">
             <div className="w-7 h-7 rounded-lg bg-teal-500 flex items-center justify-center flex-shrink-0">{icon}</div>
-            <h2 className="text-slate-800 text-sm">{title}</h2>
+            <h2 className="text-slate-800 text-base">{title}</h2>
           </div>
           <button onClick={onClose} className="p-1.5 rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-100 transition-all">
             <X className="w-4 h-4" />
           </button>
         </div>
-        <div className="px-5 py-4 space-y-3">{children}</div>
-        <div className="px-5 py-3 border-t border-slate-100 flex justify-end gap-2">{footer}</div>
+        <div className="px-6 py-4 space-y-3">{children}</div>
+        <div className="px-6 py-3 border-t border-slate-100 flex justify-end gap-2">{footer}</div>
       </div>
     </div>
   );
@@ -175,7 +175,7 @@ function NewMappingModal({ onClose, onSave }: { onClose: () => void; onSave: (e:
                 <Mail className="w-3 h-3 text-slate-400 flex-shrink-0" />
                 <span className="text-xs text-slate-700 truncate font-mono">{email}</span>
                 {email === CURRENT_USER && (
-                  <span className="text-[9px] px-1.5 py-0.5 rounded bg-teal-50 text-teal-600 border border-teal-200 whitespace-nowrap flex-shrink-0">You</span>
+                  <span className="text-[10px] px-1.5 py-0.5 rounded bg-teal-50 text-teal-700 border border-teal-200 whitespace-nowrap flex-shrink-0">You</span>
                 )}
               </div>
               <button onClick={() => removeOwner(email)} className="flex-shrink-0 text-slate-400 hover:text-red-500 transition-colors">
@@ -279,8 +279,8 @@ function ConfigModal({ type, current, onClose, onSave }: {
               {hiveVal === "not-found" && <XCircle      className="w-3.5 h-3.5 text-red-500" />}
             </span>
           </div>
-          {hiveVal === "not-found" && <p className="mt-1 text-[10px] text-red-500">Not found in the Hive metastore.</p>}
-          <p className="mt-1.5 text-[10px] text-slate-400">Binlog Hive table path used for offline feature computation.</p>
+          {hiveVal === "not-found" && <p className="mt-1 text-[11px] text-red-500">Not found in the Hive metastore.</p>}
+          <p className="mt-1.5 text-[11px] text-slate-400">Binlog Hive table path used for offline feature computation.</p>
         </div>
       )}
       {type === "nearline" && (
@@ -294,8 +294,8 @@ function ConfigModal({ type, current, onClose, onSave }: {
               {kafkaVal === "not-found" && <XCircle      className="w-3.5 h-3.5 text-red-500" />}
             </span>
           </div>
-          {kafkaVal === "not-found" && <p className="mt-1 text-[10px] text-red-500">Not found in the Kafka registry.</p>}
-          <p className="mt-1.5 text-[10px] text-slate-400">Kafka topic consumed by the Flink Streaming job for nearline sync.</p>
+          {kafkaVal === "not-found" && <p className="mt-1 text-[11px] text-red-500">Not found in the Kafka registry.</p>}
+          <p className="mt-1.5 text-[11px] text-slate-400">Kafka topic consumed by the Flink Streaming job for nearline sync.</p>
         </div>
       )}
       {type === "online" && (
@@ -308,13 +308,13 @@ function ConfigModal({ type, current, onClose, onSave }: {
                 <option key={s.name} value={s.name}>{s.name} ({s.protocol})</option>
               ))}
             </select>
-            <p className="mt-1.5 text-[10px] text-slate-400">Only HTTP / gRPC FeatureSource entries are eligible for Online binding.</p>
+            <p className="mt-1.5 text-[11px] text-slate-400">Only HTTP / gRPC FeatureSource entries are eligible for Online binding.</p>
           </div>
           {selectedSrc && (
             <div className="flex items-center gap-2 px-3 py-2 rounded-lg bg-slate-50 border border-slate-200">
               <Globe className="w-3.5 h-3.5 text-slate-400 flex-shrink-0" />
               <span className="text-xs text-slate-600 font-mono">{selectedSrc}</span>
-              <span className="ml-auto text-[10px] px-1.5 py-0.5 rounded bg-indigo-50 text-indigo-600 border border-indigo-200">{derivedProtocol}</span>
+              <span className="ml-auto text-[11px] px-1.5 py-0.5 rounded bg-indigo-50 text-indigo-700 border border-indigo-200">{derivedProtocol}</span>
             </div>
           )}
         </div>
@@ -351,7 +351,7 @@ function EditOwnersModal({ current, onClose, onSave }: {
       {/* Current owners */}
       <div className="space-y-1.5">
         {owners.length === 0 && (
-          <p className="text-[11px] text-slate-400 py-2 text-center">No owners assigned.</p>
+          <p className="text-[12px] text-slate-400 py-2 text-center">No owners assigned.</p>
         )}
         {owners.map(email => (
           <div key={email} className="flex items-center justify-between gap-2 px-2.5 py-1.5 rounded-lg bg-slate-50 border border-slate-200">
@@ -392,7 +392,7 @@ function BindingTag({ label, status }: { label: string; status?: "Healthy"|"Warn
   if (!status) return null;
   const s = S[status];
   return (
-    <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] border ${s.pill} whitespace-nowrap`}>
+    <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px] border ${s.pill} whitespace-nowrap`}>
       <span className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${s.dot}`} />{label}
     </span>
   );
@@ -404,7 +404,7 @@ function SyncConnector({ status }: { status: "Healthy"|"Warning"|"Offline" }) {
   return (
     <div className={`flex flex-col items-center justify-center gap-0.5 px-2 flex-shrink-0 ${s.text}`}>
       <ArrowRight className="w-3.5 h-3.5" />
-      <span className="text-[9px] whitespace-nowrap">{label}</span>
+      <span className="text-[10px] whitespace-nowrap">{label}</span>
     </div>
   );
 }
@@ -416,22 +416,22 @@ function ConfigBlock({ label, icon, typeLabel, value, meta, onEdit, onUnbind }: 
   return (
     <div className="flex-1 min-w-0 border border-slate-200 rounded-lg p-3 bg-white flex flex-col gap-1.5">
       <div className="flex items-center justify-between">
-        <span className="text-[9px] uppercase tracking-widest text-slate-400 font-semibold">{label}</span>
+        <span className="text-[10px] uppercase tracking-widest text-slate-400 font-semibold">{label}</span>
         <a href="#" target="_blank" rel="noopener noreferrer" onClick={e => e.stopPropagation()} className="text-slate-400 hover:text-indigo-500 transition-colors">
           <ExternalLink className="w-3.5 h-3.5" />
         </a>
       </div>
       <div className="flex items-center gap-1">
         <span className="text-slate-400">{icon}</span>
-        <span className="text-[10px] text-slate-500">{typeLabel}</span>
+        <span className="text-[11px] text-slate-500">{typeLabel}</span>
       </div>
       <p className="font-mono text-xs text-slate-700 truncate">{value}</p>
-      <p className="text-[10px] text-slate-400 flex-1">{meta}</p>
+      <p className="text-[11px] text-slate-400 flex-1">{meta}</p>
       <div className="flex items-center gap-2.5 pt-1 border-t border-slate-100">
-        <button onClick={e => { e.stopPropagation(); onEdit(); }} className="flex items-center gap-1 text-[10px] text-slate-500 hover:text-teal-600 transition-colors">
+        <button onClick={e => { e.stopPropagation(); onEdit(); }} className="flex items-center gap-1 text-[11px] text-slate-500 hover:text-teal-700 transition-colors">
           <Pencil className="w-2.5 h-2.5" />Edit
         </button>
-        <button onClick={e => { e.stopPropagation(); onUnbind(); }} className="flex items-center gap-1 text-[10px] text-slate-500 hover:text-red-500 transition-colors">
+        <button onClick={e => { e.stopPropagation(); onUnbind(); }} className="flex items-center gap-1 text-[11px] text-slate-500 hover:text-red-600 transition-colors">
           <Unlink className="w-2.5 h-2.5" />Unbind
         </button>
       </div>
@@ -442,10 +442,10 @@ function ConfigBlock({ label, icon, typeLabel, value, meta, onEdit, onUnbind }: 
 function UnboundSlot({ label, icon, onBind }: { label: string; icon: React.ReactNode; onBind: () => void }) {
   return (
     <div className="flex-1 min-w-0 border border-dashed border-slate-300 rounded-lg p-3 bg-white/50 flex flex-col items-center justify-center gap-2 min-h-[100px]">
-      <span className="text-[9px] uppercase tracking-widest text-slate-300 font-semibold">{label}</span>
+      <span className="text-[10px] uppercase tracking-widest text-slate-300 font-semibold">{label}</span>
       <span className="text-slate-300">{icon}</span>
       <button onClick={e => { e.stopPropagation(); onBind(); }}
-        className="flex items-center gap-1 px-2.5 py-1 rounded text-[10px] border border-slate-300 text-slate-500 hover:border-teal-400 hover:text-teal-600 transition-colors bg-white">
+        className="flex items-center gap-1 px-2.5 py-1 rounded text-[11px] border border-slate-300 text-slate-500 hover:border-teal-400 hover:text-teal-700 transition-colors bg-white">
         <Plus className="w-2.5 h-2.5" />Bind
       </button>
     </div>
@@ -469,7 +469,7 @@ function DataSourceCard({ entry, onBind, onUnbind, onTest, onDelete, onEditOwner
       {/* Header */}
       <div onClick={() => setOpen(v => !v)}
         className="flex items-center gap-3 px-4 py-2.5 cursor-pointer hover:bg-slate-50/70 transition-colors select-none">
-        <span className="inline-flex px-2 py-0.5 rounded text-[10px] border bg-sky-50 text-sky-700 border-sky-200 whitespace-nowrap flex-shrink-0">
+        <span className="inline-flex px-2 py-0.5 rounded text-[11px] border bg-sky-50 text-sky-700 border-sky-200 whitespace-nowrap flex-shrink-0">
           {entry.region}
         </span>
         <span className="font-mono text-sm text-slate-800 whitespace-nowrap flex-shrink-0">{entry.logicalName}</span>
@@ -479,7 +479,7 @@ function DataSourceCard({ entry, onBind, onUnbind, onTest, onDelete, onEditOwner
           <BindingTag label="Nearline" status={entry.nearline ? "Healthy" : undefined} />
           <BindingTag label="Online"   status={entry.online   ? "Healthy" : undefined} />
         </div>
-        <span className="flex items-center gap-1 text-[11px] text-slate-400 whitespace-nowrap flex-shrink-0 ml-2">
+        <span className="flex items-center gap-1 text-[12px] text-slate-400 whitespace-nowrap flex-shrink-0 ml-2">
           <Clock className="w-3 h-3" />
           <span className="text-slate-300">Last edited</span>
           {entry.updateTime}
@@ -522,26 +522,26 @@ function DataSourceCard({ entry, onBind, onUnbind, onTest, onDelete, onEditOwner
         {/* Owners */}
         <div className="flex items-center gap-1.5 flex-wrap min-w-0">
           {entry.owners.length > 0 ? entry.owners.map(email => (
-            <span key={email} className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] bg-white text-slate-500 border border-slate-200 whitespace-nowrap">
+            <span key={email} className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] bg-white text-slate-600 border border-slate-200 whitespace-nowrap">
               <Mail className="w-2.5 h-2.5 text-slate-400" />{email}
             </span>
           )) : (
-            <span className="text-[11px] text-slate-400 italic">No owners</span>
+            <span className="text-[12px] text-slate-400 italic">No owners</span>
           )}
           <button onClick={e => { e.stopPropagation(); onEditOwners(); }}
-            className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] bg-white text-slate-400 border border-dashed border-slate-300 hover:border-teal-400 hover:text-teal-600 transition-colors whitespace-nowrap">
+            className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] bg-white text-slate-500 border border-dashed border-slate-300 hover:border-teal-400 hover:text-teal-700 transition-colors whitespace-nowrap">
             <Pencil className="w-2.5 h-2.5" />Edit
           </button>
         </div>
         {/* Actions */}
         <div className="flex items-center gap-0.5 flex-shrink-0">
           <button onClick={e => { e.stopPropagation(); onTest(); }}
-            className="flex items-center gap-1 px-2.5 py-1 text-[11px] text-teal-600 hover:text-teal-800 hover:bg-teal-50 rounded-lg transition-colors">
+            className="flex items-center gap-1 px-2.5 py-1 text-[12px] text-teal-700 hover:text-teal-900 hover:bg-teal-50 rounded-lg transition-colors">
             <FlaskConical className="w-3 h-3" />Test
           </button>
           <span className="text-slate-200 text-xs select-none">|</span>
           <button onClick={e => { e.stopPropagation(); onDelete(); }}
-            className="flex items-center gap-1 px-2.5 py-1 text-[11px] text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors">
+            className="flex items-center gap-1 px-2.5 py-1 text-[12px] text-slate-500 hover:text-red-700 hover:bg-red-50 rounded-lg transition-colors">
             <Trash2 className="w-3 h-3" />Delete
           </button>
         </div>
@@ -591,43 +591,66 @@ export function DataSourceMappingPage() {
   const activeEntry = configModal ? data.find(e => e.id === configModal.entryId) : undefined;
 
   return (
-    <div className="p-6" style={{ background: "#f5f6f8", minHeight: "100%" }}>
-      <div className="max-w-6xl">
-        {/* Header */}
-        <div className="flex items-start justify-between mb-5">
-          <div>
-            <h1 className="text-lg text-slate-800 mb-0.5">DataSource Mapping</h1>
-            <p className="text-xs text-slate-400">Manage upstream Online / Nearline / Offline data source bindings per region</p>
+    <div className="min-h-full bg-[#f5f7fa]">
+      <header className="bg-white border-b border-gray-100 px-6 py-3 flex items-center gap-3 shadow-sm">
+        <div className="flex items-center gap-2.5">
+          <div className="w-7 h-7 rounded-lg bg-[#13c2c2] flex items-center justify-center shadow-sm">
+            <Database className="w-4 h-4 text-white" />
           </div>
-          <button onClick={() => setShowNewModal(true)}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-teal-500 text-white text-xs hover:bg-teal-600 transition-colors">
-            <Plus className="w-3.5 h-3.5" />New Mapping
+          <div>
+            <h1 className="text-gray-800 leading-tight" style={{ fontSize: "15px", fontWeight: 600 }}>
+              Data Source
+            </h1>
+            <p className="text-[12px] text-gray-400 leading-tight">
+              Online / Nearline / Offline bindings per region
+            </p>
+          </div>
+        </div>
+        <div className="ml-auto flex items-center gap-3">
+          <div className="text-[12px] text-gray-400">{filtered.length} entries</div>
+          <button
+            onClick={() => setShowNewModal(true)}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-teal-500 text-white text-[12px] hover:bg-teal-600 transition-colors shadow-sm"
+          >
+            <Plus className="w-3.5 h-3.5" />
+            New Mapping
           </button>
         </div>
+      </header>
 
-        {/* Filters */}
-        <div className="flex items-center gap-2 mb-4">
-          <div className="relative">
-            <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-400" />
-            <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search logical name…"
-              className="pl-8 pr-3 py-1.5 text-xs rounded-lg border border-slate-200 bg-white focus:outline-none focus:ring-1 focus:ring-teal-400 w-52" />
+      <main className="p-5 flex flex-col gap-4 max-w-screen-2xl mx-auto">
+        <div className="bg-white border border-gray-100 rounded-2xl px-4 py-3 shadow-sm flex items-center gap-3">
+          <div className="relative flex-1 max-w-md">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+            <input
+              value={search}
+              onChange={e => setSearch(e.target.value)}
+              placeholder="Search logical name or description…"
+              className="w-full pl-10 pr-3 py-2.5 text-sm rounded-xl border border-slate-200 bg-white focus:outline-none focus:ring-2 focus:ring-teal-400 focus:border-teal-400 transition-all"
+            />
           </div>
-          <select value={regionFilter} onChange={e => setRegionFilter(e.target.value)}
-            className="px-2.5 py-1.5 text-xs rounded-lg border border-slate-200 bg-white focus:outline-none focus:ring-1 focus:ring-teal-400">
+
+          <select
+            value={regionFilter}
+            onChange={e => setRegionFilter(e.target.value)}
+            className="px-3 py-2.5 text-sm rounded-xl border border-slate-200 bg-white focus:outline-none focus:ring-2 focus:ring-teal-400 focus:border-teal-400 transition-all"
+          >
             <option value="">All Regions</option>
             {regions.map(r => <option key={r} value={r}>{r}</option>)}
           </select>
+
           {(search || regionFilter) && (
-            <button onClick={() => { setSearch(""); setRegionFilter(""); }}
-              className="flex items-center gap-1 text-xs text-slate-500 hover:text-slate-700 transition-colors">
-              <RotateCcw className="w-3 h-3" />Reset
+            <button
+              onClick={() => { setSearch(""); setRegionFilter(""); }}
+              className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-sm text-slate-600 hover:text-slate-800 hover:bg-slate-50 transition-colors"
+            >
+              <RotateCcw className="w-4 h-4" />
+              Reset
             </button>
           )}
-          <span className="text-xs text-slate-400 ml-auto">{filtered.length} entries</span>
         </div>
 
-        {/* Cards */}
-        <div className="space-y-2">
+        <div className="space-y-3">
           {filtered.map(entry => (
             <DataSourceCard key={entry.id} entry={entry}
               onBind={type    => handleBind(entry.id, type)}
@@ -640,7 +663,7 @@ export function DataSourceMappingPage() {
             <div className="py-16 text-center text-sm text-slate-400">No data sources match the current filter.</div>
           )}
         </div>
-      </div>
+      </main>
 
       {/* Modals */}
       {showNewModal && <NewMappingModal onClose={() => setShowNewModal(false)} onSave={handleNewMapping} />}
