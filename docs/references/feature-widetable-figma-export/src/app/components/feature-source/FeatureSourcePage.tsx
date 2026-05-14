@@ -141,6 +141,10 @@ const CF = {
     'def result = HiveScan.query(table: "reg_sg_hive", partition: input.date)',
     'output.result = result',
   ].join('\n'),
+  hive_us: [
+    'def result = HiveScan.query(table: "reg_us_hive", partition: input.date)',
+    'output.result = result',
+  ].join('\n'),
 };
 
 const INITIAL_DATA: FeatureRow[] = [
@@ -243,6 +247,24 @@ const INITIAL_DATA: FeatureRow[] = [
         inputParams: [p("date")],
         outputParams: [p("result", "map")],
         status: "ENABLE", updateTime: "2026-05-14 10:00",
+      },
+    ],
+  },
+  {
+    id: "6",
+    featureSource: "reg_us_hive",
+    sourceType: "Hive",
+    dataLatency: "Offline",
+    regions: ["SHOPEE_US"],
+    creator: "cedric.chencan@seamoney.com",
+    createTime: "2026-05-14 10:10",
+    description: "Shopee US region hive table features for demo",
+    subRows: [
+      {
+        id: "6-1", region: "SHOPEE_US", version: "V1", scriptType: "Groovy", callFunction: CF.hive_us,
+        inputParams: [p("date")],
+        outputParams: [p("result", "map")],
+        status: "ENABLE", updateTime: "2026-05-14 10:10",
       },
     ],
   },
