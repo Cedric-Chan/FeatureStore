@@ -5,6 +5,16 @@ import {
   Loader2, CheckCircle2, XCircle, Mail, FlaskConical, Trash2,
   Clock, Users, UserPlus,
 } from "lucide-react";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/app/components/ui/alert-dialog";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -559,6 +569,7 @@ export function DataSourceMappingPage() {
   const [showNewModal, setShowNewModal]   = useState(false);
   const [configModal, setConfigModal]     = useState<{ entryId: string; type: ConfigType } | null>(null);
   const [ownersModal, setOwnersModal]     = useState<string | null>(null); // entryId
+  const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
 
   const regions  = [...new Set(data.map(d => d.region))];
   const filtered = data.filter(d => {
@@ -589,6 +600,7 @@ export function DataSourceMappingPage() {
   };
 
   const activeEntry = configModal ? data.find(e => e.id === configModal.entryId) : undefined;
+  const deleteEntry = deleteConfirmId ? data.find(e => e.id === deleteConfirmId) : undefined;
 
   return (
     <div className="min-h-full bg-[#f5f7fa]">
@@ -656,7 +668,7 @@ export function DataSourceMappingPage() {
               onBind={type    => handleBind(entry.id, type)}
               onUnbind={type  => handleUnbind(entry.id, type)}
               onTest={()      => handleTest(entry.id)}
-              onDelete={()    => handleDelete(entry.id)}
+              onDelete={()    => setDeleteConfirmId(entry.id)}
               onEditOwners={() => setOwnersModal(entry.id)} />
           ))}
           {filtered.length === 0 && (
@@ -678,6 +690,32 @@ export function DataSourceMappingPage() {
           onSave={handleConfigSave}
         />
       )}
+
+      <AlertDialog open={!!deleteConfirmId} onOpenChange={open => { if (!open) setDeleteConfirmId(null); }}>
+        <AlertDialogContent className="rounded-2xl border-slate-200">
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete this mapping?</AlertDialogTitle>
+            <AlertDialogDescription className="text-slate-600">
+              {deleteEntry
+                ? `This will permanently remove “${deleteEntry.logicalName}” (${deleteEntry.region}).`
+                : "This action cannot be undone."}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-red-600 hover:bg-red-700"
+              onClick={() => {
+                if (!deleteConfirmId) return;
+                handleDelete(deleteConfirmId);
+                setDeleteConfirmId(null);
+              }}
+            >
+              Delete
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }
