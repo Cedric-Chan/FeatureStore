@@ -137,6 +137,10 @@ const CF = {
     'output.edge_list = result.edges ?: []',
     'output.relation_score = result.score ?: -1',
   ].join('\n'),
+  hive_sg: [
+    'def result = HiveScan.query(table: "reg_sg_hive", partition: input.date)',
+    'output.result = result',
+  ].join('\n'),
 };
 
 const INITIAL_DATA: FeatureRow[] = [
@@ -221,6 +225,24 @@ const INITIAL_DATA: FeatureRow[] = [
         inputParams: [p("user_id"), p("depth", "int"), p("relation_type")],
         outputParams: [p("node_list", "list"), p("edge_list", "list"), p("relation_score", "int")],
         status: "DISABLE", updateTime: "2026-02-12 22:10",
+      },
+    ],
+  },
+  {
+    id: "5",
+    featureSource: "reg_sg_hive",
+    sourceType: "Hive",
+    dataLatency: "Offline",
+    regions: ["SG"],
+    creator: "cedric.chencan@seamoney.com",
+    createTime: "2026-05-14 10:00",
+    description: "SG region hive table features for demo",
+    subRows: [
+      {
+        id: "5-1", region: "SG", version: "V1", scriptType: "Groovy", callFunction: CF.hive_sg,
+        inputParams: [p("date")],
+        outputParams: [p("result", "map")],
+        status: "ENABLE", updateTime: "2026-05-14 10:00",
       },
     ],
   },

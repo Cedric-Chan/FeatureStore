@@ -70,7 +70,7 @@ const AVAILABLE_ONLINE_SOURCES: { name: string; protocol: "HTTP"|"gRPC" }[] = [
   { name: "graph_flink_stream_th",       protocol: "gRPC" },
 ];
 
-const ALL_REGIONS = ["ID", "TH", "MX", "SHOPEE_SG", "PH", "VN", "BR"];
+const ALL_REGIONS = ["ID", "TH", "MX", "SG", "PH", "VN", "SHOPEE_SG", "SHOPEE_US", "BR"];
 
 const KNOWN_HIVE_TABLES = new Set([
   "ods.credit_user_id_binlog", "ods.credit_user_th_binlog", "ods.credit_user_mx_binlog",
