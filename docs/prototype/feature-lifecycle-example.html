@@ -1,0 +1,627 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Feature 全生命周期管理 — v2 模型 · 5 例对照</title>
+<style>
+  :root {
+    /* Base Colors */
+    --ink: #0f172a;
+    --gray-50: #f8fafc;
+    --gray-100: #f1f5f9;
+    --gray-200: #e2e8f0;
+    --gray-300: #cbd5e1;
+    --gray-500: #64748b;
+    --gray-700: #334155;
+    
+    /* Layer Colors - More vibrant & distinct */
+    --sp: #f59e0b;      --sp-bg: #fffbeb;   --sp-bd: #fcd34d;  /* Amber */
+    --fs: #3b82f6;      --fs-bg: #eff6ff;   --fs-bd: #93c5fd;  /* Blue */
+    --fg: #10b981;      --fg-bg: #ecfdf5;   --fg-bd: #6ee7b7;  /* Emerald */
+    --feat: #8b5cf6;    --feat-bg: #faf5ff; --feat-bd: #d8b4fe; /* Violet */
+    --xform: #64748b;   --xform-bg: #f8fafc;--xform-bd: #cbd5e1; /* Slate */
+    
+    /* Layout */
+    --radius-lg: 16px;
+    --radius-md: 10px;
+    --radius-sm: 6px;
+    --shadow-sm: 0 1px 2px 0 rgb(0 0 0 / 0.05);
+    --shadow-md: 0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1);
+  }
+  
+  * { box-sizing: border-box; }
+  
+  body { 
+    margin: 0; 
+    font-family: "Inter", -apple-system, BlinkMacSystemFont, "PingFang SC", sans-serif; 
+    background: #f8fafc; 
+    color: var(--ink); 
+    line-height: 1.6;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  /* ─── Header ─────────────────────────────────────────── */
+  header { 
+    background: var(--ink); 
+    color: white; 
+    padding: 32px 40px; 
+    border-bottom: 1px solid rgba(255,255,255,0.1); 
+    position: relative;
+    overflow: hidden;
+  }
+  header::before {
+    content: ''; position: absolute; top: 0; left: 0; right: 0; bottom: 0;
+    background: radial-gradient(circle at top right, rgba(99, 102, 241, 0.15), transparent 50%),
+                radial-gradient(circle at bottom left, rgba(20, 184, 166, 0.1), transparent 50%);
+    pointer-events: none;
+  }
+  header h1 { 
+    position: relative;
+    margin: 0 0 8px 0; 
+    font-size: 24px; 
+    font-weight: 700; 
+    letter-spacing: -0.02em; 
+  }
+  header p { 
+    position: relative;
+    margin: 0 0 20px 0; 
+    color: #94a3b8; 
+    font-size: 14px; 
+  }
+  
+  /* ─── Legend Pills ───────────────────────────────────── */
+  .legend { position: relative; display: flex; gap: 10px; flex-wrap: wrap; }
+  .legend .pill { 
+    display: inline-flex; align-items: center; gap: 8px; 
+    padding: 6px 14px; 
+    border-radius: 999px; 
+    font-size: 12px; font-weight: 500; 
+    background: rgba(255,255,255,0.06); 
+    border: 1px solid rgba(255,255,255,0.1); 
+    backdrop-filter: blur(8px);
+    transition: background 0.2s;
+  }
+  .legend .pill:hover { background: rgba(255,255,255,0.1); }
+  .legend .dot { width: 8px; height: 8px; border-radius: 50%; box-shadow: 0 0 0 2px rgba(255,255,255,0.1); }
+  .dot.sp { background: var(--sp); } .dot.fs { background: var(--fs); }
+  .dot.fg { background: var(--fg); } .dot.feat { background: var(--feat); }
+  .dot.xform { background: var(--xform); }
+
+  /* ─── Navigation Tabs ────────────────────────────────── */
+  nav.tabs { 
+    position: sticky; top: 0; z-index: 20;
+    background: rgba(255, 255, 255, 0.9);
+    backdrop-filter: blur(12px);
+    border-bottom: 1px solid var(--gray-200); 
+    padding: 0 40px; 
+    display: flex; gap: 8px; 
+    overflow-x: auto; 
+    scrollbar-width: none; /* Firefox */
+  }
+  nav.tabs::-webkit-scrollbar { display: none; }
+  nav.tabs button { 
+    background: none; border: none; 
+    padding: 16px 12px; 
+    font-size: 14px; font-weight: 500; 
+    color: var(--gray-500); 
+    cursor: pointer; 
+    border-bottom: 2px solid transparent; 
+    white-space: nowrap; 
+    transition: all 0.2s ease; 
+    display: flex; align-items: center; gap: 8px;
+  }
+  nav.tabs button:hover { color: var(--ink); }
+  nav.tabs button.active { color: var(--fg); border-bottom-color: var(--fg); }
+  nav.tabs button .num { 
+    display: flex; align-items: center; justify-content: center;
+    width: 22px; height: 22px; 
+    border-radius: 6px; 
+    background: var(--gray-100); 
+    font-size: 11px; font-weight: 600; 
+    transition: all 0.2s ease;
+  }
+  nav.tabs button.active .num { background: var(--fg); color: white; box-shadow: 0 2px 6px rgba(20,184,166,0.3); }
+
+  /* ─── Main Content ───────────────────────────────────── */
+  main { padding: 40px; max-width: 1280px; margin: 0 auto; }
+  section.example { display: none; animation: fadeIn 0.3s ease-out; }
+  section.example.active { display: block; }
+  @keyframes fadeIn { from { opacity: 0; transform: translateY(5px); } to { opacity: 1; transform: translateY(0); } }
+  
+  section.example h2 { font-size: 22px; margin: 0 0 6px 0; font-weight: 700; letter-spacing: -0.01em; }
+  section.example .subtitle { color: var(--gray-500); font-size: 14px; margin: 0 0 32px 0; }
+
+  /* ─── Flow Diagram ───────────────────────────────────── */
+  .flow { display: flex; align-items: stretch; gap: 8px; margin: 0 0 32px 0; flex-wrap: wrap; }
+  .flow .stage { 
+    flex: 1 1 0; min-width: 200px; 
+    border-radius: var(--radius-lg); 
+    padding: 16px 20px; 
+    border: 2px solid; 
+    background: white;
+    box-shadow: var(--shadow-sm);
+    position: relative;
+    transition: transform 0.2s, box-shadow 0.2s;
+  }
+  .flow .stage:hover { transform: translateY(-2px); box-shadow: var(--shadow-md); }
+  .flow .stage .lbl { 
+    font-size: 11px; font-weight: 700; letter-spacing: 0.05em; text-transform: uppercase; 
+    margin-bottom: 10px; display: flex; align-items: center; gap: 6px;
+  }
+  .flow .stage .lbl::before { content: ''; display: block; width: 6px; height: 6px; border-radius: 50%; }
+  .flow .stage .body { font-size: 13px; color: var(--gray-700); line-height: 1.6; }
+  .flow .stage .body b { color: var(--ink); font-weight: 600; }
+  .flow .stage .body code { 
+    background: rgba(0,0,0,0.04); padding: 2px 6px; border-radius: 4px; 
+    font-family: ui-monospace, monospace; font-size: 11.5px; 
+  }
+  
+  /* Stage Colors */
+  .flow .stage.sp { background: var(--sp-bg); border-color: var(--sp-bd); }
+  .flow .stage.sp .lbl { color: var(--sp); } .flow .stage.sp .lbl::before { background: var(--sp); }
+  
+  .flow .stage.fs { background: var(--fs-bg); border-color: var(--fs-bd); }
+  .flow .stage.fs .lbl { color: var(--fs); } .flow .stage.fs .lbl::before { background: var(--fs); }
+  
+  .flow .stage.fg { background: var(--fg-bg); border-color: var(--fg-bd); }
+  .flow .stage.fg .lbl { color: var(--fg); } .flow .stage.fg .lbl::before { background: var(--fg); }
+  
+  .flow .stage.feat { background: var(--feat-bg); border-color: var(--feat-bd); }
+  .flow .stage.feat .lbl { color: var(--feat); } .flow .stage.feat .lbl::before { background: var(--feat); }
+  
+  .flow .stage.consumer { background: var(--gray-50); border-color: var(--gray-200); border-style: dashed; }
+  .flow .stage.consumer .lbl { color: var(--gray-500); } .flow .stage.consumer .lbl::before { background: var(--gray-300); }
+  
+  .flow .arrow { 
+    align-self: center; color: var(--gray-300); font-size: 20px; font-weight: 300; 
+    user-select: none; display: flex; align-items: center; justify-content: center;
+    width: 24px;
+  }
+
+  /* ─── Tracks (Offline / Online) ──────────────────────── */
+  .tracks { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; margin: 24px 0 32px 0; }
+  .track { 
+    border: 1px solid var(--gray-200); border-radius: var(--radius-lg); 
+    background: white; padding: 24px; 
+    box-shadow: var(--shadow-sm);
+  }
+  .track h4 { 
+    margin: 0 0 16px 0; font-size: 14px; font-weight: 600; 
+    display: flex; align-items: center; gap: 10px; padding-bottom: 12px;
+    border-bottom: 1px solid var(--gray-100);
+  }
+  .track h4 .tag { 
+    display: inline-flex; padding: 4px 10px; border-radius: 6px; 
+    font-size: 11px; font-weight: 700; letter-spacing: 0.05em; 
+  }
+  .track.offline h4 .tag { background: #e0f2fe; color: #0369a1; box-shadow: 0 0 0 1px #bae6fd inset; }
+  .track.online h4 .tag { background: #fef3c7; color: #b45309; box-shadow: 0 0 0 1px #fde68a inset; }
+  
+  .track-row { 
+    display: grid; grid-template-columns: 110px 1fr; gap: 12px; 
+    padding: 10px 0; border-bottom: 1px dashed var(--gray-200); 
+    font-size: 13px; align-items: start;
+  }
+  .track-row:last-of-type { border-bottom: none; padding-bottom: 0; }
+  .track-row .k { color: var(--gray-500); font-weight: 500; font-size: 12px; margin-top: 2px; }
+  .track-row .v { color: var(--gray-700); line-height: 1.5; }
+  .track-row .v code { 
+    background: var(--gray-100); padding: 2px 6px; border-radius: 4px; 
+    font-size: 12px; color: var(--ink); border: 1px solid var(--gray-200);
+  }
+  .track-row .v .none { color: var(--gray-400); font-style: italic; }
+
+  /* ─── Details / Accordions ───────────────────────────── */
+  details { 
+    border: 1px solid var(--gray-200); border-radius: var(--radius-md); 
+    margin: 12px 0; background: white; overflow: hidden; 
+    box-shadow: var(--shadow-sm);
+  }
+  details summary { 
+    padding: 14px 20px; cursor: pointer; font-weight: 600; font-size: 14px; 
+    list-style: none; display: flex; align-items: center; gap: 12px; 
+    user-select: none; transition: background 0.2s; 
+  }
+  details summary::-webkit-details-marker { display: none; }
+  details summary:hover { background: var(--gray-50); }
+  details summary::before { 
+    content: "›"; color: var(--gray-400); font-size: 16px; font-family: monospace;
+    transition: transform 0.2s ease; display: inline-block;
+  }
+  details[open] summary::before { transform: rotate(90deg); color: currentColor; }
+  details[open] summary { border-bottom: 1px solid var(--gray-200); background: var(--gray-50); }
+  
+  /* Details Theme Colors */
+  details.layer-sp summary { color: var(--sp); }
+  details.layer-fs summary { color: var(--fs); }
+  details.layer-fg summary { color: var(--fg); }
+  details.layer-feat summary { color: var(--feat); }
+  
+  details .content { padding: 0; }
+  
+  /* ─── Tables ─────────────────────────────────────────── */
+  table { width: 100%; border-collapse: collapse; text-align: left; }
+  th, td { padding: 12px 20px; border-bottom: 1px solid var(--gray-100); font-size: 13px; vertical-align: top; }
+  th { 
+    background: white; font-weight: 600; color: var(--gray-500); 
+    font-size: 11.5px; text-transform: uppercase; letter-spacing: 0.05em; 
+  }
+  tr:last-child td { border-bottom: none; }
+  td code { 
+    background: var(--gray-50); padding: 2px 6px; border-radius: 4px; 
+    font-size: 12px; border: 1px solid var(--gray-200); color: var(--ink);
+  }
+
+  /* ─── Badges & Callouts ──────────────────────────────── */
+  .badge { 
+    display: inline-flex; align-items: center; justify-content: center;
+    padding: 2px 8px; border-radius: 6px; 
+    font-size: 11.5px; font-weight: 600; letter-spacing: 0.02em; 
+  }
+  .badge.t { background: #dcfce7; color: #166534; box-shadow: 0 0 0 1px #bbf7d0 inset; }
+  .badge.s { background: #dbeafe; color: #1e40af; box-shadow: 0 0 0 1px #bfdbfe inset; }
+  .badge.ts { background: #f3e8ff; color: #6b21a8; box-shadow: 0 0 0 1px #e9d5ff inset; }
+  .badge.na, .badge.no { background: var(--gray-100); color: var(--gray-500); box-shadow: 0 0 0 1px var(--gray-200) inset; }
+  .badge.req { background: #fef3c7; color: #92400e; box-shadow: 0 0 0 1px #fde68a inset; }
+  
+  .note, .warn { 
+    margin: 16px 20px; padding: 12px 16px; border-radius: var(--radius-sm); 
+    font-size: 13px; line-height: 1.5; display: flex; gap: 12px;
+  }
+  .note::before { content: '💡'; }
+  .note { background: #f0f9ff; color: #0369a1; box-shadow: 0 0 0 1px #bae6fd inset; }
+  .warn::before { content: '⚠️'; }
+  .warn { background: #fffbeb; color: #b45309; box-shadow: 0 0 0 1px #fde68a inset; }
+
+  /* ─── Findings & Pending Sections ────────────────────── */
+  .findings, .pending { 
+    margin-top: 48px; padding: 32px; 
+    border-radius: var(--radius-lg); 
+    border: 1px solid var(--gray-200); 
+    background: white;
+    box-shadow: var(--shadow-sm);
+  }
+  .findings h3, .pending h3 { 
+    margin: 0 0 20px 0; font-size: 18px; font-weight: 600; 
+    display: flex; align-items: center; gap: 8px;
+  }
+  .findings h3::before { content: '✨'; }
+  .pending h3::before { content: '📋'; }
+  
+  .findings ul, .pending ol { margin: 0; padding-left: 24px; }
+  .findings li, .pending li { margin: 12px 0; font-size: 14px; color: var(--gray-700); line-height: 1.6; }
+  .findings li b, .pending li b { color: var(--ink); font-weight: 600; }
+  .pending li b { color: var(--feat); }
+  
+  .pending table { margin-top: 16px; border: 1px solid var(--gray-200); border-radius: var(--radius-md); overflow: hidden; }
+  .pending th { background: var(--gray-50); }
+
+  /* ─── Layer Keys ─────────────────────────────────────── */
+  .layer-key { 
+    display: inline-flex; align-items: center;
+    padding: 2px 8px; border-radius: 6px; 
+    font-size: 11px; font-weight: 600; margin-right: 8px; 
+  }
+  .layer-key.sp { background: var(--sp-bg); color: var(--sp); box-shadow: 0 0 0 1px var(--sp-bd) inset; }
+  .layer-key.fs { background: var(--fs-bg); color: var(--fs); box-shadow: 0 0 0 1px var(--fs-bd) inset; }
+  .layer-key.fg { background: var(--fg-bg); color: var(--fg); box-shadow: 0 0 0 1px var(--fg-bd) inset; }
+  .layer-key.feat { background: var(--feat-bg); color: var(--feat); box-shadow: 0 0 0 1px var(--feat-bd) inset; }
+
+  /* ─── Responsive ─────────────────────────────────────── */
+  @media (max-width: 1024px) {
+    .tracks { grid-template-columns: 1fr; gap: 16px; }
+    .flow { gap: 12px; }
+    .flow .stage { min-width: calc(50% - 6px); }
+    .flow .arrow { display: none; }
+  }
+  @media (max-width: 640px) {
+    header { padding: 24px; }
+    nav.tabs { padding: 0 24px; }
+    main { padding: 24px; }
+    .flow .stage { min-width: 100%; }
+    .track-row { grid-template-columns: 1fr; gap: 4px; padding: 12px 0; }
+    .track-row .k { color: var(--gray-500); }
+  }
+
+</style>
+</head>
+<body>
+
+<header>
+  <h1>Feature 全生命周期管理 — v2 模型 · 5 个真实例子对照</h1>
+  <p>点击上方任意例子切换；每例内可展开 Source Pipeline / Feature Source / FG / Feature 四层细节。</p>
+  <div class="legend">
+    <span class="pill"><span class="dot sp"></span>Source Pipeline（lineage，federated）</span>
+    <span class="pill"><span class="dot fs"></span>Feature Source（取数接口）</span>
+    <span class="pill"><span class="dot fg"></span>Feature Group（治理 namespace）</span>
+    <span class="pill"><span class="dot feat"></span>Feature（管理单元）</span>
+    <span class="pill"><span class="dot xform"></span>Transformation（demoted；归并到 FG.Feature Logic）</span>
+  </div>
+</header>
+
+<nav class="tabs">
+  <button data-tab="ex1" class="active"><span class="num">1</span>实时窗口聚合 · credit_amount_30d</button>
+  <button data-tab="ex2"><span class="num">2</span>实时点值 · user_status</button>
+  <button data-tab="ex3"><span class="num">3</span>gRPC + Python · 200 外数</button>
+  <button data-tab="ex4"><span class="num">4</span>纯离线 · profile_update_count_1y</button>
+  <button data-tab="ex5"><span class="num">5</span>GraphDB · emergency_phone_bl_cnt</button>
+  <button data-tab="findings"><span class="num">∑</span>归纳 &amp; 待拍板</button>
+</nav>
+
+<main>
+
+<section class="example active" id="ex1">
+  <h2>例 1 · 用户近 30 天总 credit amount</h2>
+  <p class="subtitle">带时间窗口的实时 feature；Kafka → Flink → HBase 明细 → 读时聚合</p>
+  <div class="flow">
+    <div class="stage sp"><div class="lbl">Source Pipeline</div><div class="body"><b>SP-a</b> Flink <code>tx_event_to_hbase_detail</code><br>Kafka <code>tx_events</code> → HBase 明细<br><br><b>SP-b</b> Spark <code>dwd_user_tx_30d_agg</code><br>ODS → Hive 聚合表</div></div>
+    <div class="arrow">→</div>
+    <div class="stage fs"><div class="lbl">Feature Source</div><div class="body"><b>FS-HBase</b> <code>online:user_tx</code><br><b>FS-Hive</b> <code>dwd.user_tx_features</code></div></div>
+    <div class="arrow">→</div>
+    <div class="stage fg"><div class="lbl">FG</div><div class="body"><code>user_tx_features</code><br><i>entity = uid</i></div></div>
+    <div class="arrow">→</div>
+    <div class="stage feat"><div class="lbl">Feature</div><div class="body"><code>credit_amount_30d</code><br><span class="badge ts">T+S</span></div></div>
+    <div class="arrow">→</div>
+    <div class="stage consumer"><div class="lbl">下游</div><div class="body">Training API · Serving API</div></div>
+  </div>
+  <div class="tracks">
+    <div class="track offline"><h4><span class="tag">OFFLINE</span> Batch Path</h4>
+      <div class="track-row"><span class="k">Pipeline</span><span class="v"><code>SP-b</code> Spark SQL (Hive ODS → DWD)</span></div>
+      <div class="track-row"><span class="k">Output</span><span class="v"><code>dwd.user_tx_features.credit_amount_30d</code></span></div>
+      <div class="track-row"><span class="k">Stage 数</span><span class="v">1 段式（clean + 30d window SUM 一次性算完）</span></div>
+    </div>
+    <div class="track online"><h4><span class="tag">ONLINE</span> Streaming + Serving Path</h4>
+      <div class="track-row"><span class="k">Pre-compute</span><span class="v"><code>SP-a</code> Flink 持续写明细到 HBase</span></div>
+      <div class="track-row"><span class="k">Online Store</span><span class="v"><code>FS-HBase online:user_tx</code></span></div>
+      <div class="track-row"><span class="k">Read-time</span><span class="v">Serving Canvas: SCAN [now-30d, now] → SUM(credit_amount)</span></div>
+    </div>
+  </div>
+  <details class="layer-sp" open><summary>Source Pipeline · 元信息</summary><div class="content">
+    <table>
+      <tr><th>ID</th><th>Type</th><th>输入</th><th>输出</th><th>Owner</th><th>Health</th></tr>
+      <tr><td><code>SP-a</code></td><td>Flink Streaming</td><td>Kafka <code>tx_events</code></td><td>HBase <code>online:user_tx</code></td><td>realtime-team</td><td>last_success 30s ago</td></tr>
+      <tr><td><code>SP-b</code></td><td>Spark Batch (Airflow)</td><td>Hive <code>ods.user_tx_log</code></td><td>Hive <code>dwd.user_tx_features</code></td><td>dw-team</td><td>last_success 6h ago</td></tr>
+    </table>
+    <div class="note">不在 FS 里手动注册——通过 FG 注册时反向爬 lineage 自动 cache。</div>
+  </div></details>
+  <details class="layer-fs"><summary>Feature Source · 元信息</summary><div class="content">
+    <table>
+      <tr><th>ID</th><th>Source Type</th><th>Call</th><th>Input</th><th>Output Schema</th></tr>
+      <tr><td><code>FS-HBase</code></td><td>HBase</td><td><code>HBaseScan</code></td><td>uid, ts_range</td><td>uid, tx_id, credit_amount, ts</td></tr>
+      <tr><td><code>FS-Hive</code></td><td>Hive Materialized Table</td><td>—</td><td>uid, ds</td><td>uid, ds, credit_amount_30d, ...（千列）</td></tr>
+    </table>
+  </div></details>
+  <details class="layer-fg"><summary>Feature Group · 元信息</summary><div class="content">
+    <table>
+      <tr><th>字段</th><th>值</th></tr>
+      <tr><td>Name</td><td><code>user_tx_features</code></td></tr>
+      <tr><td>Entity</td><td>uid</td></tr>
+      <tr><td>Offline FG Config</td><td>→ <code>FS-Hive dwd.user_tx_features</code></td></tr>
+      <tr><td>Online FG Config</td><td>→ Serving Canvas（含 SCAN HBase + window aggregate 节点）</td></tr>
+      <tr><td>Features 数</td><td>~80</td></tr>
+    </table>
+  </div></details>
+  <details class="layer-feat"><summary>Feature · <code>credit_amount_30d</code> 详情</summary><div class="content">
+    <table>
+      <tr><th>字段</th><th>值</th></tr>
+      <tr><td>Data Type</td><td>DECIMAL(18,2)</td></tr>
+      <tr><td>Availability</td><td><span class="badge ts">T + S</span></td></tr>
+      <tr><td>Offline ref</td><td><code>FS-Hive.credit_amount_30d</code> ← <code>SP-b</code></td></tr>
+      <tr><td>Online — Pre-compute</td><td><code>SP-a</code>（Flink 写明细）</td></tr>
+      <tr><td>Online — Store</td><td><code>FS-HBase online:user_tx</code></td></tr>
+      <tr><td>Online — Read-time</td><td>Serving Canvas: SCAN→SUM</td></tr>
+      <tr><td>Consistency</td><td><span class="badge req">REQUIRED</span> "30d 滑窗 SUM(credit_amount)，UTC+8"</td></tr>
+    </table>
+  </div></details>
+</section>
+
+<section class="example" id="ex2">
+  <h2>例 2 · 用户最新状态 active / frozen / banned</h2>
+  <p class="subtitle">不带窗口的实时点值；CDC → Redis → 直接 lookup</p>
+  <div class="flow">
+    <div class="stage sp"><div class="lbl">Source Pipeline</div><div class="body"><b>SP-a</b> Flink CDC <code>user_status_cdc_to_redis</code><br>MySQL binlog → Redis<br><br><b>SP-b</b> Spark <code>dwd_user_profile_snapshot</code><br>ODS → Hive 快照</div></div>
+    <div class="arrow">→</div>
+    <div class="stage fs"><div class="lbl">Feature Source</div><div class="body"><b>FS-Redis</b> <code>user:status</code><br><b>FS-Hive</b> <code>dwd.user_profile</code></div></div>
+    <div class="arrow">→</div>
+    <div class="stage fg"><div class="lbl">FG</div><div class="body"><code>user_profile_features</code></div></div>
+    <div class="arrow">→</div>
+    <div class="stage feat"><div class="lbl">Feature</div><div class="body"><code>user_status</code><br><span class="badge ts">T+S</span></div></div>
+  </div>
+  <div class="tracks">
+    <div class="track offline"><h4><span class="tag">OFFLINE</span> Batch Path</h4>
+      <div class="track-row"><span class="k">Pipeline</span><span class="v"><code>SP-b</code> ODS snapshot → Hive</span></div>
+      <div class="track-row"><span class="k">Output</span><span class="v"><code>dwd.user_profile.status</code></span></div>
+      <div class="track-row"><span class="k">语义</span><span class="v">train_ts 当日 status snapshot</span></div>
+    </div>
+    <div class="track online"><h4><span class="tag">ONLINE</span> Streaming + Serving Path</h4>
+      <div class="track-row"><span class="k">Pre-compute</span><span class="v"><code>SP-a</code> Flink CDC 实时写 Redis</span></div>
+      <div class="track-row"><span class="k">Online Store</span><span class="v"><code>FS-Redis user:status</code></span></div>
+      <div class="track-row"><span class="k">Read-time</span><span class="v"><b>Direct lookup</b>（无 aggregate）</span></div>
+    </div>
+  </div>
+  <details class="layer-feat" open><summary>Feature · <code>user_status</code> 详情</summary><div class="content">
+    <table>
+      <tr><th>字段</th><th>值</th></tr>
+      <tr><td>Data Type</td><td>ENUM('active','frozen','banned')</td></tr>
+      <tr><td>Availability</td><td><span class="badge ts">T + S</span></td></tr>
+      <tr><td>Offline ref</td><td><code>FS-Hive.status</code> ← <code>SP-b</code></td></tr>
+      <tr><td>Online — Pre-compute</td><td><code>SP-a</code></td></tr>
+      <tr><td>Online — Store</td><td><code>FS-Redis user:status</code></td></tr>
+      <tr><td>Online — Read-time</td><td>RedisCall(uid) — lookup only</td></tr>
+      <tr><td>Consistency</td><td><span class="badge req">REQUIRED</span> "online=当前态；offline=train_ts 当日 snapshot"</td></tr>
+    </table>
+    <div class="warn">point-in-time correctness 敏感——consistency 校验需按 (uid, train_ts) 比对，不是 (uid, now)。</div>
+  </div></details>
+</section>
+
+<section class="example" id="ex3">
+  <h2>例 3 · 第三方 gRPC 征信报告 + Python 算 200 个外数 feature</h2>
+  <p class="subtitle">付费接口实时拉取；Python 算子是唯一加工；Compute Template 最佳论据</p>
+  <div class="flow">
+    <div class="stage sp"><div class="lbl">Source Pipeline</div><div class="body"><b>SP-a</b>（可选）Spark <code>credit_report_batch_pull_parse</code><br>批拉 gRPC → Hive 200 列<br><br><i>无 SP-a 则离线无法兜底</i></div></div>
+    <div class="arrow">→</div>
+    <div class="stage fs"><div class="lbl">Feature Source</div><div class="body"><b>FS-gRPC</b> <code>credit-bureau-api</code><br><b>FS-Hive</b> <code>dwd.credit_report_features</code><br><i>(仅 SP-a 存在时)</i></div></div>
+    <div class="arrow">→</div>
+    <div class="stage fg"><div class="lbl">FG</div><div class="body"><code>credit_report_features</code><br><i>装 200 features</i></div></div>
+    <div class="arrow">→</div>
+    <div class="stage feat"><div class="lbl">Features × 200</div><div class="body"><code>credit_score</code><br>...<br><span class="badge ts">T+S</span></div></div>
+  </div>
+  <div class="tracks">
+    <div class="track offline"><h4><span class="tag">OFFLINE</span> Batch Path</h4>
+      <div class="track-row"><span class="k">Pipeline</span><span class="v"><code>SP-a</code> 批拉 + Python 解析</span></div>
+      <div class="track-row"><span class="k">Output</span><span class="v"><code>dwd.credit_report_features</code> 200 列</span></div>
+      <div class="track-row"><span class="k">语义</span><span class="v">同一 Python 算子离线版本</span></div>
+    </div>
+    <div class="track online"><h4><span class="tag">ONLINE</span> Serving-only Path</h4>
+      <div class="track-row"><span class="k">Pre-compute</span><span class="v"><span class="none">— 无</span></span></div>
+      <div class="track-row"><span class="k">Source / API</span><span class="v"><code>FS-gRPC credit-bureau-api</code></span></div>
+      <div class="track-row"><span class="k">Read-time</span><span class="v">Serving Canvas: grpcCall → Python parse → 200 outputs</span></div>
+    </div>
+  </div>
+  <details class="layer-feat" open><summary>Feature 详情（以 <code>credit_score</code> 为例）</summary><div class="content">
+    <table>
+      <tr><th>字段</th><th>值</th></tr>
+      <tr><td>Availability</td><td><span class="badge ts">T + S</span>（取决于 SP-a）</td></tr>
+      <tr><td>Offline ref</td><td><code>FS-Hive.credit_score</code> ← <code>SP-a</code></td></tr>
+      <tr><td>Online — Pre-compute</td><td>—</td></tr>
+      <tr><td>Online — API</td><td><code>FS-gRPC credit-bureau-api</code></td></tr>
+      <tr><td>Online — Read-time</td><td>Serving Canvas: gRPC → Python parser → <code>credit_score</code></td></tr>
+      <tr><td>Compute Template</td><td><b>建议复用</b>：同一 Python parser 被 SP-a 和 Serving Canvas 引用 ⇒ consistency 几乎免费</td></tr>
+    </table>
+    <div class="note">v2 <b>Compute Template</b>（算子模板库）的最佳论据：一段 Python 写两遍极易漂移，统一引用一份能根除一致性问题。</div>
+  </div></details>
+  <details class="layer-fg"><summary>FG 的 "200 features 治理" 挑战</summary><div class="content">
+    <ul>
+      <li>200 不要逐个手工注册——支持 <b>auto-generate Features from schema</b>（Hive 表 / Python parser output）</li>
+      <li>Features Tab 默认按 prefix 分组折叠（如 <code>credit_score_*</code> · <code>overdue_*</code>）</li>
+      <li><code>exposed</code> 标签：parse 出来的中间字段（<code>raw_*</code>）默认隐藏</li>
+      <li>批量 Consistency Attestation: 选中"全部 credit_*"一键 attest</li>
+    </ul>
+  </div></details>
+</section>
+
+<section class="example" id="ex4">
+  <h2>例 4 · 用户过去 1 年更新 profile 次数</h2>
+  <p class="subtitle">纯离线 feature；最简单的形态</p>
+  <div class="flow">
+    <div class="stage sp"><div class="lbl">Source Pipeline</div><div class="body"><b>SP-a</b> Spark <code>user_profile_update_365d_count</code><br>ODS event log → Hive</div></div>
+    <div class="arrow">→</div>
+    <div class="stage fs"><div class="lbl">Feature Source</div><div class="body"><b>FS-Hive</b> <code>dwd.user_profile_features</code></div></div>
+    <div class="arrow">→</div>
+    <div class="stage fg"><div class="lbl">FG</div><div class="body"><code>user_profile_features</code></div></div>
+    <div class="arrow">→</div>
+    <div class="stage feat"><div class="lbl">Feature</div><div class="body"><code>profile_update_count_1y</code><br><span class="badge t">T only</span></div></div>
+  </div>
+  <div class="tracks">
+    <div class="track offline"><h4><span class="tag">OFFLINE</span> Batch Path</h4>
+      <div class="track-row"><span class="k">Pipeline</span><span class="v"><code>SP-a</code> Spark 365d count</span></div>
+      <div class="track-row"><span class="k">Output</span><span class="v"><code>dwd.user_profile_features.profile_update_count_1y</code></span></div>
+    </div>
+    <div class="track online" style="opacity: 0.55;"><h4><span class="tag">ONLINE</span> N/A</h4>
+      <div class="track-row"><span class="k">Pre-compute</span><span class="v"><span class="none">—</span></span></div>
+      <div class="track-row"><span class="k">Store</span><span class="v"><span class="none">—</span></span></div>
+      <div class="track-row"><span class="k">Read-time</span><span class="v"><span class="none">—</span></span></div>
+    </div>
+  </div>
+  <details class="layer-feat" open><summary>Feature · <code>profile_update_count_1y</code></summary><div class="content">
+    <table>
+      <tr><th>字段</th><th>值</th></tr>
+      <tr><td>Availability</td><td><span class="badge t">T only</span></td></tr>
+      <tr><td>Offline ref</td><td><code>FS-Hive.profile_update_count_1y</code> ← <code>SP-a</code></td></tr>
+      <tr><td>Online ref</td><td><span class="badge no">N/A</span></td></tr>
+      <tr><td>Consistency</td><td><span class="badge na">N/A</span> · 单边 feature 无需对账</td></tr>
+    </table>
+    <div class="note">"只 T" feature 在千级里占大头——consistency 负担为零，治理成本最低。</div>
+  </div></details>
+</section>
+
+<section class="example" id="ex5">
+  <h2>例 5 · emergencyPhone 反查关联用户黑名单数</h2>
+  <p class="subtitle">GraphDB（Nebula）多跳查询；Hive T+1 写入；Pre-compute 是<b>批刷新</b>而非流</p>
+  <div class="flow">
+    <div class="stage sp"><div class="lbl">Source Pipeline</div><div class="body"><b>SP-a</b> Spark <code>user_phone_graph_to_nebula</code> (T+1)<br>Hive 关系表 → Nebula space<br><br><b>SP-b</b> Spark <code>user_emergency_bl_count_offline</code><br>Hive 中 mirror nGQL 逻辑</div></div>
+    <div class="arrow">→</div>
+    <div class="stage fs"><div class="lbl">Feature Source</div><div class="body"><b>FS-Nebula</b> <code>user_phone_graph</code><br><b>FS-Hive</b> <code>dwd.user_emergency_features</code></div></div>
+    <div class="arrow">→</div>
+    <div class="stage fg"><div class="lbl">FG</div><div class="body"><code>user_emergency_relation_features</code></div></div>
+    <div class="arrow">→</div>
+    <div class="stage feat"><div class="lbl">Feature</div><div class="body"><code>emergency_phone_bl_cnt</code><br><span class="badge ts">T+S</span></div></div>
+  </div>
+  <div class="tracks">
+    <div class="track offline"><h4><span class="tag">OFFLINE</span> Batch Path</h4>
+      <div class="track-row"><span class="k">Pipeline</span><span class="v"><code>SP-b</code> Spark 在 Hive 中 mirror 2-hop traverse</span></div>
+      <div class="track-row"><span class="k">Output</span><span class="v"><code>dwd.user_emergency_features.emergency_phone_bl_cnt</code></span></div>
+    </div>
+    <div class="track online"><h4><span class="tag">ONLINE</span> Pre-computed Snapshot + Serving</h4>
+      <div class="track-row"><span class="k">Pre-compute</span><span class="v"><code>SP-a</code> Spark <b>T+1 批刷新</b>（非流式！）</span></div>
+      <div class="track-row"><span class="k">Online Store</span><span class="v"><code>FS-Nebula user_phone_graph</code></span></div>
+      <div class="track-row"><span class="k">Read-time</span><span class="v">Serving Canvas: nGQL 2-hop traverse + count(in blacklist)</span></div>
+    </div>
+  </div>
+  <details class="layer-feat" open><summary>Feature · <code>emergency_phone_bl_cnt</code></summary><div class="content">
+    <table>
+      <tr><th>字段</th><th>值</th></tr>
+      <tr><td>Availability</td><td><span class="badge ts">T + S</span></td></tr>
+      <tr><td>Offline ref</td><td><code>FS-Hive.emergency_phone_bl_cnt</code> ← <code>SP-b</code></td></tr>
+      <tr><td>Online — Pre-compute</td><td><b><code>SP-a</code>（T+1 batch refresh）</b></td></tr>
+      <tr><td>Online — Store</td><td><code>FS-Nebula user_phone_graph</code></td></tr>
+      <tr><td>Online — Read-time</td><td>nGQL 2-hop traverse + count</td></tr>
+      <tr><td>Consistency</td><td><span class="badge req">REQUIRED</span> "online 用 T+1 snapshot 上 nGQL；offline 用同日 snapshot Spark mirror"</td></tr>
+    </table>
+    <div class="warn">证明：<b>Pre-compute Source 不一定是流——也可能是 T+1 batch 刷新到 online store</b>。这就是为什么 "Stream Stage" 这个词不合适，应统一改成 <b>"Pre-compute Source"</b>。</div>
+  </div></details>
+</section>
+
+<section class="example" id="findings">
+  <h2>5 例归纳 · 模型最终收敛</h2>
+  <div class="findings">
+    <h3>关键 finding</h3>
+    <ul>
+      <li><b>Pre-compute Source 不止流式</b>：可能是 Flink 流（例 1/2）、Spark T+1 批刷新（例 5）、或<b>没有</b>（例 3/4）。术语统一为 <b>"Pre-compute Source"</b>，弃用"Stream Stage"。</li>
+      <li><b>Hive 物化 feature 表双重身份</b>：既是 Source Pipeline 的 output，又是 Feature Source 的 query interface——lineage 图上是同节点两面。</li>
+      <li><b>Kafka / Hive ODS 不进 FS</b>：它们只在 Source Pipeline 里出现；FG 不直接 query。</li>
+      <li><b>Transformation demote 合理</b>：5 例均不需要独立 Transformation entity——加工逻辑要么在上游 Spark/Flink（属 SP），要么在 Serving Canvas 节点（属 FG.Feature Logic）。</li>
+      <li><b>例 3 揭示 Compute Template 价值</b>：200 features 共享一段 Python 算子——若离线 SP 和在线 Canvas 引用同一份代码，consistency 几乎免费。建议 v2 引入 Compute Template（库性质，<u>非</u>治理层级）。</li>
+      <li><b>例 5 的 Pre-compute 是批刷新</b>：证明"实时 vs 离线"和"流 vs 批"是两个独立轴。</li>
+      <li><b>"千级 features per FG" 主要发生在"同源批量解析"场景</b>（例 3 类）。建议 auto-generate Features + <code>exposed</code> 标签 + Feature Section 分组。</li>
+    </ul>
+  </div>
+  <div class="pending">
+    <h3>v2 收敛后的层级模型</h3>
+    <table>
+      <tr><th>层</th><th>定位</th><th>5 例验证</th></tr>
+      <tr><td><span class="layer-key sp">Source Pipeline</span></td><td>lineage view（federated）</td><td>例 1/2/3/4/5 SP 全覆盖</td></tr>
+      <tr><td><span class="layer-key fs">Feature Source</span></td><td>取数接口注册 · HBase / Redis / gRPC / GraphDB / Hive 物化表（<b>不含 Kafka / Hive ODS</b>）</td><td>5 例 FS 全部归位</td></tr>
+      <tr><td><span class="layer-key fg">Feature Group</span></td><td>治理 namespace · 共享 owner / region / offline 表 / online canvas</td><td>5 例 FG 归属清晰</td></tr>
+      <tr><td><span class="layer-key feat">Feature</span></td><td><b>真正的管理单元</b> · Offline ref · Online ref (Pre-compute + Store + Read-time) · Consistency Attestation</td><td>5 例 feature schema 完全适配</td></tr>
+      <tr><td>(可选) Compute Template</td><td>算子复用库（<u>非</u>治理层）</td><td>例 3 受益最大</td></tr>
+    </table>
+  </div>
+  <div class="pending">
+    <h3>还需要你拍板的 3 件事</h3>
+    <ol>
+      <li><b>例 3 的 Compute Template 要不要 v2 一起做？</b><br>做 → consistency "一份代码 = 一致"，工程量 +30%<br>不做 → 等用户痛了再加</li>
+      <li><b>"Pre-compute Source" 替代 "Stream Stage"</b>，OK？<br>OK → 文档里所有"流式"统一改成"Pre-compute"，并明确批刷新也算</li>
+      <li><b>Hive Materialized Table 并入 FS</b>（v1 FS 不含 Hive），结构性变化，OK？<br>OK → Source Type 枚举加 <code>HIVE_TABLE</code>；反对 → Hive 单独成 entity（层级会乱）</li>
+    </ol>
+  </div>
+</section>
+
+</main>
+
+<script>
+  const tabs = document.querySelectorAll('nav.tabs button');
+  const sections = document.querySelectorAll('section.example');
+  tabs.forEach(btn => {
+    btn.addEventListener('click', () => {
+      const t = btn.dataset.tab;
+      tabs.forEach(b => b.classList.toggle('active', b === btn));
+      sections.forEach(s => s.classList.toggle('active', s.id === t));
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    });
+  });
+</script>
+
+</body>
+</html>
