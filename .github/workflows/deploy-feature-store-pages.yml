@@ -6,7 +6,7 @@ on:
   push:
     branches: [main, master]
     paths:
-      - "docs/references/feature-widetable-figma-export/**"
+      - "prototypes/feature-widetable/**"
       - ".github/workflows/deploy-feature-store-pages.yml"
   workflow_dispatch:
 
@@ -25,14 +25,11 @@ jobs:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
     runs-on: ubuntu-latest
-    # 官方 Actions 运行时迁至 Node 24；此处用 FORCE_* 满足其要求。
-    # 本仓库构建使用 Node 22 LTS：在 Node 24 下 npm ci 曾出现 “Exit handler never called” 无输出失败。
     env:
       FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
     steps:
       - uses: actions/checkout@v6
 
-      # setup-node 的 pnpm 缓存需先有 pnpm 可执行文件
       - uses: pnpm/action-setup@v4
         with:
           version: 9.15.9
@@ -41,15 +38,14 @@ jobs:
         with:
           node-version: "22"
           cache: pnpm
-          cache-dependency-path: docs/references/feature-widetable-figma-export/pnpm-lock.yaml
+          cache-dependency-path: prototypes/feature-widetable/pnpm-lock.yaml
 
-      # 使用 pnpm，避免 GitHub Actions 上 npm 偶发 “Exit handler never called” 崩溃
       - name: Install dependencies
-        working-directory: docs/references/feature-widetable-figma-export
+        working-directory: prototypes/feature-widetable
         run: pnpm install --frozen-lockfile
 
       - name: Build
-        working-directory: docs/references/feature-widetable-figma-export
+        working-directory: prototypes/feature-widetable
         env:
           VITE_BASE_PATH: /${{ github.event.repository.name }}/
         run: pnpm run build
@@ -58,7 +54,7 @@ jobs:
 
       - uses: actions/upload-pages-artifact@v4
         with:
-          path: docs/references/feature-widetable-figma-export/dist
+          path: prototypes/feature-widetable/dist
 
       - id: deployment
         uses: actions/deploy-pages@v4
