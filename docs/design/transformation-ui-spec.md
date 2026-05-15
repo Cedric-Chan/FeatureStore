@@ -1,6 +1,6 @@
 # Transformation 模块 UI / 交互说明
 
-与 Feature Store React 原型（`docs/references/feature-widetable-figma-export`）实现对齐，供评审与迭代使用。
+与 Feature Store React 原型（`prototypes/feature-widetable`）实现对齐，供评审与迭代使用。
 
 ## 路由
 

@@ -1,10 +1,10 @@
 # Feature Group — Figma 1:1 走查清单
 
-**规范优先级**：与内部 PRD（`docs/design/front-design/产品原型图.md` §3.3、§3.3.A）冲突时，以 **WideTable 原型包** `docs/references/feature-widetable-figma-export/` 中 `FeatureGroupList.tsx` / `FeatureGroupDetail.tsx` / `FeatureGroupModal.tsx` 为准。
+**规范优先级**：与内部 PRD（`docs/design/front-design/产品原型图.md` §3.3、§3.3.A）冲突时，以 **WideTable 原型包** [`prototypes/feature-widetable/`](../../prototypes/feature-widetable/) 中 `FeatureGroupList.tsx` / `FeatureGroupDetail.tsx` / `FeatureGroupModal.tsx` 为准。
 
 ## A. 参考包完整性
 
-- [x] `docs/references/feature-widetable-figma-export` 可 `pnpm i && pnpm run build`
+- [x] `prototypes/feature-widetable` 可 `pnpm i && pnpm run build`
 - [x] `FGFormData` 与 `FeatureGroupModal.tsx` 中 `EMPTY_FORM` 一致；**创建流**以 **`variant=basic` / `variant=training`** 为主，**不再**以四步 Step 条为默认入口
 
 ## B. FG 列表页（vs `FeatureGroupList.tsx`）

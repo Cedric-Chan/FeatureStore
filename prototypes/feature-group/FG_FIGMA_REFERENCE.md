@@ -7,5 +7,5 @@
   - `src/app/components/FeatureGroupDetail.tsx` — 详情三面板与 Tab
   - `src/app/components/FeatureGroupModal.tsx` — 三步表单与校验
   - `public/feature-group-list.html` — 静态导出参考（可选）
-- **WideTable 画布 Feature 节点**：对照仓库内 `docs/references/feature-widetable-figma-export/src/app/components/CanvasPage.tsx` 的 `FeatureGroupPanel`（非本 zip 内文件）。
+- **WideTable 画布 Feature 节点**：对照仓库内 `prototypes/feature-widetable/src/app/components/CanvasPage.tsx` 的 `FeatureGroupPanel`（非本 zip 内文件）。
 - **本地运行**：`npm i && npm run dev`，用于与 HTML 原型并排截图 Review。

@@ -1,6 +1,6 @@
 # WideTable 画布：Data Ingestion / Data Cleaning 与 Execute Config 规格
 
-> **状态**：产品规格（阶段 B）。实现见 React 原型 `docs/references/feature-widetable-figma-export/`。  
+> **状态**：产品规格（阶段 B）。实现见 React 原型 [`prototypes/feature-widetable/`](../../prototypes/feature-widetable/)。  
 > **曾用名**：Data Sink → **Data Ingestion**；END → **Data Cleaning**。
 
 **关联**：[产品原型图 §3.5.2](front-design/产品原型图.md)。

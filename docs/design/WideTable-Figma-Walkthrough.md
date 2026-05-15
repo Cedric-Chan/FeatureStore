@@ -2,7 +2,7 @@
 
 > 2025-03：已在 `[FEATURE_STORE.html](../prototype/FEATURE_STORE.html)` 落地一版与导出稿对齐的 Modals / 列表 / Frame Table 面板与其它节点脚标；后续仍以本表做回归。
 
-**主参考**：`[docs/references/feature-widetable-figma-export/](../references/feature-widetable-figma-export/)`（`AddWideTableModal.tsx`、`WideTableMetaModal.tsx`、`TriggerInstanceModal.tsx`、`WideTableList.tsx`、`CanvasPage.tsx`）。
+**主参考**：[../../prototypes/feature-widetable/](../../prototypes/feature-widetable/)（`AddWideTableModal.tsx`、`WideTableMetaModal.tsx`、`TriggerInstanceModal.tsx`、`WideTableList.tsx`、`CanvasPage.tsx`）。
 
 **冲突规则**：与内部 PRD / 《产品原型图》不一致时，**以导出稿为准**。**例外**：画布节点命名与结构（Data Ingestion / Data Cleaning、Execute Config、移除 Start）以 `[widetable-canvas-nodes-revamp.md](widetable-canvas-nodes-revamp.md)` 与《产品原型图》§3.5.2 为准，导出对齐后再恢复「以导出为准」。
 

@@ -4,7 +4,7 @@
 
 **参考**
 
-- 导出：`[../references/feature-widetable-figma-export/](../references/feature-widetable-figma-export/)`
+- 导出：[../../prototypes/feature-widetable/](../../prototypes/feature-widetable/)
 - 规格：`[front-design/产品原型图.md](front-design/产品原型图.md)` §3.5；画布节点与 Execute Config 以 `[widetable-canvas-nodes-revamp.md](widetable-canvas-nodes-revamp.md)` 为准
 - 原型：`[../prototype/FEATURE_STORE.html](../prototype/FEATURE_STORE.html)` `#page-ts-list`
 

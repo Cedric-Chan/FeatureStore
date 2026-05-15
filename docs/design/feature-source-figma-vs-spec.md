@@ -4,7 +4,7 @@
 
 **参考**
 
-- 实现：[`../references/feature-widetable-figma-export/src/app/components/feature-source/FeatureSourcePage.tsx`](../references/feature-widetable-figma-export/src/app/components/feature-source/FeatureSourcePage.tsx)
+- 实现：[../../prototypes/feature-widetable/src/app/components/feature-source/FeatureSourcePage.tsx](../../prototypes/feature-widetable/src/app/components/feature-source/FeatureSourcePage.tsx)
 - 交互说明（zip 原文）：[`feature-source-interaction-spec.md`](feature-source-interaction-spec.md)
 - 规格：[`front-design/产品原型图.md`](front-design/产品原型图.md) §3.1
 

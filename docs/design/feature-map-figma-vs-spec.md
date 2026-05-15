@@ -4,7 +4,7 @@
 
 **参考来源**
 
-- 导出稿（zip）：[`../references/feature-map-figma-export/`](../references/feature-map-figma-export/)
+- 导出稿（zip）：[../../prototypes/feature-map/](../../prototypes/feature-map/)
 - 规格：[`front-design/产品原型图.md`](front-design/产品原型图.md) §3.4 / §5.3
 - 原型：[`../prototype/FEATURE_STORE.html`](../prototype/FEATURE_STORE.html) `#page-fm`
 
@@ -27,7 +27,7 @@
 
 **说明**：导出中 **Feature** 类型无 **Partition** 列，与 §3.4.1 列清单一致；当前 HTML 表格也无 Partition，此项无冲突。
 
-**原型状态**：`#page-fm` 已按 [`../references/feature-map-figma-export/`](../references/feature-map-figma-export/) 做静态近 1:1 还原；上表 **第三列**反映该实现。与《产品原型图》的差异仍以 **第二列**为准，供你是否修订规格文档时核对。
+**原型状态**：`#page-fm` 已按 [../../prototypes/feature-map/](../../prototypes/feature-map/) 做静态近 1:1 还原；上表 **第三列**反映该实现。与《产品原型图》的差异仍以 **第二列**为准，供你是否修订规格文档时核对。
 
 ---
 

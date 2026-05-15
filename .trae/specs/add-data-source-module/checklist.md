@@ -1,0 +1,3 @@
+- [x] `DataSourceMappingPage.tsx` 文件已成功复制到 FeatureStore 项目的 `pages` 目录中。
+- [x] 侧边栏菜单中已出现 "Data Source" 选项，并且排在 "Feature Source" 之前。
+- [x] 点击 "Data Source" 菜单可以成功路由到 `/ds` 并正确渲染 Data Source Mapping 页面。
