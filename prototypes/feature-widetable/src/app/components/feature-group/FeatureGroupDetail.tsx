@@ -39,7 +39,7 @@ import FeatureGroupModal, {
 import { FgServingCanvasThumbnail } from "./FgServingCanvasThumbnail";
 import { trainingFeatureNamesFromForm } from "./fgSeed";
 import { fmFeatureLink } from "@/lib/links";
-import { FeatureLogicModal } from "./FeatureLogicModal";
+import { FeatureTraceModal } from "./FeatureLogicModal";
 import {
   cloneFgServingState,
   computeFgServingPublishedSummary,
@@ -1076,7 +1076,7 @@ function FeatureListTab({ fg }: { fg: FeatureGroup }) {
                         }}
                         className="text-[11px] text-teal-600 hover:text-teal-800 hover:underline transition-colors"
                       >
-                        Logic
+                        Trace
                       </button>
                     </div>
                   </td>
@@ -1126,8 +1126,8 @@ function FeatureListTab({ fg }: { fg: FeatureGroup }) {
         </div>
       </div>
 
-      {/* Feature Logic Modal — feature-level lineage + processing + health */}
-      <FeatureLogicModal
+      {/* Feature Trace Modal — feature-level lineage + processing + health */}
+      <FeatureTraceModal
         open={!!lineageTarget}
         featureName={lineageTarget?.featureName ?? ""}
         hasTraining={lineageTarget?.hasTraining ?? false}

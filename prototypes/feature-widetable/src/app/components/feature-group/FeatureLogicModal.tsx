@@ -290,9 +290,9 @@ const NODE_STYLE: Record<string, string> = {
 };
 
 // ─── Main Modal Component ─────────────────────────────────────────────────────
-type LogicTab = "lineage" | "processing" | "health";
+type TraceTab = "lineage" | "processing" | "health";
 
-export function FeatureLogicModal({
+export function FeatureTraceModal({
   open,
   featureName,
   hasTraining,
@@ -305,7 +305,7 @@ export function FeatureLogicModal({
   hasServing: boolean;
   onClose: () => void;
 }) {
-  const [tab, setTab] = useState<LogicTab>("lineage");
+  const [tab, setTab] = useState<TraceTab>("lineage");
 
   const healthSignals = useMemo(() => buildMockHealthSignals(featureName), [featureName]);
   const processingStages = useMemo(() => buildMockProcessingStages(featureName), [featureName]);
@@ -342,7 +342,7 @@ export function FeatureLogicModal({
               <Brain className="w-5 h-5 text-white" />
             </div>
             <div>
-              <h2 className="text-slate-800 text-base font-semibold tracking-tight">Feature Logic</h2>
+              <h2 className="text-slate-800 text-base font-semibold tracking-tight">Feature Trace</h2>
               <p className="text-xs text-slate-400 mt-0.5 font-mono">
                 <span className="text-teal-700 font-semibold">{featureName}</span>
                 <span className="mx-1.5 text-slate-300">·</span>

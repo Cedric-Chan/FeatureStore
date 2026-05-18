@@ -336,7 +336,7 @@
     <span class="pill"><span class="dot fs"></span>Feature Source（取数接口）</span>
     <span class="pill"><span class="dot fg"></span>Feature Group（治理 namespace）</span>
     <span class="pill"><span class="dot feat"></span>Feature（管理单元）</span>
-    <span class="pill"><span class="dot xform"></span>Transformation（demoted；归并到 FG.Feature Logic）</span>
+    <span class="pill"><span class="dot xform"></span>Transformation（demoted；归并到 FG.Feature Trace）</span>
   </div>
 </header>
 
@@ -581,7 +581,7 @@
       <li><b>Pre-compute Source 不止流式</b>：可能是 Flink 流（例 1/2）、Spark T+1 批刷新（例 5）、或<b>没有</b>（例 3/4）。术语统一为 <b>"Pre-compute Source"</b>，弃用"Stream Stage"。</li>
       <li><b>Hive 物化 feature 表双重身份</b>：既是 Source Pipeline 的 output，又是 Feature Source 的 query interface——lineage 图上是同节点两面。</li>
       <li><b>Kafka / Hive ODS 不进 FS</b>：它们只在 Source Pipeline 里出现；FG 不直接 query。</li>
-      <li><b>Transformation demote 合理</b>：5 例均不需要独立 Transformation entity——加工逻辑要么在上游 Spark/Flink（属 SP），要么在 Serving Canvas 节点（属 FG.Feature Logic）。</li>
+      <li><b>Transformation demote 合理</b>：5 例均不需要独立 Transformation entity——加工逻辑要么在上游 Spark/Flink（属 SP），要么在 Serving Canvas 节点（属 FG.Feature Trace）。</li>
       <li><b>例 3 揭示 Compute Template 价值</b>：200 features 共享一段 Python 算子——若离线 SP 和在线 Canvas 引用同一份代码，consistency 几乎免费。建议 v2 引入 Compute Template（库性质，<u>非</u>治理层级）。</li>
       <li><b>例 5 的 Pre-compute 是批刷新</b>：证明"实时 vs 离线"和"流 vs 批"是两个独立轴。</li>
       <li><b>"千级 features per FG" 主要发生在"同源批量解析"场景</b>（例 3 类）。建议 auto-generate Features + <code>exposed</code> 标签 + Feature Section 分组。</li>
