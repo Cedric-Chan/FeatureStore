@@ -279,6 +279,7 @@ const DOWNSTREAM_FEATURE_GROUPS: Record<string, string[]> = {
   "4-1": ["graph_relation_th_fg"],
 };
 
+/* [COMMENTED-OUT] Feature Logic Modal now provides full lineage at Feature level. This DataSource-level pipeline lineage is deprecated. To restore: remove this comment block.
 // ─── Lineage Types & Mock Data ────────────────────────────────────────────────
 
 interface LineageDP {
@@ -404,7 +405,10 @@ function computeVersion(subRows: SubRow[], region: string, excludeId?: string): 
   if (existing.length === 0) return "V1";
   const max = Math.max(...existing.map(s => parseInt(s.version.replace(/\D/g, "") || "0")));
   return `V${max + 1}`;
+
 }
+*/
+
 
 // ─── Test History Types & Mock Data ──────────────────────────────────────────
 
@@ -1040,7 +1044,7 @@ function PipelineHealthBadge({ subRowId }: { subRowId: string }) {
   );
 }
 
-function SubTable({ rows, onStatusChange, onEdit, onView, onCopy, onLineage }: {
+function SubTable({ rows, onStatusChange, onEdit, onView, onCopy/*, onLineage*/ }: {
   rows: SubRow[];
   onStatusChange: (subRowId: string, newStatus: SubStatus) => void;
   onEdit: (subRow: SubRow) => void;
@@ -1092,7 +1096,7 @@ function SubTable({ rows, onStatusChange, onEdit, onView, onCopy, onLineage }: {
                   <button onClick={() => onView(row)} className="text-xs text-teal-600 hover:text-teal-800 hover:underline transition-colors">View</button>
                   <button onClick={() => onEdit(row)} className="text-xs text-teal-600 hover:text-teal-800 hover:underline transition-colors">Edit</button>
                   <button onClick={() => onCopy(row)} className="text-xs text-teal-600 hover:text-teal-800 hover:underline transition-colors">Copy</button>
-                  <button onClick={() => onLineage(row)} className="text-xs text-teal-600 hover:text-teal-800">Lineage</button>
+                  {/* <button onClick={() => onLineage(row)} className="text-xs text-teal-600 hover:text-teal-800">Lineage</button> */ /* [COMMENTED-OUT] Deprecated: Feature Logic Modal provides full lineage */}
                   <ManageDropdown
                     subRow={row}
                     onEnable={() => onStatusChange(row.id, "ENABLE")}
@@ -1597,6 +1601,7 @@ function LineageModal({ open, fsRow, subRow, onClose }: {
   );
 }
 
+
 // ─── Main Page ────────────────────────────────────────────────────────────────
 
 export function FeatureSourcePage() {
@@ -1620,7 +1625,7 @@ export function FeatureSourcePage() {
   const [regionFormModal, setRegionFormModal] = useState<{ open: boolean; mode: RegionFormMode; parentRow?: FeatureRow; subRow?: SubRow }>({ open: false, mode: "add" });
   const [viewModal, setViewModal]       = useState<{ open: boolean; parentRow?: FeatureRow; subRow?: SubRow }>({ open: false });
   const [testModal, setTestModal]       = useState<{ open: boolean; row: FeatureRow | null }>({ open: false, row: null });
-  const [lineageModal, setLineageModal] = useState<{ open: boolean; parentRow?: FeatureRow; subRow?: SubRow }>({ open: false });
+  /* [COMMENTED-OUT] const [lineageModal, setLineageModal] = useState<{ open: boolean; parentRow?: FeatureRow; subRow?: SubRow }>({ open: false }); */
 
   const closeModal      = () => setModal(m => ({ ...m, open: false }));
   const closeMetaForm   = () => setMetaFormModal({ open: false, mode: "add" });
@@ -1681,7 +1686,7 @@ export function FeatureSourcePage() {
   const handleSubEdit       = (parentRow: FeatureRow, subRow: SubRow) => setRegionFormModal({ open: true, mode: "edit", parentRow, subRow });
   const handleSubView       = (parentRow: FeatureRow, subRow: SubRow) => setViewModal({ open: true, parentRow, subRow });
   const handleSubCopy       = (parentRow: FeatureRow, subRow: SubRow) => setRegionFormModal({ open: true, mode: "copy", parentRow, subRow });
-  const handleSubLineage    = (parentRow: FeatureRow, subRow: SubRow) => setLineageModal({ open: true, parentRow, subRow });
+  /* [COMMENTED-OUT] const handleSubLineage    = (parentRow: FeatureRow, subRow: SubRow) => setLineageModal({ open: true, parentRow, subRow }); */
 
   const handleMetaSubmit = (data: MetaFormData, mode: "add" | "editMeta", rowId?: string) => {
     if (mode === "add") {
@@ -1814,10 +1819,7 @@ export function FeatureSourcePage() {
         <ViewRegionModal open={viewModal.open} parentRow={viewModal.parentRow} subRow={viewModal.subRow} onClose={closeViewModal} />
       )}
       <TestModal open={testModal.open} row={testModal.row} onClose={() => setTestModal({ open: false, row: null })} />
-      {lineageModal.open && lineageModal.parentRow && lineageModal.subRow && (
-        <LineageModal open={lineageModal.open} fsRow={lineageModal.parentRow} subRow={lineageModal.subRow} onClose={() => setLineageModal({ open: false })} />
-      )}
-
+      {/* [COMMENTED-OUT] LineageModal invocation */}
       <header className="bg-white border-b border-gray-100 px-6 py-3 flex items-center gap-3 shadow-sm">
         <div className="flex items-center gap-2.5">
           <div className="w-7 h-7 rounded-lg bg-[#13c2c2] flex items-center justify-center shadow-sm">
@@ -2026,7 +2028,6 @@ export function FeatureSourcePage() {
                               onEdit={(subRow) => handleSubEdit(row, subRow)}
                               onView={(subRow) => handleSubView(row, subRow)}
                               onCopy={(subRow) => handleSubCopy(row, subRow)}
-                              onLineage={(subRow) => handleSubLineage(row, subRow)}
                             />
                           </td>
                         </tr>
