@@ -434,87 +434,264 @@ function TabBtn({
 }
 
 // ─── Tab 1: Lineage ───────────────────────────────────────────────────────────
+// ─── Split nodes into Training and Serving branches ───────────────────────────
+const TRAINING_NODES = UPSTREAM_NODES.filter(n => ["source", "hive"].includes(n.type) && n.id !== "feature");
+const SERVING_NODES  = UPSTREAM_NODES.filter(n => ["kafka", "flink", "hbase", "fs", "fg"].includes(n.type));
+const TERMINAL_NODE  = UPSTREAM_NODES.find(n => n.type === "feature");
+
+const COLUMNS = 4;
+
+function chunkNodes(nodes: typeof UPSTREAM_NODES, cols: number) {
+  const chunks: typeof UPSTREAM_NODES[] = [];
+  for (let i = 0; i < nodes.length; i += cols) {
+    chunks.push(nodes.slice(i, i + cols));
+  }
+  return chunks;
+}
+
+// Arrow between two adjacent nodes in the same row
+function FlowArrow() {
+  return (
+    <div className="flex items-center justify-center flex-shrink-0 px-0.5">
+      <svg width="20" height="12" viewBox="0 0 20 12" className="text-slate-300">
+        <path d="M0 4h14v3H0z" fill="currentColor" className="opacity-40" />
+        <path d="M14 0l5 5.5L14 11" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+      </svg>
+    </div>
+  );
+}
+
+// Vertical connector between rows
+function RowConnector({ cols }: { cols: number }) {
+  return (
+    <div className="flex items-center h-6">
+      {Array.from({ length: cols }).map((_, i) => (
+        <div key={i} className="flex-1 flex items-center justify-center">
+          {i === Math.floor(cols / 2) && (
+            <svg width="14" height="14" viewBox="0 0 14 14" className="text-slate-300">
+              <path d="M5 0v8h4V0M0 8h4v3h6V8h4M5 11l2 3 2-3" fill="none" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round" />
+            </svg>
+          )}
+        </div>
+      ))}
+    </div>
+  );
+}
+
+// ─── Tab 1: Lineage (Snake Layout) ────────────────────────────────────────────
 function LineageTabContent({ featureName }: { featureName: string }) {
   const [selectedId, setSelectedId] = useState<string | null>(null);
 
+  // Merge Training → Serving → Terminal into one flow
+  const flowNodes = [...TRAINING_NODES, ...SERVING_NODES, ...(TERMINAL_NODE ? [TERMINAL_NODE] : [])];
+  const rows = chunkNodes(flowNodes, COLUMNS);
+
+  const selectedNode = UPSTREAM_NODES.find((n) => n.id === selectedId);
+
   return (
-    <div>
-      {/* DAG visualization */}
-      <div className="px-6 pt-5 pb-3">
-        <div className="text-[11px] uppercase tracking-wider text-slate-400 mb-4 flex items-center gap-1.5">
-          <span>From raw data to fine feature</span>
-          <span className="text-slate-300">·</span>
-          <span className="text-slate-400">full pipeline topology</span>
+    <div className="px-4 sm:px-6 py-5">
+      {/* Section label */}
+      <div className="flex items-center gap-2 mb-5 text-[11px] text-slate-400 uppercase tracking-wider">
+        <GitBranch className="w-3 h-3 text-teal-500" />
+        <span>Full pipeline topology</span>
+        <span className="text-slate-300">—</span>
+        <span className="text-slate-500 normal-case tracking-normal">from raw data to fine feature</span>
+      </div>
+
+      {/* ─── DAG Grid ─── */}
+      <div className="rounded-2xl bg-gradient-to-b from-slate-50/80 to-white border border-slate-200/80 p-4 sm:p-6 shadow-sm">
+        {/* Training branch label */}
+        <div className="flex items-center gap-2 mb-2">
+          <div className="flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-emerald-50 border border-emerald-200 text-[10px] font-semibold text-emerald-700">
+            <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" /> Training Path
+          </div>
         </div>
 
-        {/* Horizontal DAG */}
-        <div className="flex items-center gap-1.5 overflow-x-auto pb-4 px-1">
-              {UPSTREAM_NODES.map((node, idx) => (
-              <motion.div key={node.id} initial={{ opacity: 0, x: -12 }} animate={{ opacity: 1, x: 0 }} transition={{ delay: idx * 0.06, duration: 0.25 }} className="flex items-center gap-1.5 flex-shrink-0">
-              <button
-                onClick={() => setSelectedId(selectedId === node.id ? null : node.id)}
-                className={`rounded-xl border px-3.5 py-2.5 text-xs transition-all text-center min-w-[100px] ${
-                  NODE_STYLE[node.type] || "border-slate-200 bg-white text-slate-600"
-                } ${
-                  selectedId === node.id
-                    ? "ring-2 ring-teal-400 ring-offset-1 scale-105 shadow-md"
-                    : "hover:shadow-sm hover:scale-[1.03]"
-                }`}
-                style={{ whiteSpace: "pre-line" }}
-              >
-                {node.label}
-              </button>
-              {idx < UPSTREAM_NODES.length - 1 && (
-                <ArrowRight className="w-3.5 h-3.5 text-slate-300 flex-shrink-0" />
+        {/* Training nodes row */}
+        <div className="grid gap-2 mb-4" style={{ gridTemplateColumns: `repeat(${COLUMNS}, minmax(0, 1fr))` }}>
+          {TRAINING_NODES.map((node, idx) => (
+            <motion.div
+              key={node.id}
+              initial={{ opacity: 0, y: 12 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ delay: idx * 0.07, duration: 0.3 }}
+              className="flex items-center gap-1 min-w-0"
+            >
+              <NodeButton node={node} selectedId={selectedId} onSelect={setSelectedId} />
+              {idx < TRAINING_NODES.length - 1 && (
+                <FlowArrow />
               )}
             </motion.div>
           ))}
+          {/* Fill remaining slots so grid aligns */}
+          {Array.from({ length: Math.max(0, COLUMNS - TRAINING_NODES.length) }).map((_, i) => (
+            <div key={`train-empty-${i}`} className="flex-1" />
+          ))}
         </div>
+
+        {/* Connector */}
+        <RowConnector cols={COLUMNS} />
+
+        {/* Serving branch label */}
+        <div className="flex items-center gap-2 mb-2 mt-1">
+          <div className="flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-violet-50 border border-violet-200 text-[10px] font-semibold text-violet-700">
+            <span className="w-1.5 h-1.5 rounded-full bg-violet-400" /> Serving Path
+          </div>
+        </div>
+
+        {/* Serving nodes */}
+        <div className="grid gap-2 mb-3" style={{ gridTemplateColumns: `repeat(${COLUMNS}, minmax(0, 1fr))` }}>
+          {SERVING_NODES.map((node, idx) => (
+            <motion.div
+              key={node.id}
+              initial={{ opacity: 0, y: 12 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ delay: idx * 0.07 + 0.25, duration: 0.3 }}
+              className="flex items-center gap-1 min-w-0"
+            >
+              <NodeButton node={node} selectedId={selectedId} onSelect={setSelectedId} />
+              {idx < SERVING_NODES.length - 1 && (
+                <FlowArrow />
+              )}
+            </motion.div>
+          ))}
+          {Array.from({ length: Math.max(0, COLUMNS - SERVING_NODES.length) }).map((_, i) => (
+            <div key={`serve-empty-${i}`} className="flex-1" />
+          ))}
+        </div>
+
+        {/* Connector */}
+        <RowConnector cols={COLUMNS} />
+
+        {/* Terminal feature node — centered */}
+        {TERMINAL_NODE && (
+          <motion.div
+            initial={{ opacity: 0, scale: 0.9 }}
+            animate={{ opacity: 1, scale: 1 }}
+            transition={{ delay: 0.55, duration: 0.35 }}
+            className="flex justify-center pt-2"
+          >
+            <div className="flex items-center gap-3">
+              <NodeButton node={TERMINAL_NODE} selectedId={selectedId} onSelect={setSelectedId} />
+              <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-teal-50 border border-teal-200 text-[10px] font-medium text-teal-700">
+                <CheckCircle2 className="w-3 h-3" />
+                Fine Feature
+              </div>
+            </div>
+          </motion.div>
+        )}
       </div>
 
       {/* Selected node detail */}
-      {selectedId && (
-        <div className="mx-6 mb-6 p-4 rounded-xl border border-teal-200 bg-teal-50/40">
-          <div className="flex items-center gap-2 mb-2">
+      {selectedNode && (
+        <motion.div
+          initial={{ opacity: 0, y: -6 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="mt-4 mx-auto max-w-2xl p-4 rounded-xl border border-teal-200 bg-teal-50/50"
+        >
+          <div className="flex items-center gap-2 mb-2 flex-wrap">
             <span className="text-xs font-mono text-teal-700 font-semibold">
-              {UPSTREAM_NODES.find((n) => n.id === selectedId)?.label}
+              {selectedNode.label}
             </span>
-            <span className="px-1.5 py-0.5 rounded text-[10px] bg-teal-100 text-teal-700 border border-teal-200 font-medium">
-              {UPSTREAM_NODES.find((n) => n.id === selectedId)?.type}
+            <span className={`px-1.5 py-0.5 rounded text-[10px] font-medium border ${NODE_STYLE[selectedNode.type] ? '' : 'bg-teal-100 text-teal-700 border-teal-200'}`}
+              style={NODE_STYLE[selectedNode.type] ? undefined : {}}>
+              {selectedNode.type}
             </span>
+            {selectedNode.type === "source" || selectedNode.type === "hive" ? (
+              <span className="px-1.5 py-0.5 rounded text-[10px] bg-emerald-50 text-emerald-700 border border-emerald-200">Training</span>
+            ) : selectedNode.type !== "feature" ? (
+              <span className="px-1.5 py-0.5 rounded text-[10px] bg-violet-50 text-violet-700 border border-violet-200">Serving</span>
+            ) : null}
           </div>
           <p className="text-[11px] text-slate-500 leading-relaxed">
             {selectedId === "feature"
               ? `Terminal fine feature. Consumed by downstream models and services via FeatureGroup. Both Training (offline Hive) and Serving (online HBase → Groovy) availability confirmed.`
               : selectedId === "fg"
                 ? `Platform-internal node. FeatureSource ${featureName} → Groovy Transformer V1 → Fine Feature ${featureName}. Orchestrated by FeatureGroup serving canvas.`
-                : `External pipeline node managed by Unity Catalog. Metadata synced T+1. Click through to DataVerse for full task details and DQC reports.`}
+                : selectedNode.type === "source" || selectedNode.type === "hive"
+                  ? `Training path pipeline node. Managed by Unity Catalog. T+1 sync. Click through to DataVerse for full task details and DQC reports.`
+                  : `Serving path pipeline node. Managed by Unity Catalog. T+1 sync. Click through to DataVerse for full task details and DQC reports.`}
           </p>
-        </div>
+        </motion.div>
       )}
 
       {/* Legend */}
-      <div className="mx-6 mb-5 flex flex-wrap gap-2 text-[10px]">
-        <span className="flex items-center gap-1 text-slate-400">
-          <span className="w-2.5 h-2.5 rounded border border-slate-300 bg-slate-50" /> External source
+      <div className="mt-5 flex flex-wrap gap-x-4 gap-y-1.5 text-[10px] px-1">
+        <span className="flex items-center gap-1.5 text-slate-400">
+          <span className="w-2 h-2 rounded-sm border border-slate-300 bg-slate-50" /> External source
         </span>
-        <span className="flex items-center gap-1 text-slate-400">
-          <span className="w-2.5 h-2.5 rounded border border-amber-300 bg-amber-50" /> Hive table
+        <span className="flex items-center gap-1.5 text-slate-400">
+          <span className="w-2 h-2 rounded-sm bg-emerald-100 border border-emerald-200" /> Training (Hive)
         </span>
-        <span className="flex items-center gap-1 text-slate-400">
-          <span className="w-2.5 h-2.5 rounded border border-violet-300 bg-violet-50" /> Kafka topic
+        <span className="flex items-center gap-1.5 text-slate-400">
+          <span className="w-2 h-2 rounded-sm bg-violet-100 border border-violet-200" /> Serving (Kafka/Flink/HBase)
         </span>
-        <span className="flex items-center gap-1 text-slate-400">
-          <span className="w-2.5 h-2.5 rounded border border-teal-300 bg-teal-50" /> HBase/flink
-        </span>
-        <span className="flex items-center gap-1 text-slate-400">
-          <span className="w-2.5 h-2.5 rounded border-2 border-teal-600 bg-teal-600" /> Fine Feature
+        <span className="flex items-center gap-1.5 text-slate-400">
+          <span className="w-2 h-2 rounded-sm bg-teal-600 border border-teal-600" /> Fine Feature
         </span>
       </div>
     </div>
   );
 }
 
+// ─── Node Button (extracted for reuse) ────────────────────────────────────────
+function NodeButton({
+  node,
+  selectedId,
+  onSelect,
+}: {
+  node: (typeof UPSTREAM_NODES)[number];
+  selectedId: string | null;
+  onSelect: (id: string | null) => void;
+}) {
+  const isSel = selectedId === node.id;
+  const isTerminal = node.type === "feature";
+  const isTraining = node.type === "source" || node.type === "hive";
+  const isServing = node.type === "kafka" || node.type === "flink" || node.type === "hbase" || node.type === "fs" || node.type === "fg";
+
+  let borderColor = "border-slate-200";
+  let bgColor = "bg-white";
+  let textColor = "text-slate-700";
+  let hoverBg = "hover:bg-slate-50";
+  let dotColor = "";
+
+  if (isTerminal) {
+    borderColor = "border-teal-600";
+    bgColor = "bg-teal-600";
+    textColor = "text-white";
+    hoverBg = "hover:bg-teal-700";
+  } else if (isTraining) {
+    borderColor = "border-emerald-200";
+    bgColor = "bg-emerald-50/60";
+    textColor = "text-emerald-800";
+    hoverBg = "hover:bg-emerald-100/80";
+    dotColor = "bg-emerald-400";
+  } else if (isServing) {
+    borderColor = "border-violet-200";
+    bgColor = "bg-violet-50/60";
+    textColor = "text-violet-800";
+    hoverBg = "hover:bg-violet-100/80";
+    dotColor = "bg-violet-400";
+  }
+
+  return (
+    <button
+      onClick={() => onSelect(isSel ? null : node.id)}
+      className={`relative rounded-xl border px-3 py-2.5 text-xs transition-all text-center w-full ${
+        bgColor} ${textColor} ${borderColor} ${hoverBg} ${
+        isSel
+          ? "ring-2 ring-teal-400 ring-offset-1 scale-[1.04] shadow-md"
+          : "hover:shadow-sm hover:scale-[1.02]"
+      }`}
+      style={{ whiteSpace: "pre-line", wordBreak: "break-word" }}
+    >
+      {dotColor && (
+        <span className={`absolute top-1.5 left-1.5 w-1.5 h-1.5 rounded-full ${dotColor}`} />
+      )}
+      <span className={dotColor ? "ml-1" : ""}>{node.label}</span>
+    </button>
+  );
+}
 // ─── Tab 2: Processing ────────────────────────────────────────────────────────
 function ProcessingTabContent({
   stages,
