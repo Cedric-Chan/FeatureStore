@@ -27,6 +27,7 @@ interface HealthSignal {
   id: string;
   stage: string;
   stageType: "ods" | "dwd" | "ads" | "kafka" | "hbase" | "fg";
+  path: "training" | "serving";
   signalType: "latency" | "drift" | "freshness" | "ok";
   severity: "critical" | "warning" | "ok";
   summary: string;
@@ -58,42 +59,42 @@ function buildMockHealthSignals(featureName: string): HealthSignal[] {
   return [
     {
       id: "h-1", stage: "binlog.user_credit_events → ods.user_credit_events",
-      stageType: "ods", signalType: "ok", severity: "ok",
+      stageType: "ods", path: "training", signalType: "ok", severity: "ok",
       summary: "ODS ingestion on track",
       detail: "ods.user_credit_events daily partition dt=2026-05-14 completed at 03:22 UTC. 98.3M rows loaded, no schema changes detected.",
       value: "2026-05-14 03:22", baseline: "daily before 04:00", updatedAt: now,
     },
     {
       id: "h-2", stage: "ods.user_credit_events → dwd.user_credit_30d_features",
-      stageType: "dwd", signalType: "latency", severity: "warning",
+      stageType: "dwd", path: "training", signalType: "latency", severity: "warning",
       summary: "DWD aggregation delayed by 1.5h",
       detail: "dwd.user_credit_30d_features dt=2026-05-14 completed at 05:48. Typical completion is 04:15 ± 30 min. Spark job queued longer than usual due to cluster contention.",
       value: "05:48 (+1.5h)", baseline: "~04:15", updatedAt: now,
     },
     {
       id: "h-3", stage: "dwd.user_credit_30d_features → risk_db.user_risk_score_ods",
-      stageType: "ads", signalType: "drift", severity: "warning",
+      stageType: "ads", path: "training", signalType: "drift", severity: "warning",
       summary: "risk_score distribution shift detected",
       detail: `Column risk_score mean shifted from 612.3 (7d avg) to 688.7 (+12.5%). P95 increased from 921 to 952. Distribution is right-skewed; possible underlying event pattern change.`,
       value: "+12.5%", baseline: "7d avg 612.3", updatedAt: now,
     },
     {
       id: "h-4", stage: "kafka.credit_events → stream.credit_events_enriched",
-      stageType: "kafka", signalType: "ok", severity: "ok",
+      stageType: "kafka", path: "serving", signalType: "ok", severity: "ok",
       summary: "Kafka stream healthy",
       detail: "Topic credit_events: consumer lag 120ms, throughput 8.4K msg/s. No message loss or duplication detected in last 24h.",
       value: "lag 120ms", baseline: "< 500ms", updatedAt: now,
     },
     {
       id: "h-5", stage: "stream → hbase.user_risk:cf:risk_score_raw",
-      stageType: "hbase", signalType: "freshness", severity: "ok",
+      stageType: "hbase", path: "serving", signalType: "freshness", severity: "ok",
       summary: "HBase write freshness OK",
       detail: "hbase.user_risk table: latest write at 08:29:45 UTC. 99.7% of writes within 2s of Kafka event time. No TTL eviction spikes.",
       value: "2s behind", baseline: "< 5s", updatedAt: now,
     },
     {
       id: "h-6", stage: `FG Serving Canvas → feature: ${featureName}`,
-      stageType: "fg", signalType: "ok", severity: "ok",
+      stageType: "fg", path: "serving", signalType: "ok", severity: "ok",
       summary: "Feature serving latency normal",
       detail: `FG serving p99 = 182ms (HBase scan 96ms + Groovy transform 86ms). Call volume 12.3K/min. Zero errors in last hour.`,
       value: "p99 182ms", baseline: "< 500ms", updatedAt: now,
@@ -397,7 +398,7 @@ export function FeatureLogicModal({
             <ProcessingTabContent stages={processingStages} featureName={featureName} />
           )}
           {tab === "health" && (
-            <HealthTabContent signals={healthSignals} featureName={featureName} />
+            <HealthTabContent signals={healthSignals} featureName={featureName} hasTraining={hasTraining} hasServing={hasServing} />
           )}
           </motion.div>
         </AnimatePresence>
@@ -968,52 +969,90 @@ function ProcessingStageCard({
   );
 }
 
+// ─── Health path colors ────────────────────────────────────────────────────────
+const HEALTH_PATH: Record<string, {
+  label: string; icon: React.ReactNode;
+  accentBg: string; accentBorder: string; accentText: string; emptyIcon: React.ReactNode; emptyText: string;
+}> = {
+  training: {
+    label: "Training", icon: <Layers className="w-3 h-3" />,
+    accentBg: "bg-emerald-50/60", accentBorder: "border-emerald-200", accentText: "text-emerald-700",
+    emptyIcon: <Activity className="w-8 h-8 text-emerald-300" />,
+    emptyText: "No Training health signals",
+  },
+  serving: {
+    label: "Serving", icon: <Zap className="w-3 h-3" />,
+    accentBg: "bg-violet-50/60", accentBorder: "border-violet-200", accentText: "text-violet-700",
+    emptyIcon: <Activity className="w-8 h-8 text-violet-300" />,
+    emptyText: "No Serving health signals",
+  },
+};
+
 function HealthTabContent({
   signals,
   featureName,
+  hasTraining,
+  hasServing,
 }: {
   signals: HealthSignal[];
   featureName: string;
+  hasTraining: boolean;
+  hasServing: boolean;
 }) {
   const [filterSeverity, setFilterSeverity] = useState<"all" | "warning" | "critical">("all");
 
-  const filtered = useMemo(() => {
-    if (filterSeverity === "all") return signals;
-    if (filterSeverity === "warning") return signals.filter((s) => s.severity === "warning" || s.severity === "critical");
-    return signals.filter((s) => s.severity === "critical");
-  }, [signals, filterSeverity]);
+  const trainingSignals = signals.filter((s) => s.path === "training");
+  const servingSignals  = signals.filter((s) => s.path === "serving");
 
-  const okCount = signals.filter((s) => s.severity === "ok").length;
-  const warnCount = signals.filter((s) => s.severity === "warning").length;
-  const critCount = signals.filter((s) => s.severity === "critical").length;
+  const filterFn = (s: HealthSignal) => {
+    if (filterSeverity === "all") return true;
+    if (filterSeverity === "warning") return s.severity === "warning" || s.severity === "critical";
+    return s.severity === "critical";
+  };
+
+  const filteredTraining = trainingSignals.filter(filterFn);
+  const filteredServing  = servingSignals.filter(filterFn);
+
+  const tOk = trainingSignals.filter((s) => s.severity === "ok").length;
+  const tWarn = trainingSignals.filter((s) => s.severity === "warning").length;
+  const tCrit = trainingSignals.filter((s) => s.severity === "critical").length;
+  const sOk = servingSignals.filter((s) => s.severity === "ok").length;
+  const sWarn = servingSignals.filter((s) => s.severity === "warning").length;
+  const sCrit = servingSignals.filter((s) => s.severity === "critical").length;
+
+  const summaryOk = tOk + sOk;
+  const summaryWarn = tWarn + sWarn;
+  const summaryCrit = tCrit + sCrit;
 
   return (
-    <div className="px-6 py-5">
+    <div className="px-4 sm:px-6 py-5 space-y-5">
+      {/* Section label */}
+      <div className="flex items-center gap-2 text-[11px] text-slate-400 uppercase tracking-wider">
+        <Activity className="w-3 h-3 text-teal-500" />
+        <span>Upstream pipeline health for</span>
+        <span className="font-mono text-teal-600 normal-case tracking-normal">{featureName}</span>
+      </div>
+
       {/* Summary bar */}
-      <div className="flex items-center gap-3 mb-5 p-3 rounded-xl bg-slate-50 border border-slate-200">
+      <div className="flex items-center gap-3 p-3 rounded-xl bg-slate-50 border border-slate-200 flex-wrap">
         <div className="flex items-center gap-2">
-          <div className="w-8 h-8 rounded-lg bg-emerald-100 flex items-center justify-center">
-            <Activity className="w-4 h-4 text-emerald-600" />
+          <div className="w-8 h-8 rounded-lg bg-teal-100 flex items-center justify-center">
+            <Activity className="w-4 h-4 text-teal-600" />
           </div>
-          <div>
-            <div className="text-xs text-slate-500">
-              <span className="font-semibold text-slate-700">{featureName}</span> pipeline health
-            </div>
-            <div className="text-[10px] text-slate-400 flex items-center gap-2 mt-0.5">
+          <div className="text-[10px] text-slate-400 flex items-center gap-2">
+            <span className="flex items-center gap-1">
+              <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" /> {summaryOk} OK
+            </span>
+            {summaryWarn > 0 && (
               <span className="flex items-center gap-1">
-                <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" /> {okCount} OK
+                <span className="w-1.5 h-1.5 rounded-full bg-amber-400" /> {summaryWarn} warning
               </span>
-              {warnCount > 0 && (
-                <span className="flex items-center gap-1">
-                  <span className="w-1.5 h-1.5 rounded-full bg-amber-400" /> {warnCount} warning
-                </span>
-              )}
-              {critCount > 0 && (
-                <span className="flex items-center gap-1">
-                  <span className="w-1.5 h-1.5 rounded-full bg-red-400" /> {critCount} critical
-                </span>
-              )}
-            </div>
+            )}
+            {summaryCrit > 0 && (
+              <span className="flex items-center gap-1">
+                <span className="w-1.5 h-1.5 rounded-full bg-red-400" /> {summaryCrit} critical
+              </span>
+            )}
           </div>
         </div>
         <div className="flex items-center gap-1 ml-auto">
@@ -1033,58 +1072,91 @@ function HealthTabContent({
         </div>
       </div>
 
-      {/* Signal cards */}
-      <div className="space-y-3">
-        {filtered.map((signal) => {
-          const sev = SEVERITY_STYLE[signal.severity];
-          return (
-            <div
-              key={signal.id}
-              className={`rounded-xl border p-4 transition-shadow hover:shadow-sm ${
-                signal.severity === "critical"
-                  ? "border-red-200 bg-red-50/30"
-                  : signal.severity === "warning"
-                    ? "border-amber-200 bg-amber-50/20"
-                    : "border-slate-200 bg-white"
-              }`}
-            >
-              <div className="flex items-start justify-between gap-3">
-                <div className="flex items-start gap-3 min-w-0">
-                  <span className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-medium border ${sev.cls} flex-shrink-0`}>
-                    {sev.icon}
-                    {signal.signalType === "latency" ? "Latency" : signal.signalType === "drift" ? "Drift" : signal.signalType === "freshness" ? "Freshness" : "OK"}
-                  </span>
-                  <div className="min-w-0">
-                    <div className="text-[12px] font-semibold text-slate-800">
-                      {signal.summary}
+      {/* Two parallel columns */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 items-start">
+        <HealthPathColumn path="training" signals={filteredTraining} hasPath={hasTraining} />
+        <HealthPathColumn path="serving"  signals={filteredServing}  hasPath={hasServing}  />
+      </div>
+    </div>
+  );
+}
+
+function HealthPathColumn({
+  path,
+  signals,
+  hasPath,
+}: {
+  path: "training" | "serving";
+  signals: HealthSignal[];
+  hasPath: boolean;
+}) {
+  const cfg = HEALTH_PATH[path];
+  if (!hasPath && signals.length === 0) return null;
+
+  return (
+    <div className="space-y-3">
+      <div className={`rounded-xl border ${cfg.accentBorder} ${cfg.accentBg} px-4 py-3`}>
+        <div className="flex items-center gap-2">
+          <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full ${cfg.accentBg} ${cfg.accentBorder} border ${cfg.accentText} text-[11px] font-semibold`}>
+            <span className={`w-1.5 h-1.5 rounded-full ${path === "training" ? "bg-emerald-400" : "bg-violet-400"}`} />
+            {cfg.label} Health
+          </span>
+        </div>
+        <p className="text-[10px] text-slate-500 leading-relaxed mt-1">
+          {path === "training"
+            ? "Hive ODS/DWD/ADS pipeline · latency, drift, freshness"
+            : "Kafka/Flink/HBase/FG pipeline · latency, freshness, serving"}
+        </p>
+      </div>
+
+      {signals.length > 0 ? (
+        <div className="space-y-2.5">
+          {signals.map((signal) => {
+            const sev = SEVERITY_STYLE[signal.severity];
+            return (
+              <motion.div
+                key={signal.id}
+                initial={{ opacity: 0, y: 6 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ duration: 0.2 }}
+                className={`rounded-xl border p-3.5 transition-shadow hover:shadow-sm ${
+                  signal.severity === "critical"
+                    ? "border-red-200 bg-red-50/30"
+                    : signal.severity === "warning"
+                      ? "border-amber-200 bg-amber-50/20"
+                      : "border-slate-200 bg-white"
+                }`}
+              >
+                <div className="flex items-start justify-between gap-2">
+                  <div className="flex items-start gap-2.5 min-w-0">
+                    <span className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-medium border ${sev.cls} flex-shrink-0`}>
+                      {sev.icon}
+                      {signal.signalType === "latency" ? "Latency" : signal.signalType === "drift" ? "Drift" : signal.signalType === "freshness" ? "Freshness" : "OK"}
+                    </span>
+                    <div className="min-w-0">
+                      <div className="text-[12px] font-semibold text-slate-800">{signal.summary}</div>
+                      <div className="text-[10px] text-slate-500 font-mono mt-0.5 truncate" title={signal.stage}>{signal.stage}</div>
+                      <p className="text-[11px] text-slate-500 mt-1 leading-relaxed max-w-2xl">{signal.detail}</p>
                     </div>
-                    <div className="text-[10px] text-slate-500 font-mono mt-0.5 truncate" title={signal.stage}>
-                      {signal.stage}
-                    </div>
-                    <p className="text-[11px] text-slate-500 mt-1.5 leading-relaxed max-w-2xl">
-                      {signal.detail}
-                    </p>
+                  </div>
+                  <div className="flex flex-col items-end gap-0.5 flex-shrink-0">
+                    <span className={`text-[12px] font-mono font-bold ${
+                      signal.severity === "critical" ? "text-red-600" : signal.severity === "warning" ? "text-amber-600" : "text-emerald-600"
+                    }`}>{signal.value}</span>
+                    <span className="text-[9px] text-slate-400">baseline: {signal.baseline}</span>
+                    <span className="text-[9px] text-slate-400 flex items-center gap-1"><Clock className="w-2.5 h-2.5" />{signal.updatedAt}</span>
                   </div>
                 </div>
-                <div className="flex flex-col items-end gap-1 flex-shrink-0">
-                  <span className={`text-[12px] font-mono font-bold ${
-                    signal.severity === "critical" ? "text-red-600" : signal.severity === "warning" ? "text-amber-600" : "text-emerald-600"
-                  }`}>
-                    {signal.value}
-                  </span>
-                  <span className="text-[9px] text-slate-400">
-                    baseline: {signal.baseline}
-                  </span>
-                  <span className="text-[9px] text-slate-400 flex items-center gap-1">
-                    <Clock className="w-2.5 h-2.5" />
-                    {signal.updatedAt}
-                  </span>
-                </div>
-              </div>
-            </div>
-          );
-        })}
-      </div>
+              </motion.div>
+            );
+          })}
+        </div>
+      ) : (
+        <div className={`rounded-xl border border-dashed ${cfg.accentBorder} ${cfg.accentBg} flex flex-col items-center justify-center py-10 px-4 text-center`}>
+          {cfg.emptyIcon}
+          <p className="text-xs text-slate-400 mt-2">{cfg.emptyText}</p>
+        </div>
+      )}
     </div>
   );
 }
