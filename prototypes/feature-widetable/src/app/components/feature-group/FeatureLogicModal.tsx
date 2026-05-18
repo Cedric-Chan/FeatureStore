@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { motion, AnimatePresence } from "motion/react";
 import {
   GitBranch,
   X,
@@ -20,11 +21,6 @@ import {
   Filter,
   ArrowUpDown,
 } from "lucide-react";
-import {
-  FeatureLineageNode,
-  FeatureLineageChain,
-  FeatureLineagePayload,
-} from "./FeatureLineageModal";
 
 // ─── Health signal types ──────────────────────────────────────────────────────
 interface HealthSignal {
@@ -362,7 +358,8 @@ export function FeatureLogicModal({
           {tab === "health" && (
             <HealthTabContent signals={healthSignals} featureName={featureName} />
           )}
-        </div>
+          </motion.div>
+        </AnimatePresence>
 
         {/* ─── Footer ─── */}
         <div className="px-6 py-3 border-t border-slate-100 bg-slate-50/50 text-[11px] text-slate-500 flex items-center justify-between flex-shrink-0">
