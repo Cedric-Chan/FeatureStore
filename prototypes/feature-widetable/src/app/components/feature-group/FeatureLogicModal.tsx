@@ -101,12 +101,13 @@ function buildMockHealthSignals(featureName: string): HealthSignal[] {
   ];
 }
 
+
 function buildMockProcessingStages(featureName: string): ProcessingStage[] {
   return [
     {
-      id: "p-1", order: 1,
+      id: "p-t-1", order: 1,
       taskName: "ods_user_credit_events",
-      path: "training", stageLabel: "Stage 1 — Raw Ingestion",
+      path: "training", stageLabel: "Raw Ingestion",
       inputAssets: ["binlog.user_credit_events"],
       outputAsset: "ods.user_credit_events",
       language: "SQL (Hive ETL)",
@@ -122,9 +123,9 @@ WHERE dt = '\${dt}';`,
       dataverseUrl: "#",
     },
     {
-      id: "p-2", order: 2,
+      id: "p-t-2", order: 2,
       taskName: "dwd_user_credit_30d_agg",
-      path: "training", stageLabel: "Stage 2 — 30-Day Aggregation",
+      path: "training", stageLabel: "30-Day Aggregation",
       inputAssets: ["ods.user_credit_events"],
       outputAsset: "dwd.user_credit_30d_features",
       language: "SQL (Spark Batch)",
@@ -140,9 +141,9 @@ GROUP BY user_id;`,
       dataverseUrl: "#",
     },
     {
-      id: "p-3", order: 3,
+      id: "p-t-3", order: 3,
       taskName: "ads_user_risk_score_ods",
-      path: "training", stageLabel: "Stage 3 — Final Scoring",
+      path: "training", stageLabel: "Final Scoring",
       inputAssets: ["dwd.user_credit_30d_features", "dim.user_meta"],
       outputAsset: `risk_db.user_risk_score_ods → ${featureName}`,
       language: "SQL (Spark Batch)",
@@ -161,12 +162,51 @@ WHERE dt = '\${dt}';`,
       dataverseUrl: "#",
     },
     {
-      id: "p-4", order: 4,
+      id: "p-s-1", order: 1,
+      taskName: "credit_events_kafka_source",
+      path: "serving", stageLabel: "Kafka Ingest",
+      inputAssets: ["kafka.credit_events"],
+      outputAsset: "stream.credit_events_enriched",
+      language: "Flink SQL",
+      description: "从 Kafka topic 消费实时信用事件流，定义 Watermark 和 Schema，作为 Flink 流处理的源表。",
+      reviewStatus: "AI-KAG",
+      snippet: `CREATE TABLE credit_events_src (
+  user_id STRING,
+  event_type STRING,
+  amount DECIMAL(18,2),
+  event_ts TIMESTAMP(3),
+  WATERMARK FOR event_ts AS event_ts - INTERVAL '5' SECOND
+) WITH ('connector'='kafka', 'topic'='credit_events', ...);`,
+      dataverseUrl: "#",
+    },
+    {
+      id: "p-s-2", order: 2,
+      taskName: "credit_risk_score_realtime",
+      path: "serving", stageLabel: "Flink Real-time Compute",
+      inputAssets: ["stream.credit_events_enriched"],
+      outputAsset: "hbase.user_risk:cf:risk_score_raw",
+      language: "Flink SQL",
+      description: "在 Flink 流上实时计算风险分，通过 TUMBLE 窗口聚合后写入 HBase，作为 FeatureSource 的在线存储层。",
+      reviewStatus: "AI-KAG",
+      snippet: `INSERT INTO user_risk_hbase_sink
+SELECT user_id,
+       LEAST(999,
+             GREATEST(300,
+                ROUND(600
+                  + 1.5 * repay_cnt_30d_rt
+                  - 0.8 * overdue_amt_30d_rt/100)
+             )) AS risk_score_raw
+FROM TABLE(TUMBLE(TABLE credit_events_src,
+     DESCRIPTOR(event_ts), INTERVAL '1' MINUTE));`,
+      dataverseUrl: "#",
+    },
+    {
+      id: "p-s-3", order: 3,
       taskName: "FG Serving Canvas · credit_hbase_user_risk · ID · V1",
-      path: "serving", stageLabel: "Stage 4 — Online Serving",
+      path: "serving", stageLabel: "FG Serving Canvas",
       inputAssets: ["hbase.user_risk:cf:risk_score_raw (via FeatureSource)"],
       outputAsset: `feature: ${featureName}`,
-      language: "Groovy (FG Serving Canvas)",
+      language: "Groovy",
       description: `在线 Serving 阶段：通过 HBase FeatureSource 扫描获取 raw value，经 Groovy Transformer 进行黑名单过滤和分数裁剪，产出最终 online Fine Feature。`,
       reviewStatus: "AI-KAG",
       snippet: `// FG Serving Canvas — Groovy region script (ID · V1)
@@ -183,7 +223,6 @@ if (raw == null || raw.risk_score_raw == null) {
 
 def score = raw.risk_score_raw as int
 
-// Filter: treat blacklisted users as highest risk
 if (input.is_blacklisted) {
     output.risk_score = 999
     return
@@ -193,6 +232,7 @@ output.risk_score = Math.max(300, Math.min(900, score))`,
     },
   ];
 }
+
 
 // ─── Severity config ──────────────────────────────────────────────────────────
 const SEVERITY_STYLE: Record<string, { cls: string; icon: React.ReactNode }> = {
@@ -693,52 +733,49 @@ function NodeButton({
     </button>
   );
 }
+
 // ─── Tab 2: Processing ────────────────────────────────────────────────────────
-// ─── Split stages into Training and Serving sections ──────────────────────────
-const SECTION_CONFIG: Record<string, {
+
+const PATH_CONFIG: Record<string, {
   label: string;
+  sublabel: string;
   icon: React.ReactNode;
-  accentBg: string;
-  accentBorder: string;
-  accentText: string;
-  stepBg: string;
-  stepText: string;
-  cardBorder: string;
-  cardHover: string;
+  accentBg: string; accentBorder: string; accentText: string;
+  stepBg: string; stepText: string;
+  cardBorder: string; cardHover: string;
   headerBg: string;
-  expandedBorder: string;
-  expandedBg: string;
+  expandedBorder: string; expandedBg: string;
   codeBar: string;
+  emptyIcon: React.ReactNode;
+  emptyText: string;
 }> = {
   training: {
     label: "Training Path",
+    sublabel: "ODS binlog → Spark SQL → ADS · consumed by Batch Training API",
     icon: <Layers className="w-3.5 h-3.5" />,
-    accentBg: "bg-emerald-50/60",
-    accentBorder: "border-emerald-200",
-    accentText: "text-emerald-700",
-    stepBg: "bg-emerald-100",
-    stepText: "text-emerald-700",
+    accentBg: "bg-emerald-50/60", accentBorder: "border-emerald-200", accentText: "text-emerald-700",
+    stepBg: "bg-emerald-100", stepText: "text-emerald-700",
     cardBorder: "border-l-[3px] border-l-emerald-400 border-slate-200",
     cardHover: "hover:border-l-emerald-500 hover:shadow-sm",
     headerBg: "bg-emerald-50/30",
-    expandedBorder: "border-emerald-200",
-    expandedBg: "bg-emerald-50/20",
+    expandedBorder: "border-emerald-200", expandedBg: "bg-emerald-50/20",
     codeBar: "bg-emerald-900",
+    emptyIcon: <Layers className="w-8 h-8 text-emerald-300" />,
+    emptyText: "No Training pipeline for this feature",
   },
   serving: {
     label: "Serving Path",
+    sublabel: "Kafka → Flink SQL → HBase → FG Canvas · consumed by Serving API",
     icon: <Zap className="w-3.5 h-3.5" />,
-    accentBg: "bg-violet-50/60",
-    accentBorder: "border-violet-200",
-    accentText: "text-violet-700",
-    stepBg: "bg-violet-100",
-    stepText: "text-violet-700",
+    accentBg: "bg-violet-50/60", accentBorder: "border-violet-200", accentText: "text-violet-700",
+    stepBg: "bg-violet-100", stepText: "text-violet-700",
     cardBorder: "border-l-[3px] border-l-violet-400 border-slate-200",
     cardHover: "hover:border-l-violet-500 hover:shadow-sm",
     headerBg: "bg-violet-50/30",
-    expandedBorder: "border-violet-200",
-    expandedBg: "bg-violet-50/20",
+    expandedBorder: "border-violet-200", expandedBg: "bg-violet-50/20",
     codeBar: "bg-violet-900",
+    emptyIcon: <Zap className="w-8 h-8 text-violet-300" />,
+    emptyText: "No Serving pipeline for this feature",
   },
 };
 
@@ -753,83 +790,70 @@ function ProcessingTabContent({
   const servingStages  = stages.filter((s) => s.path === "serving");
 
   return (
-    <div className="px-4 sm:px-6 py-5 space-y-6">
-      {/* Section label */}
-      <div className="flex items-center gap-2 text-[11px] text-slate-400 uppercase tracking-wider mb-1">
+    <div className="px-4 sm:px-6 py-5 space-y-5">
+      <div className="flex items-center gap-2 text-[11px] text-slate-400 uppercase tracking-wider">
         <FileText className="w-3 h-3 text-teal-500" />
         <span>AI-distilled processing logic for</span>
         <span className="font-mono text-teal-600 normal-case tracking-normal">{featureName}</span>
       </div>
 
-      {/* ─── Training Path Section ─── */}
-      {trainingStages.length > 0 && (
-        <div className="space-y-3">
-          {/* Section header */}
-          <div className="flex items-center gap-2">
-            <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-emerald-50 border border-emerald-200 text-[11px] font-semibold text-emerald-700">
-              <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
-              Training Path
-            </div>
-            <span className="text-[10px] text-slate-400">
-              ODS binlog → Spark SQL → ADS result table · offline batch
-            </span>
-          </div>
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 items-start">
+        <ProcessingPathColumn
+          path="training"
+          stages={trainingStages}
+          featureName={featureName}
+        />
+        <ProcessingPathColumn
+          path="serving"
+          stages={servingStages}
+          featureName={featureName}
+        />
+      </div>
+    </div>
+  );
+}
 
-          {/* Training stages */}
-          {trainingStages.map((stage) => (
-            <ProcessingStageCard
-              key={stage.id}
-              stage={stage}
-              section="training"
-            />
-          ))}
+function ProcessingPathColumn({
+  path,
+  stages,
+  featureName,
+}: {
+  path: "training" | "serving";
+  stages: ProcessingStage[];
+  featureName: string;
+}) {
+  const cfg = PATH_CONFIG[path];
+
+  return (
+    <div className="space-y-3">
+      <div className={`rounded-xl border ${cfg.accentBorder} ${cfg.accentBg} px-4 py-3`}>
+        <div className="flex items-center gap-2 mb-1">
+          <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full ${cfg.accentBg} ${cfg.accentBorder} border ${cfg.accentText} text-[11px] font-semibold`}>
+            <span className={`w-1.5 h-1.5 rounded-full ${path === "training" ? "bg-emerald-400" : "bg-violet-400"}`} />
+            {cfg.label}
+          </span>
         </div>
-      )}
+        <p className="text-[10px] text-slate-500 leading-relaxed">{cfg.sublabel}</p>
+      </div>
 
-      {/* ─── Path Connector ─── */}
-      {trainingStages.length > 0 && servingStages.length > 0 && (
-        <div className="flex items-center justify-center gap-4 py-1">
-          <div className="h-px flex-1 bg-gradient-to-r from-emerald-200 to-slate-200" />
-          <div className="flex items-center gap-1 px-3 py-1 rounded-full bg-slate-100 border border-slate-200 text-[10px] text-slate-500">
-            <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
-            offline
-            <ArrowRight className="w-3 h-3 text-slate-400" />
-            <span className="w-1.5 h-1.5 rounded-full bg-violet-400" />
-            online
-          </div>
-          <div className="h-px flex-1 bg-gradient-to-l from-violet-200 to-slate-200" />
-        </div>
-      )}
-
-      {/* ─── Serving Path Section ─── */}
-      {servingStages.length > 0 && (
-        <div className="space-y-3">
-          {/* Section header */}
-          <div className="flex items-center gap-2">
-            <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-violet-50 border border-violet-200 text-[11px] font-semibold text-violet-700">
-              <span className="w-1.5 h-1.5 rounded-full bg-violet-400" />
-              Serving Path
-            </div>
-            <span className="text-[10px] text-slate-400">
-              Kafka → Flink SQL → HBase → FG Serving Canvas · online real-time
-            </span>
-          </div>
-
-          {/* Serving stages */}
-          {servingStages.map((stage) => (
-            <ProcessingStageCard
-              key={stage.id}
-              stage={stage}
-              section="serving"
-            />
-          ))}
+      {stages.length > 0 ? (
+        stages.map((stage) => (
+          <ProcessingStageCard
+            key={stage.id}
+            stage={stage}
+            section={path}
+          />
+        ))
+      ) : (
+        <div className={`rounded-xl border border-dashed ${cfg.accentBorder} ${cfg.accentBg} flex flex-col items-center justify-center py-10 px-4 text-center`}>
+          {cfg.emptyIcon}
+          <p className="text-xs text-slate-400 mt-2">{cfg.emptyText}</p>
         </div>
       )}
     </div>
   );
 }
 
-// ─── Single Processing Stage Card ─────────────────────────────────────────────
 function ProcessingStageCard({
   stage,
   section,
@@ -838,21 +862,19 @@ function ProcessingStageCard({
   section: "training" | "serving";
 }) {
   const [isExpanded, setExpanded] = useState(false);
-  const cfg = SECTION_CONFIG[section];
-  const review = REVIEW_STYLE[stage.reviewStatus];
+  const cfg = PATH_CONFIG[section];
 
   return (
     <motion.div
       layout
       className={`rounded-xl border overflow-hidden transition-all ${cfg.cardBorder} ${cfg.cardHover} bg-white`}
     >
-      {/* Stage header — clickable */}
       <button
         onClick={() => setExpanded(!isExpanded)}
         className={`w-full flex items-start justify-between px-4 py-3 text-left transition-colors ${cfg.headerBg} hover:bg-opacity-80`}
       >
         <div className="flex items-start gap-3 min-w-0">
-          <span className={`inline-flex items-center justify-center w-7 h-7 rounded-lg ${cfg.stepBg} ${cfg.stepText} text-xs font-bold flex-shrink-0 mt-0.5`}>
+          <span className={`inline-flex items-center justify-center w-6 h-6 rounded-lg ${cfg.stepBg} ${cfg.stepText} text-[11px] font-bold flex-shrink-0 mt-0.5`}>
             {stage.order}
           </span>
           <div className="min-w-0">
@@ -860,22 +882,22 @@ function ProcessingStageCard({
               <span className="text-sm font-semibold text-slate-800">
                 {stage.stageLabel}
               </span>
-              <span className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-medium border ${review.cls}`}>
-                {review.icon}
-                {stage.reviewStatus}
+              <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-medium border bg-teal-50 text-teal-700 border-teal-200">
+                <Sparkles className="w-3 h-3" />
+                AI-KAG
               </span>
               <span className="text-[10px] text-slate-400 font-mono">{stage.language}</span>
             </div>
             <p className="text-[11px] text-slate-500 mt-0.5 line-clamp-2">
               {stage.description}
             </p>
-            <div className="flex items-center gap-3 mt-1.5 text-[10px] text-slate-400">
+            <div className="flex items-center gap-2 mt-1.5 text-[10px] text-slate-400">
               <span className="flex items-center gap-1">
                 <Database className="w-2.5 h-2.5" />
                 {stage.inputAssets.join(", ")}
               </span>
-              <ArrowRight className="w-2.5 h-2.5" />
-              <span className="font-mono text-slate-600">{stage.outputAsset}</span>
+              <ArrowRight className="w-2.5 h-2.5 flex-shrink-0" />
+              <span className="font-mono text-slate-600 truncate">{stage.outputAsset}</span>
             </div>
           </div>
         </div>
@@ -884,7 +906,6 @@ function ProcessingStageCard({
         </span>
       </button>
 
-      {/* Expanded detail */}
       <AnimatePresence>
         {isExpanded && (
           <motion.div
@@ -894,7 +915,6 @@ function ProcessingStageCard({
             transition={{ duration: 0.2 }}
             className="border-t border-slate-100 overflow-hidden"
           >
-            {/* IO summary */}
             <div className="px-4 py-3 grid grid-cols-1 sm:grid-cols-3 gap-3 text-[11px] bg-slate-50/60">
               <div>
                 <span className="text-slate-400 uppercase text-[10px] tracking-wider">Input</span>
@@ -918,36 +938,26 @@ function ProcessingStageCard({
                 <span className="text-slate-400 uppercase text-[10px] tracking-wider">Language</span>
                 <span className="block mt-1 text-slate-700 text-[11px]">{stage.language}</span>
                 {stage.dataverseUrl && (
-                  <a
-                    href={stage.dataverseUrl}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="inline-flex items-center gap-0.5 text-teal-600 hover:text-teal-800 mt-0.5 text-[10px]"
-                  >
+                  <a href={stage.dataverseUrl} target="_blank" rel="noreferrer"
+                    className="inline-flex items-center gap-0.5 text-teal-600 hover:text-teal-800 mt-0.5 text-[10px]">
                     View in DataVerse <ExternalLink className="w-2.5 h-2.5" />
                   </a>
                 )}
               </div>
             </div>
 
-            {/* AI description */}
             <div className={`px-4 py-3 border-b border-slate-100 ${cfg.expandedBg}`}>
               <div className="flex items-center gap-1.5 text-[10px] text-slate-400 uppercase tracking-wide mb-1.5">
                 <Brain className={`w-3 h-3 ${section === "training" ? "text-emerald-400" : "text-violet-400"}`} />
                 AI Summary
               </div>
-              <p className="text-[12px] text-slate-600 leading-relaxed">
-                {stage.description}
-              </p>
+              <p className="text-[12px] text-slate-600 leading-relaxed">{stage.description}</p>
             </div>
 
-            {/* Code snippet */}
             <div className={`${cfg.codeBar} text-slate-100 px-4 py-3 font-mono text-[11.5px] leading-relaxed overflow-x-auto`}>
               <div className="flex items-center gap-2 mb-2 text-[10px] uppercase tracking-wide text-slate-400">
                 <Sparkles className="w-3 h-3 text-amber-300" />
-                <span>
-                  {"AI-KAG · knowledge asset graph extracted by AI agent"}
-                </span>
+                <span>AI-KAG · knowledge asset graph extracted by AI agent</span>
               </div>
               <pre className="whitespace-pre">{stage.snippet}</pre>
             </div>
@@ -957,7 +967,7 @@ function ProcessingStageCard({
     </motion.div>
   );
 }
-// ─── Tab 3: Health ────────────────────────────────────────────────────────────
+
 function HealthTabContent({
   signals,
   featureName,
