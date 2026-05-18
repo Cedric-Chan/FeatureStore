@@ -46,6 +46,7 @@ interface ProcessingStage {
   outputAsset: string;
   language: string;
   description: string;
+  path: "training" | "serving";
   reviewStatus: "AI-Draft" | "Human-Reviewed" | "Auto-Merged";
   snippet: string;
   dataverseUrl?: string;
@@ -105,7 +106,7 @@ function buildMockProcessingStages(featureName: string): ProcessingStage[] {
     {
       id: "p-1", order: 1,
       taskName: "ods_user_credit_events",
-      stageLabel: "Stage 1 — Raw Ingestion",
+      path: "training", stageLabel: "Stage 1 — Raw Ingestion",
       inputAssets: ["binlog.user_credit_events"],
       outputAsset: "ods.user_credit_events",
       language: "SQL (Hive ETL)",
@@ -123,7 +124,7 @@ WHERE dt = '\${dt}';`,
     {
       id: "p-2", order: 2,
       taskName: "dwd_user_credit_30d_agg",
-      stageLabel: "Stage 2 — 30-Day Aggregation",
+      path: "training", stageLabel: "Stage 2 — 30-Day Aggregation",
       inputAssets: ["ods.user_credit_events"],
       outputAsset: "dwd.user_credit_30d_features",
       language: "SQL (Spark Batch)",
@@ -141,7 +142,7 @@ GROUP BY user_id;`,
     {
       id: "p-3", order: 3,
       taskName: "ads_user_risk_score_ods",
-      stageLabel: "Stage 3 — Final Scoring",
+      path: "training", stageLabel: "Stage 3 — Final Scoring",
       inputAssets: ["dwd.user_credit_30d_features", "dim.user_meta"],
       outputAsset: `risk_db.user_risk_score_ods → ${featureName}`,
       language: "SQL (Spark Batch)",
@@ -162,7 +163,7 @@ WHERE dt = '\${dt}';`,
     {
       id: "p-4", order: 4,
       taskName: "FG Serving Canvas · credit_hbase_user_risk · ID · V1",
-      stageLabel: "Stage 4 — Online Serving",
+      path: "serving", stageLabel: "Stage 4 — Online Serving",
       inputAssets: ["hbase.user_risk:cf:risk_score_raw (via FeatureSource)"],
       outputAsset: `feature: ${featureName}`,
       language: "Groovy (FG Serving Canvas)",
@@ -693,6 +694,54 @@ function NodeButton({
   );
 }
 // ─── Tab 2: Processing ────────────────────────────────────────────────────────
+// ─── Split stages into Training and Serving sections ──────────────────────────
+const SECTION_CONFIG: Record<string, {
+  label: string;
+  icon: React.ReactNode;
+  accentBg: string;
+  accentBorder: string;
+  accentText: string;
+  stepBg: string;
+  stepText: string;
+  cardBorder: string;
+  cardHover: string;
+  headerBg: string;
+  expandedBorder: string;
+  expandedBg: string;
+  codeBar: string;
+}> = {
+  training: {
+    label: "Training Path",
+    icon: <Layers className="w-3.5 h-3.5" />,
+    accentBg: "bg-emerald-50/60",
+    accentBorder: "border-emerald-200",
+    accentText: "text-emerald-700",
+    stepBg: "bg-emerald-100",
+    stepText: "text-emerald-700",
+    cardBorder: "border-l-[3px] border-l-emerald-400 border-slate-200",
+    cardHover: "hover:border-l-emerald-500 hover:shadow-sm",
+    headerBg: "bg-emerald-50/30",
+    expandedBorder: "border-emerald-200",
+    expandedBg: "bg-emerald-50/20",
+    codeBar: "bg-emerald-900",
+  },
+  serving: {
+    label: "Serving Path",
+    icon: <Zap className="w-3.5 h-3.5" />,
+    accentBg: "bg-violet-50/60",
+    accentBorder: "border-violet-200",
+    accentText: "text-violet-700",
+    stepBg: "bg-violet-100",
+    stepText: "text-violet-700",
+    cardBorder: "border-l-[3px] border-l-violet-400 border-slate-200",
+    cardHover: "hover:border-l-violet-500 hover:shadow-sm",
+    headerBg: "bg-violet-50/30",
+    expandedBorder: "border-violet-200",
+    expandedBg: "bg-violet-50/20",
+    codeBar: "bg-violet-900",
+  },
+};
+
 function ProcessingTabContent({
   stages,
   featureName,
@@ -700,132 +749,218 @@ function ProcessingTabContent({
   stages: ProcessingStage[];
   featureName: string;
 }) {
-  const [expandedId, setExpandedId] = useState<string | null>(stages[0]?.id ?? null);
+  const trainingStages = stages.filter((s) => s.path === "training");
+  const servingStages  = stages.filter((s) => s.path === "serving");
 
   return (
-    <div className="px-6 py-5 space-y-4">
-      <div className="text-[11px] uppercase tracking-wider text-slate-400 mb-1">
-        AI-distilled · stage-by-stage derivation of{" "}
-        <span className="font-mono text-teal-600">{featureName}</span>
+    <div className="px-4 sm:px-6 py-5 space-y-6">
+      {/* Section label */}
+      <div className="flex items-center gap-2 text-[11px] text-slate-400 uppercase tracking-wider mb-1">
+        <FileText className="w-3 h-3 text-teal-500" />
+        <span>AI-distilled processing logic for</span>
+        <span className="font-mono text-teal-600 normal-case tracking-normal">{featureName}</span>
       </div>
 
-      {stages.map((stage) => {
-        const isExpanded = expandedId === stage.id;
-        const review = REVIEW_STYLE[stage.reviewStatus];
-
-        return (
-          <div
-            key={stage.id}
-            className="rounded-xl border border-slate-200 overflow-hidden transition-shadow hover:shadow-sm"
-          >
-            {/* Stage header — clickable */}
-            <button
-              onClick={() => setExpandedId(isExpanded ? null : stage.id)}
-              className="w-full flex items-start justify-between px-4 py-3 text-left hover:bg-slate-50/60 transition-colors"
-            >
-              <div className="flex items-start gap-3 min-w-0">
-                <span className="inline-flex items-center justify-center w-7 h-7 rounded-lg bg-teal-100 text-teal-700 text-xs font-bold flex-shrink-0 mt-0.5">
-                  {stage.order}
-                </span>
-                <div className="min-w-0">
-                  <div className="flex items-center gap-2 flex-wrap">
-                    <span className="text-sm font-semibold text-slate-800">
-                      {stage.stageLabel}
-                    </span>
-                    <span className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-medium border ${review.cls}`}>
-                      {review.icon}
-                      {stage.reviewStatus}
-                    </span>
-                  </div>
-                  <p className="text-[11px] text-slate-500 mt-0.5 line-clamp-2">
-                    {stage.description}
-                  </p>
-                  <div className="flex items-center gap-3 mt-1.5 text-[10px] text-slate-400">
-                    <span className="flex items-center gap-1">
-                      <Database className="w-2.5 h-2.5" />
-                      {stage.inputAssets.join(", ")} → {stage.outputAsset}
-                    </span>
-                    <span>{stage.language}</span>
-                  </div>
-                </div>
-              </div>
-              <span className={`text-slate-300 transition-transform flex-shrink-0 ml-2 ${isExpanded ? "rotate-180" : ""}`}>
-                ▼
-              </span>
-            </button>
-
-            {/* Expanded detail */}
-            {isExpanded && (
-              <div className="border-t border-slate-100">
-                {/* IO summary */}
-                <div className="px-4 py-3 grid grid-cols-3 gap-4 text-[11px] bg-slate-50/50">
-                  <div>
-                    <span className="text-slate-400 uppercase text-[10px]">Input</span>
-                    <div className="flex flex-wrap gap-1 mt-1">
-                      {stage.inputAssets.map((a) => (
-                        <span key={a} className="px-1.5 py-0.5 rounded bg-slate-100 text-slate-700 font-mono border border-slate-200 text-[10px]">
-                          {a}
-                        </span>
-                      ))}
-                    </div>
-                  </div>
-                  <div>
-                    <span className="text-slate-400 uppercase text-[10px]">Output</span>
-                    <div className="mt-1">
-                      <span className="px-1.5 py-0.5 rounded bg-slate-100 text-slate-700 font-mono border border-slate-200 text-[10px]">
-                        {stage.outputAsset}
-                      </span>
-                    </div>
-                  </div>
-                  <div>
-                    <span className="text-slate-400 uppercase text-[10px]">Language</span>
-                    <span className="block mt-1 text-slate-700">{stage.language}</span>
-                    {stage.dataverseUrl && (
-                      <a
-                        href={stage.dataverseUrl}
-                        target="_blank"
-                        rel="noreferrer"
-                        className="inline-flex items-center gap-0.5 text-teal-600 hover:text-teal-800 mt-0.5 text-[10px]"
-                      >
-                        View in DataVerse <ExternalLink className="w-2.5 h-2.5" />
-                      </a>
-                    )}
-                  </div>
-                </div>
-
-                {/* AI description */}
-                <div className="px-4 py-3 border-b border-slate-100">
-                  <div className="flex items-center gap-1.5 text-[10px] text-slate-400 uppercase tracking-wide mb-1.5">
-                    <Brain className="w-3 h-3 text-teal-400" /> AI Summary
-                  </div>
-                  <p className="text-[12px] text-slate-600 leading-relaxed">
-                    {stage.description}
-                  </p>
-                </div>
-
-                {/* Code snippet */}
-                <div className="bg-slate-900 text-slate-100 px-4 py-3 font-mono text-[11.5px] leading-relaxed overflow-x-auto">
-                  <div className="flex items-center gap-2 mb-2 text-[10px] uppercase tracking-wide text-slate-400">
-                    <Sparkles className="w-3 h-3 text-amber-300" />
-                    <span>
-                      {stage.reviewStatus === "AI-Draft"
-                        ? "AI-Draft · pending human review"
-                        : stage.reviewStatus === "Human-Reviewed"
-                          ? "Human-reviewed · verified logic"
-                          : "Auto-merged · high confidence match"}
-                    </span>
-                  </div>
-                  <pre className="whitespace-pre">{stage.snippet}</pre>
-                </div>
-              </div>
-            )}
+      {/* ─── Training Path Section ─── */}
+      {trainingStages.length > 0 && (
+        <div className="space-y-3">
+          {/* Section header */}
+          <div className="flex items-center gap-2">
+            <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-emerald-50 border border-emerald-200 text-[11px] font-semibold text-emerald-700">
+              <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
+              Training Path
+            </div>
+            <span className="text-[10px] text-slate-400">
+              ODS binlog → Spark SQL → ADS result table · offline batch
+            </span>
           </div>
-        );
-      })}
+
+          {/* Training stages */}
+          {trainingStages.map((stage) => (
+            <ProcessingStageCard
+              key={stage.id}
+              stage={stage}
+              section="training"
+            />
+          ))}
+        </div>
+      )}
+
+      {/* ─── Path Connector ─── */}
+      {trainingStages.length > 0 && servingStages.length > 0 && (
+        <div className="flex items-center justify-center gap-4 py-1">
+          <div className="h-px flex-1 bg-gradient-to-r from-emerald-200 to-slate-200" />
+          <div className="flex items-center gap-1 px-3 py-1 rounded-full bg-slate-100 border border-slate-200 text-[10px] text-slate-500">
+            <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
+            offline
+            <ArrowRight className="w-3 h-3 text-slate-400" />
+            <span className="w-1.5 h-1.5 rounded-full bg-violet-400" />
+            online
+          </div>
+          <div className="h-px flex-1 bg-gradient-to-l from-violet-200 to-slate-200" />
+        </div>
+      )}
+
+      {/* ─── Serving Path Section ─── */}
+      {servingStages.length > 0 && (
+        <div className="space-y-3">
+          {/* Section header */}
+          <div className="flex items-center gap-2">
+            <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-violet-50 border border-violet-200 text-[11px] font-semibold text-violet-700">
+              <span className="w-1.5 h-1.5 rounded-full bg-violet-400" />
+              Serving Path
+            </div>
+            <span className="text-[10px] text-slate-400">
+              Kafka → Flink SQL → HBase → FG Serving Canvas · online real-time
+            </span>
+          </div>
+
+          {/* Serving stages */}
+          {servingStages.map((stage) => (
+            <ProcessingStageCard
+              key={stage.id}
+              stage={stage}
+              section="serving"
+            />
+          ))}
+        </div>
+      )}
     </div>
   );
 }
 
+// ─── Single Processing Stage Card ─────────────────────────────────────────────
+function ProcessingStageCard({
+  stage,
+  section,
+}: {
+  stage: ProcessingStage;
+  section: "training" | "serving";
+}) {
+  const [isExpanded, setExpanded] = useState(false);
+  const cfg = SECTION_CONFIG[section];
+  const review = REVIEW_STYLE[stage.reviewStatus];
+
+  return (
+    <motion.div
+      layout
+      className={`rounded-xl border overflow-hidden transition-all ${cfg.cardBorder} ${cfg.cardHover} bg-white`}
+    >
+      {/* Stage header — clickable */}
+      <button
+        onClick={() => setExpanded(!isExpanded)}
+        className={`w-full flex items-start justify-between px-4 py-3 text-left transition-colors ${cfg.headerBg} hover:bg-opacity-80`}
+      >
+        <div className="flex items-start gap-3 min-w-0">
+          <span className={`inline-flex items-center justify-center w-7 h-7 rounded-lg ${cfg.stepBg} ${cfg.stepText} text-xs font-bold flex-shrink-0 mt-0.5`}>
+            {stage.order}
+          </span>
+          <div className="min-w-0">
+            <div className="flex items-center gap-2 flex-wrap">
+              <span className="text-sm font-semibold text-slate-800">
+                {stage.stageLabel}
+              </span>
+              <span className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-medium border ${review.cls}`}>
+                {review.icon}
+                {stage.reviewStatus}
+              </span>
+              <span className="text-[10px] text-slate-400 font-mono">{stage.language}</span>
+            </div>
+            <p className="text-[11px] text-slate-500 mt-0.5 line-clamp-2">
+              {stage.description}
+            </p>
+            <div className="flex items-center gap-3 mt-1.5 text-[10px] text-slate-400">
+              <span className="flex items-center gap-1">
+                <Database className="w-2.5 h-2.5" />
+                {stage.inputAssets.join(", ")}
+              </span>
+              <ArrowRight className="w-2.5 h-2.5" />
+              <span className="font-mono text-slate-600">{stage.outputAsset}</span>
+            </div>
+          </div>
+        </div>
+        <span className={`text-slate-300 transition-transform flex-shrink-0 ml-2 ${isExpanded ? "rotate-180" : ""}`}>
+          ▼
+        </span>
+      </button>
+
+      {/* Expanded detail */}
+      <AnimatePresence>
+        {isExpanded && (
+          <motion.div
+            initial={{ height: 0, opacity: 0 }}
+            animate={{ height: "auto", opacity: 1 }}
+            exit={{ height: 0, opacity: 0 }}
+            transition={{ duration: 0.2 }}
+            className="border-t border-slate-100 overflow-hidden"
+          >
+            {/* IO summary */}
+            <div className="px-4 py-3 grid grid-cols-1 sm:grid-cols-3 gap-3 text-[11px] bg-slate-50/60">
+              <div>
+                <span className="text-slate-400 uppercase text-[10px] tracking-wider">Input</span>
+                <div className="flex flex-wrap gap-1 mt-1">
+                  {stage.inputAssets.map((a) => (
+                    <span key={a} className="px-1.5 py-0.5 rounded bg-white text-slate-700 font-mono border border-slate-200 text-[10px]">
+                      {a}
+                    </span>
+                  ))}
+                </div>
+              </div>
+              <div>
+                <span className="text-slate-400 uppercase text-[10px] tracking-wider">Output</span>
+                <div className="mt-1">
+                  <span className="px-1.5 py-0.5 rounded bg-white text-slate-700 font-mono border border-slate-200 text-[10px]">
+                    {stage.outputAsset}
+                  </span>
+                </div>
+              </div>
+              <div>
+                <span className="text-slate-400 uppercase text-[10px] tracking-wider">Language</span>
+                <span className="block mt-1 text-slate-700 text-[11px]">{stage.language}</span>
+                {stage.dataverseUrl && (
+                  <a
+                    href={stage.dataverseUrl}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="inline-flex items-center gap-0.5 text-teal-600 hover:text-teal-800 mt-0.5 text-[10px]"
+                  >
+                    View in DataVerse <ExternalLink className="w-2.5 h-2.5" />
+                  </a>
+                )}
+              </div>
+            </div>
+
+            {/* AI description */}
+            <div className={`px-4 py-3 border-b border-slate-100 ${cfg.expandedBg}`}>
+              <div className="flex items-center gap-1.5 text-[10px] text-slate-400 uppercase tracking-wide mb-1.5">
+                <Brain className={`w-3 h-3 ${section === "training" ? "text-emerald-400" : "text-violet-400"}`} />
+                AI Summary
+              </div>
+              <p className="text-[12px] text-slate-600 leading-relaxed">
+                {stage.description}
+              </p>
+            </div>
+
+            {/* Code snippet */}
+            <div className={`${cfg.codeBar} text-slate-100 px-4 py-3 font-mono text-[11.5px] leading-relaxed overflow-x-auto`}>
+              <div className="flex items-center gap-2 mb-2 text-[10px] uppercase tracking-wide text-slate-400">
+                <Sparkles className="w-3 h-3 text-amber-300" />
+                <span>
+                  {stage.reviewStatus === "AI-Draft"
+                    ? "AI-Draft · pending human review"
+                    : stage.reviewStatus === "Human-Reviewed"
+                      ? "Human-reviewed · verified logic"
+                      : "Auto-merged · high confidence match"}
+                </span>
+              </div>
+              <pre className="whitespace-pre">{stage.snippet}</pre>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </motion.div>
+  );
+}
 // ─── Tab 3: Health ────────────────────────────────────────────────────────────
 function HealthTabContent({
   signals,
