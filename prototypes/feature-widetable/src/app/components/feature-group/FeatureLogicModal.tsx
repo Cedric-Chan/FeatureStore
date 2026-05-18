@@ -47,7 +47,7 @@ interface ProcessingStage {
   language: string;
   description: string;
   path: "training" | "serving";
-  reviewStatus: "AI-Draft" | "Human-Reviewed" | "Auto-Merged";
+  reviewStatus: "AI-KAG";
   snippet: string;
   dataverseUrl?: string;
 }
@@ -111,7 +111,7 @@ function buildMockProcessingStages(featureName: string): ProcessingStage[] {
       outputAsset: "ods.user_credit_events",
       language: "SQL (Hive ETL)",
       description: "从上游 binlog 层全量导入用户信用事件原始数据，按 dt 分区落表。此阶段为 pass-through，不做任何业务加工，保留全部字段与事件时间戳。",
-      reviewStatus: "Auto-Merged",
+      reviewStatus: "AI-KAG",
       snippet: `-- Pass-through ingest: raw events that feed ${featureName}
 SELECT user_id,
        event_type,
@@ -129,7 +129,7 @@ WHERE dt = '\${dt}';`,
       outputAsset: "dwd.user_credit_30d_features",
       language: "SQL (Spark Batch)",
       description: "对近 30 天信用事件按用户维度聚合，计算逾期金额和还款次数两个中间特征，作为后续评分的输入因子。",
-      reviewStatus: "Human-Reviewed",
+      reviewStatus: "AI-KAG",
       snippet: `-- AI-extracted: only fragments contributing to ${featureName}
 SELECT user_id,
        SUM(CASE WHEN event_type='OVERDUE' THEN amount END) AS overdue_amt_30d,
@@ -147,7 +147,7 @@ GROUP BY user_id;`,
       outputAsset: `risk_db.user_risk_score_ods → ${featureName}`,
       language: "SQL (Spark Batch)",
       description: `将中间聚合特征加权计算，产出最终特征列 ${featureName}。通过 LEAST/GREATEST 进行分数裁剪，确保值域在 300–999 之间。`,
-      reviewStatus: "AI-Draft",
+      reviewStatus: "AI-KAG",
       snippet: `-- Final scoring step: column \`${featureName}\`
 SELECT user_id,
        LEAST(999,
@@ -168,7 +168,7 @@ WHERE dt = '\${dt}';`,
       outputAsset: `feature: ${featureName}`,
       language: "Groovy (FG Serving Canvas)",
       description: `在线 Serving 阶段：通过 HBase FeatureSource 扫描获取 raw value，经 Groovy Transformer 进行黑名单过滤和分数裁剪，产出最终 online Fine Feature。`,
-      reviewStatus: "Human-Reviewed",
+      reviewStatus: "AI-KAG",
       snippet: `// FG Serving Canvas — Groovy region script (ID · V1)
 def raw = HBaseCall.query(
     tableName: "user_risk",
@@ -201,11 +201,11 @@ const SEVERITY_STYLE: Record<string, { cls: string; icon: React.ReactNode }> = {
   ok:       { cls: "bg-emerald-50 text-emerald-700 border-emerald-200", icon: <CheckCircle2 className="w-3 h-3" /> },
 };
 
+
 const REVIEW_STYLE: Record<string, { cls: string; icon: React.ReactNode }> = {
-  "AI-Draft":       { cls: "bg-sky-50 text-sky-700 border-sky-200",             icon: <Sparkles className="w-3 h-3" /> },
-  "Human-Reviewed": { cls: "bg-emerald-50 text-emerald-700 border-emerald-200", icon: <ShieldCheck className="w-3 h-3" /> },
-  "Auto-Merged":    { cls: "bg-teal-50 text-teal-700 border-teal-200",          icon: <CheckCircle2 className="w-3 h-3" /> },
+  "AI-KAG": { cls: "bg-teal-50 text-teal-700 border-teal-200", icon: <Sparkles className="w-3 h-3" /> },
 };
+
 
 const TASK_TYPE_STYLE: Record<string, { label: string; cls: string; icon: React.ReactNode }> = {
   SparkBatch:      { label: "Spark Batch",      cls: "bg-blue-50 text-blue-700 border-blue-200",       icon: <Layers className="w-3 h-3" /> },
@@ -946,11 +946,7 @@ function ProcessingStageCard({
               <div className="flex items-center gap-2 mb-2 text-[10px] uppercase tracking-wide text-slate-400">
                 <Sparkles className="w-3 h-3 text-amber-300" />
                 <span>
-                  {stage.reviewStatus === "AI-Draft"
-                    ? "AI-Draft · pending human review"
-                    : stage.reviewStatus === "Human-Reviewed"
-                      ? "Human-reviewed · verified logic"
-                      : "Auto-merged · high confidence match"}
+                  {"AI-KAG · knowledge asset graph extracted by AI agent"}
                 </span>
               </div>
               <pre className="whitespace-pre">{stage.snippet}</pre>
