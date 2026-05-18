@@ -1138,20 +1138,53 @@ function FeatureListTab({ fg }: { fg: FeatureGroup }) {
   );
 }
 
-// ─── Asset Lineage Tab (placeholder) ──────────────────────────────────────────
+// ─── Used By Tab — downstream assets referencing this FG ─────────────────────
+
+interface DownstreamAsset {
+  assetType: "Feature WideTable" | "Workflow Service";
+  assetName: string;
+  owner: string;
+}
+
+const MOCK_DOWNSTREAM: DownstreamAsset[] = [
+  { assetType: "Feature WideTable", assetName: "risk_score_sg_v3_wt", owner: "zhangsan" },
+  { assetType: "Feature WideTable", assetName: "credit_features_th_wt", owner: "lisi" },
+  { assetType: "Workflow Service", assetName: "fraud-detection-sg-svc", owner: "wangwu" },
+  { assetType: "Workflow Service", assetName: "credit-scoring-online-svc", owner: "zhaoliu" },
+];
+
 function LineageTab() {
   return (
-    <div
-      className="bg-white rounded-xl border border-gray-200 flex flex-col items-center justify-center text-center"
-      style={{ minHeight: 300 }}
-    >
-      <GitBranch size={40} className="mb-3" style={{ color: "#d1d5db" }} />
-      <p className="text-sm text-gray-400" style={{ fontWeight: 500 }}>
-        Asset lineage coming soon
-      </p>
-      <p className="text-xs text-gray-300 mt-1">
-        FG ↔ FS ↔ Transformer ↔ WideTable internal topology
-      </p>
+    <div className="bg-white rounded-xl border border-gray-200" style={{ minHeight: 300 }}>
+      <div className="overflow-x-auto">
+        <table className="w-full text-xs">
+          <thead>
+            <tr className="border-b border-gray-100 bg-gray-50/50">
+              <th className="px-5 py-3 text-left text-[11px] uppercase tracking-wider text-gray-400 font-medium">Asset Type</th>
+              <th className="px-5 py-3 text-left text-[11px] uppercase tracking-wider text-gray-400 font-medium">Asset Name</th>
+              <th className="px-5 py-3 text-left text-[11px] uppercase tracking-wider text-gray-400 font-medium">Owner</th>
+            </tr>
+          </thead>
+          <tbody>
+            {MOCK_DOWNSTREAM.map((item, idx) => (
+              <tr key={idx} className="border-b border-gray-50 hover:bg-gray-50/40 transition-colors">
+                <td className="px-5 py-3 text-gray-600">
+                  <span className={`inline-flex items-center gap-1.5 ${
+                    item.assetType === "Feature WideTable" ? "text-emerald-700" : "text-violet-700"
+                  }`}>
+                    <span className={`w-1.5 h-1.5 rounded-full ${
+                      item.assetType === "Feature WideTable" ? "bg-emerald-400" : "bg-violet-400"
+                    }`} />
+                    {item.assetType}
+                  </span>
+                </td>
+                <td className="px-5 py-3 font-mono text-gray-700">{item.assetName}</td>
+                <td className="px-5 py-3 text-gray-500">@{item.owner}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
     </div>
   );
 }
@@ -1419,7 +1452,7 @@ type DetailTab = "features" | "lineage" | "dqc" | "versions";
 
 const DETAIL_TABS: { key: DetailTab; label: string }[] = [
   { key: "features", label: "Feature List" },
-  { key: "lineage",  label: "Asset Lineage"              },
+  { key: "lineage",  label: "Used By"                     },
   { key: "dqc",      label: "Offline DQC"                 },
   { key: "versions", label: "Versions"                  },
 ];

@@ -254,8 +254,6 @@ export default function FeatureGroupList() {
             fg={fg}
             index={(currentPage - 1) * pageSize + idx}
             onNavigate={() => navigate(`/fg/${fg.id}`)}
-            onSync={() => void syncFgMetadata(fg.id)}
-            syncTitle={SYNC_ARIA}
             onCopy={() => openCopyModal(fg)}
             onDeleteConfirm={() => updateFg(fg.id, { deleted: true })}
           />
@@ -328,15 +326,12 @@ function FeatureGroupCard({
   fg,
   index,
   onNavigate,
-  onSync,
-  syncTitle,
   onCopy,
   onDeleteConfirm,
 }: {
   fg: FeatureGroup;
   index: number;
   onNavigate: () => void;
-  onSync: () => void;
   syncTitle: string;
   onCopy: () => void;
   onDeleteConfirm: () => void;
@@ -417,18 +412,7 @@ function FeatureGroupCard({
 
             {/* Action buttons — uniform size */}
             <div className="flex items-center gap-1.5 flex-shrink-0">
-              <button
-                type="button"
-                onClick={onSync}
-                className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs rounded-lg border border-gray-200 text-gray-600 hover:border-teal-300 hover:text-teal-600 hover:bg-teal-50 transition-all h-8"
-                style={{ fontWeight: 500 }}
-                title={syncTitle}
-                aria-label={syncTitle}
-              >
-                <RefreshCw size={12} />
-                Sync
-              </button>
-
+              {/* Sync button removed — page auto-fetches on mount */}
               <button
                 onClick={onCopy}
                 className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs rounded-lg border border-gray-200 text-gray-600 hover:border-teal-300 hover:text-teal-600 hover:bg-teal-50 transition-all h-8"
