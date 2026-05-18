@@ -398,24 +398,12 @@ function EditOwnersModal({ current, onClose, onSave }: {
 
 // ─── Sub-components ───────────────────────────────────────────────────────────
 
-function BindingTag({ label, status }: { label: string; status?: "Healthy"|"Warning"|"Offline" }) {
+function BindingTag({ label, status }: { label: string; status?: "Bound" }) {
   if (!status) return null;
-  const s = S[status];
   return (
-    <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px] border ${s.pill} whitespace-nowrap`}>
-      <span className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${s.dot}`} />{label}
+    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px] border bg-teal-50 text-teal-700 border-teal-200 whitespace-nowrap">
+      <span className="w-1.5 h-1.5 rounded-full flex-shrink-0 bg-teal-400" />{label}
     </span>
-  );
-}
-
-function SyncConnector({ status }: { status: "Healthy"|"Warning"|"Offline" }) {
-  const s = S[status];
-  const label = status === "Healthy" ? "In Sync" : status === "Warning" ? "Lagging" : "Down";
-  return (
-    <div className={`flex flex-col items-center justify-center gap-0.5 px-2 flex-shrink-0 ${s.text}`}>
-      <ArrowRight className="w-3.5 h-3.5" />
-      <span className="text-[10px] whitespace-nowrap">{label}</span>
-    </div>
   );
 }
 
@@ -485,9 +473,9 @@ function DataSourceCard({ entry, onBind, onUnbind, onTest, onDelete, onEditOwner
         <span className="font-mono text-sm text-slate-800 whitespace-nowrap flex-shrink-0">{entry.logicalName}</span>
         <span className="text-xs text-slate-400 truncate min-w-0 flex-1">{entry.description}</span>
         <div className="flex items-center gap-1.5 flex-shrink-0">
-          <BindingTag label="Offline"  status={entry.offline  ? "Healthy" : undefined} />
-          <BindingTag label="Nearline" status={entry.nearline ? "Healthy" : undefined} />
-          <BindingTag label="Online"   status={entry.online   ? "Healthy" : undefined} />
+          <BindingTag label="Offline"  status={entry.offline  ? "Bound" : undefined} />
+          <BindingTag label="Nearline" status={entry.nearline ? "Bound" : undefined} />
+          <BindingTag label="Online"   status={entry.online   ? "Bound" : undefined} />
         </div>
         <span className="flex items-center gap-1 text-[12px] text-slate-400 whitespace-nowrap flex-shrink-0 ml-2">
           <Clock className="w-3 h-3" />
@@ -507,16 +495,11 @@ function DataSourceCard({ entry, onBind, onUnbind, onTest, onDelete, onEditOwner
                   onEdit={() => onBind("offline")} onUnbind={() => onUnbind("offline")} />
               : <UnboundSlot label="Offline" icon={<Database className="w-5 h-5" />} onBind={() => onBind("offline")} />}
 
-            {(entry.offline || entry.nearline) && entry.nearline &&
-              <SyncConnector status={entry.nearline.status} />}
-
             {entry.nearline
               ? <ConfigBlock label="Nearline" icon={<Zap className="w-3 h-3" />} typeLabel="Kafka Topic"
-                  value={entry.nearline.kafkaTopic} meta={`Lag ${entry.nearline.lag}`}
+                  value={entry.nearline.kafkaTopic} meta={`Kafka Topic`}
                   onEdit={() => onBind("nearline")} onUnbind={() => onUnbind("nearline")} />
               : <UnboundSlot label="Nearline" icon={<Zap className="w-5 h-5" />} onBind={() => onBind("nearline")} />}
-
-            {entry.online && <SyncConnector status={entry.online.status} />}
 
             {entry.online
               ? <ConfigBlock label="Online" icon={<Globe className="w-3 h-3" />} typeLabel={`FeatureSource · ${entry.online.protocol}`}
