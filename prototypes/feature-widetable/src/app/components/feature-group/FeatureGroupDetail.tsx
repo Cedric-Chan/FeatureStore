@@ -39,7 +39,7 @@ import FeatureGroupModal, {
 import { FgServingCanvasThumbnail } from "./FgServingCanvasThumbnail";
 import { trainingFeatureNamesFromForm } from "./fgSeed";
 import { fmFeatureLink } from "@/lib/links";
-import { FeatureLineageModal } from "./FeatureLineageModal";
+import { FeatureLogicModal } from "./FeatureLogicModal";
 import {
   cloneFgServingState,
   computeFgServingPublishedSummary,
@@ -1126,8 +1126,8 @@ function FeatureListTab({ fg }: { fg: FeatureGroup }) {
         </div>
       </div>
 
-      {/* v2 — Feature Lineage Modal */}
-      <FeatureLineageModal
+      {/* Feature Logic Modal — feature-level lineage + processing + health */}
+      <FeatureLogicModal
         open={!!lineageTarget}
         featureName={lineageTarget?.featureName ?? ""}
         hasTraining={lineageTarget?.hasTraining ?? false}
@@ -1138,7 +1138,7 @@ function FeatureListTab({ fg }: { fg: FeatureGroup }) {
   );
 }
 
-// ─── Lineage Tab (placeholder) ────────────────────────────────────────────────
+// ─── Asset Lineage Tab (placeholder) ──────────────────────────────────────────
 function LineageTab() {
   return (
     <div
@@ -1147,10 +1147,10 @@ function LineageTab() {
     >
       <GitBranch size={40} className="mb-3" style={{ color: "#d1d5db" }} />
       <p className="text-sm text-gray-400" style={{ fontWeight: 500 }}>
-        Lineage visualization coming soon
+        Asset lineage coming soon
       </p>
       <p className="text-xs text-gray-300 mt-1">
-        Upstream and downstream dependencies will be displayed here
+        FG ↔ FS ↔ Transformer ↔ WideTable internal topology
       </p>
     </div>
   );
@@ -1419,7 +1419,7 @@ type DetailTab = "features" | "lineage" | "dqc" | "versions";
 
 const DETAIL_TABS: { key: DetailTab; label: string }[] = [
   { key: "features", label: "Feature List" },
-  { key: "lineage",  label: "Lineage"                     },
+  { key: "lineage",  label: "Asset Lineage"              },
   { key: "dqc",      label: "Offline DQC"                 },
   { key: "versions", label: "Versions"                  },
 ];

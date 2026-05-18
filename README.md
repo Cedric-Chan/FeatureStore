@@ -9,7 +9,7 @@
 ## 项目结构
 
 ```
-Feature Source/
+Feature Store/
 ├── README.md                    # 项目总览（本文件）
 ├── .gitignore
 ├── .cursor/                     # Cursor IDE 规则配置
@@ -41,19 +41,19 @@ Feature Source/
 
 | 文件 | 说明 |
 |------|------|
-| [docs/architecture/在线特征平台架构说明.md](docs/architecture/在线特征平台架构说明.md) | 四层架构（FeatureSource / Transformer / FeatureGroup / FeatureMap）、离在线一致性、离线宽表、数据流、ER 图、状态枚举与 SLA |
+| [docs/architecture/在线特征平台架构说明.md](docs/architecture/在线特征平台架构说明.md) | 五层架构（DataSource / FeatureSource / Transformer / FeatureGroup / FeatureMap）、离在线一致性、离线宽表、数据流、ER 图、状态枚举与 SLA |
 
 ### 2. PRD / 产品与交付
 
 | 文件 | 说明 |
 |------|------|
-| [docs/design/prd/产品与交付示意图.md](docs/design/prd/产品与交付示意图.md) | 产品架构图、操作主流程、数据流转、页面结构（五大模块）、交付与开发预研 |
+| [docs/design/prd/产品与交付示意图.md](docs/design/prd/产品与交付示意图.md) | 产品架构图、操作主流程、数据流转、页面结构（六大模块，含 DataSource）、交付与开发预研 |
 
 ### 3. 前端 / UI·UX 设计
 
 | 文件 | 说明 |
 |------|------|
-| [docs/design/front-design/产品原型图.md](docs/design/front-design/产品原型图.md) | 页面结构总览、五大模块原型说明（列表/表单/状态机/画布）、Figma 交付约定 |
+| [docs/design/front-design/产品原型图.md](docs/design/front-design/产品原型图.md) | 页面结构总览、六大模块原型说明（含 DataSource）（列表/表单/状态机/画布）、Figma 交付约定 |
 | [docs/design/widetable-canvas-nodes-revamp.md](docs/design/widetable-canvas-nodes-revamp.md) | WideTable 画布节点细化：Data Ingestion / Data Cleaning、Execute Config、DAG 与 Report |
 | [docs/design/feature-source-interaction-spec.md](docs/design/feature-source-interaction-spec.md) | Feature Source 交互规格说明 |
 | [docs/design/transformation-ui-spec.md](docs/design/transformation-ui-spec.md) | Transformation 模块 UI 规格说明 |
@@ -105,7 +105,7 @@ Feature Source/
 
 | 项目 | 路径 | 说明 |
 |------|------|------|
-| **feature-widetable** | [prototypes/feature-widetable/](prototypes/feature-widetable/) | **主原型** — 包含全部五大模块（Feature Source / Transformation / Feature Group / Feature Map / WideTable 画布），是交互演示的唯一真源 |
+| **feature-widetable** | [prototypes/feature-widetable/](prototypes/feature-widetable/) | **主原型** — 包含全部六大模块（含 DataSource）（Feature Source / Transformation / Feature Group / Feature Map / WideTable 画布），是交互演示的唯一真源 |
 | **feature-group** | [prototypes/feature-group/](prototypes/feature-group/) | Feature Group 模块 — 列表 / 详情 / Modal 三步表单与校验 |
 | **feature-map** | [prototypes/feature-map/](prototypes/feature-map/) | Feature Map 模块 — 检索 / Module 树 / Feature Table / Feature Cart |
 | **feature-source** | [prototypes/feature-source/](prototypes/feature-source/) | Feature Source 模块 — 数据源管理（列表 / 编辑 / 数据源映射） |
@@ -132,7 +132,7 @@ pnpm run build
 
 ## 平台架构概述
 
-在线特征平台分为四个核心层级和一个消费层：
+在线特征平台分为 Platform Nav 六大模块和消费层：
 
 ```
 ┌──────────────┐   ┌──────────────┐

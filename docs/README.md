@@ -22,7 +22,7 @@
 
 | 文件 | 说明 |
 |------|------|
-| [architecture/在线特征平台架构说明.md](architecture/在线特征平台架构说明.md) | 四层（FeatureSource / Transformer / FeatureGroup / FeatureMap）、边界、离线宽表与数据流 |
+| [architecture/在线特征平台架构说明.md](architecture/在线特征平台架构说明.md) | 五层（DataSource / FeatureSource / Transformer / FeatureGroup / FeatureMap）、边界、离线宽表与数据流 |
 
 可选：`在线特征平台-架构图.drawio` 与本说明同目录。
 
