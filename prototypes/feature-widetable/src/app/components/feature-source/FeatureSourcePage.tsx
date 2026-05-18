@@ -279,7 +279,8 @@ const DOWNSTREAM_FEATURE_GROUPS: Record<string, string[]> = {
   "4-1": ["graph_relation_th_fg"],
 };
 
-/* [COMMENTED-OUT] Feature Logic Modal now provides full lineage at Feature level. This DataSource-level pipeline lineage is deprecated. To restore: remove this comment block.
+// [NOTE] Lineage types & data retained — PipelineHealthBadge depends on LINEAGE_DP_MAP.
+//        The Lineage button and modal are commented out separately below.
 // ─── Lineage Types & Mock Data ────────────────────────────────────────────────
 
 interface LineageDP {
@@ -407,8 +408,6 @@ function computeVersion(subRows: SubRow[], region: string, excludeId?: string): 
   return `V${max + 1}`;
 
 }
-*/
-
 
 // ─── Test History Types & Mock Data ──────────────────────────────────────────
 
@@ -1044,13 +1043,12 @@ function PipelineHealthBadge({ subRowId }: { subRowId: string }) {
   );
 }
 
-function SubTable({ rows, onStatusChange, onEdit, onView, onCopy/*, onLineage*/ }: {
+function SubTable({ rows, onStatusChange, onEdit, onView, onCopy }: {
   rows: SubRow[];
   onStatusChange: (subRowId: string, newStatus: SubStatus) => void;
   onEdit: (subRow: SubRow) => void;
   onView: (subRow: SubRow) => void;
   onCopy: (subRow: SubRow) => void;
-  onLineage: (subRow: SubRow) => void;
 }) {
   return (
     <div className="mx-4 mb-3 rounded-xl border border-slate-200 shadow-sm overflow-visible">
@@ -1096,7 +1094,7 @@ function SubTable({ rows, onStatusChange, onEdit, onView, onCopy/*, onLineage*/ 
                   <button onClick={() => onView(row)} className="text-xs text-teal-600 hover:text-teal-800 hover:underline transition-colors">View</button>
                   <button onClick={() => onEdit(row)} className="text-xs text-teal-600 hover:text-teal-800 hover:underline transition-colors">Edit</button>
                   <button onClick={() => onCopy(row)} className="text-xs text-teal-600 hover:text-teal-800 hover:underline transition-colors">Copy</button>
-                  {/* <button onClick={() => onLineage(row)} className="text-xs text-teal-600 hover:text-teal-800">Lineage</button> */ /* [COMMENTED-OUT] Deprecated: Feature Logic Modal provides full lineage */}
+                  {/* [COMMENTED-OUT] Lineage button deprecated: Feature Trace Modal provides full lineage */}
                   <ManageDropdown
                     subRow={row}
                     onEnable={() => onStatusChange(row.id, "ENABLE")}
@@ -1417,8 +1415,6 @@ function LineageModal({ open, fsRow, subRow, onClose }: {
 }) {
   const [tab, setTab] = useState<"upstream" | "usedby">("upstream");
   const [refreshedAt] = useState(() => new Date());
-
-  useEffect(() => { if (open) setTab("upstream"); }, [open, subRow?.id]);
   useEffect(() => {
     if (!open) return;
     const h = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
