@@ -731,7 +731,7 @@ export default function FeatureGroupModal({
                 cursor: isStep0Valid(finalForm()) ? "pointer" : "not-allowed",
               }}
             >
-              Continue <ArrowRight size={13} />
+              Confirm <ArrowRight size={13} />
             </button>
           ) : (
             <button
