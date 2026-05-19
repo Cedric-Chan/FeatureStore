@@ -3,7 +3,7 @@ import {
 } from "react";
 import { createPortal } from "react-dom";
 import {
-  X, Check, ChevronDown, ChevronRight, Save, ArrowRight, ArrowLeft, Send,
+  X, Check, ChevronDown, ChevronRight, ArrowRight,
   AlertCircle, CheckCircle2, Loader2, Lock, Zap, Link2, Plus, Trash2,
   Pencil, Copy,
 } from "lucide-react";
@@ -391,16 +391,6 @@ export function isStep2ServingValid(d: FGFormData) {
   }
   return !servingOutputNamesHaveDuplicates(d.servingBlocks, d.region);
 }
-function isStep4MappingValid(d: FGFormData) {
-  return isStep4MappingComputeValid(d);
-}
-const STEP_VALIDATORS = [
-  isStep0Valid,
-  isStep1Valid,
-  isStep2ServingValid,
-  isStep4MappingValid,
-];
-
 export function isFgTrainingComplete(
   form: Partial<FGFormData> | undefined
 ): boolean {
@@ -493,7 +483,7 @@ async function mockFetchTableColumns(tableName: string): Promise<string[]> {
 }
 
 // ─── Props ────────────────────────────────────────────────────────────────────
-export type FeatureGroupModalVariant = "full" | "basic" | "training";
+export type FeatureGroupModalVariant = "basic" | "training";
 
 interface FeatureGroupModalProps {
   open: boolean;
@@ -501,11 +491,9 @@ interface FeatureGroupModalProps {
   /** Narrow modal: basic info only, training step only, or full wizard. */
   variant?: FeatureGroupModalVariant;
   initialData?: Partial<FGFormData>;
-  initialStep?: number;
   editId?: string;
   modules: string[];
   onClose: () => void;
-  onSaveDraft?: (data: FGFormData, editId?: string) => void;
   onSubmit: (data: FGFormData, editId?: string) => void;
 }
 
@@ -513,22 +501,17 @@ interface FeatureGroupModalProps {
 export default function FeatureGroupModal({
   open,
   mode,
-  variant = "full",
+  variant = "basic",
   initialData,
-  initialStep = 0,
   editId,
   modules,
   onClose,
-  onSaveDraft,
   onSubmit,
 }: FeatureGroupModalProps) {
-  const [step, setStep] = useState(initialStep);
   const [layerId, setLayerId] = useState(0);
   const [form, setFormState] = useState<FGFormData>({ ...EMPTY_FORM, ...initialData });
   const [touched, setTouched] = useState(false);
   const [ownerInput, setOwnerInput] = useState("");
-  const [savedFeedback, setSavedFeedback] = useState(false);
-  const feedbackTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [notifications, setNotifications] = useState<ModalNotification[]>([]);
 
   function addNotification(message: string, type: ModalNotification["type"] = "error") {
@@ -557,12 +540,8 @@ export default function FeatureGroupModal({
         }
         return merged;
       });
-      if (variant === "basic") setStep(0);
-      else if (variant === "training") setStep(1);
-      else setStep(initialStep ?? 0);
       setTouched(false);
       setOwnerInput("");
-      setSavedFeedback(false);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, variant]);
@@ -591,31 +570,10 @@ export default function FeatureGroupModal({
     return () => document.removeEventListener("keydown", handler, true);
   }, [open, layerId, onClose]);
 
-  // Cleanup timer on unmount
-  useEffect(() => () => { if (feedbackTimer.current) clearTimeout(feedbackTimer.current); }, []);
-
   if (!open) return null;
-
-  const isCompact = variant === "basic" || variant === "training";
-  const displayStep = isCompact ? (variant === "basic" ? 0 : 1) : step;
 
   function setField(key: keyof FGFormData, value: any) {
     setFormState(f => ({ ...f, [key]: value }));
-  }
-
-  const stepsValid = STEP_VALIDATORS.map(v => v(form));
-  const isCurrentValid = stepsValid[displayStep];
-  const allValid = stepsValid.every(Boolean);
-
-  function handleNext() {
-    if (!isCurrentValid) { setTouched(true); return; }
-    setTouched(false);
-    setStep(s => s + 1);
-  }
-
-  function handlePrev() {
-    setTouched(false);
-    setStep(s => s - 1);
   }
 
   function finalForm(): FGFormData {
@@ -623,22 +581,6 @@ export default function FeatureGroupModal({
       ? [...form.owners, ownerInput.trim()].filter((o, i, a) => a.indexOf(o) === i)
       : form.owners;
     return { ...form, owners: extra };
-  }
-
-  function handleSaveDraft() {
-    if (!onSaveDraft) return;
-    onSaveDraft(finalForm(), editId);
-    setSavedFeedback(true);
-    feedbackTimer.current = setTimeout(() => {
-      setSavedFeedback(false);
-      onClose();
-    }, 900);
-  }
-
-  function handleSubmit() {
-    if (!allValid) { setTouched(true); return; }
-    onSubmit(finalForm(), editId);
-    onClose();
   }
 
   function handleCompactBasicContinue() {
@@ -672,19 +614,12 @@ export default function FeatureGroupModal({
     }
   }
 
-  const isLastStep = displayStep === STEPS.length - 1;
-  const showSaveDraft = variant === "full" && !!onSaveDraft;
-
   const headerTitle =
     variant === "training"
       ? "Training Config"
-      : variant === "basic"
-      ? mode === "create"
-        ? "Create Feature Group"
-        : "Basic Info"
       : mode === "create"
-      ? "Create Feature Group"
-      : "Edit Feature Group";
+        ? "Create Feature Group"
+        : "Basic Info";
 
   return (
     <div
@@ -753,219 +688,68 @@ export default function FeatureGroupModal({
           </button>
         </div>
 
-        {/* ── Steps Bar ──────────────────────────────────────────────────── */}
-        {!isCompact && (
-        <div className="px-8 py-4 border-b border-gray-100 flex-shrink-0"
-          style={{ background: "linear-gradient(to bottom, #f8fbfb, white)" }}
-        >
-          <div className="flex items-center">
-            {STEPS.map((s, i) => {
-              const isActive = i === step;
-              const isDone   = stepsValid[i] && !isActive;
-              return (
-                <div key={s.key} className={`flex items-center ${i < STEPS.length - 1 ? "flex-1" : ""}`}>
-                  {/* Clickable step node */}
-                  <button
-                    type="button"
-                    onClick={() => setStep(i)}
-                    className="flex items-center gap-2.5 flex-shrink-0 group outline-none"
-                    style={{ cursor: "pointer" }}
-                  >
-                    {/* Circle */}
-                    <div
-                      className="w-7 h-7 rounded-full flex items-center justify-center flex-shrink-0 transition-all duration-200"
-                      style={
-                        isActive
-                          ? { backgroundColor: "#13c2c2", border: "2.5px solid #13c2c2", boxShadow: "0 0 0 4px rgba(19,194,194,0.18)" }
-                          : isDone
-                          ? { backgroundColor: "#13c2c2", border: "2px solid #13c2c2" }
-                          : { backgroundColor: "#f3f4f6", border: "2px solid #d1d5db" }
-                      }
-                    >
-                      {isDone ? (
-                        <Check size={12} color="white" strokeWidth={3} />
-                      ) : (
-                        <span style={{ fontSize: 12, fontWeight: 700, color: isActive ? "white" : "#9ca3af" }}>
-                          {i + 1}
-                        </span>
-                      )}
-                    </div>
 
-                    {/* Label — active gets a teal pill */}
-                    {isActive ? (
-                      <span style={{
-                        fontSize: 13, fontWeight: 700,
-                        color: "#0a8f8f",
-                        background: "rgba(19,194,194,0.12)",
-                        border: "1px solid rgba(19,194,194,0.28)",
-                        padding: "2px 10px",
-                        borderRadius: 20,
-                        letterSpacing: "0.01em",
-                        transition: "all 0.2s",
-                      }}>
-                        {s.label}
-                      </span>
-                    ) : (
-                      <span
-                        className="transition-colors duration-150 group-hover:text-gray-700"
-                        style={{ fontSize: 13, fontWeight: 500, color: isDone ? "#374151" : "#b0b8c4" }}
-                      >
-                        {s.label}
-                      </span>
-                    )}
-                  </button>
-
-                  {/* Connector line — fills teal as steps are passed */}
-                  {i < STEPS.length - 1 && (
-                    <div
-                      className="flex-1 mx-4 rounded-full transition-all duration-300"
-                      style={{ height: 2, backgroundColor: i < step ? "#13c2c2" : "#e5e7eb" }}
-                    />
-                  )}
-                </div>
-              );
-            })}
-          </div>
-        </div>
-        )}
-
-        {/* ── Body (scrollable) ───────────────────────────────────────────── */}
+        {/* ── Body (scrollable) ──────────────────────────────────────────── */}
         <div
-          className="flex-1 overflow-y-auto px-8 py-6 min-h-0"
+          className="flex-1 overflow-y-auto px-7 py-6"
           data-fg-modal-scroll
         >
-          {displayStep === 0 && (
+          {variant === "basic" ? (
             <Step0BasicInfo
               form={form} setField={setField} modules={modules} err={touched}
               mode={mode}
               ownerInput={ownerInput} setOwnerInput={setOwnerInput}
               addOwner={addOwner} handleOwnerKeyDown={handleOwnerKeyDown}
             />
-          )}
-          {displayStep === 1 && (
+          ) : (
             <Step1TrainingConfig form={form} setField={setField} err={touched} />
-          )}
-          {displayStep === 2 && (
-            <Step2ServingBlocksConfig form={form} setField={setField} err={touched} />
-          )}
-          {displayStep === 3 && (
-            <Step3FeatureMappingAndCompute form={form} setField={setField} err={touched} />
           )}
         </div>
 
         {/* ── Footer ─────────────────────────────────────────────────────── */}
-        {isCompact ? (
-          <div
-            className="flex items-center justify-end gap-2 px-8 py-4 border-t border-gray-100 flex-shrink-0 rounded-b-2xl"
-            style={{ backgroundColor: "#fafafa" }}
-          >
-            <button
-              type="button"
-              onClick={onClose}
-              className="inline-flex items-center gap-1.5 px-4 py-2 text-sm rounded-lg border border-gray-200 text-gray-600 hover:border-gray-300 hover:bg-gray-50 transition-all min-h-[44px]"
-              style={{ fontWeight: 500 }}
-            >
-              Cancel
-            </button>
-            {variant === "basic" ? (
-              <button
-                type="button"
-                onClick={handleCompactBasicContinue}
-                className="inline-flex items-center gap-1.5 px-5 py-2 text-sm rounded-lg text-white transition-all min-h-[44px]"
-                style={{
-                  backgroundColor: "#13c2c2",
-                  fontWeight: 500,
-                  opacity: isStep0Valid(finalForm()) ? 1 : 0.5,
-                  cursor: isStep0Valid(finalForm()) ? "pointer" : "not-allowed",
-                }}
-              >
-                Continue <ArrowRight size={13} />
-              </button>
-            ) : (
-              <button
-                type="button"
-                onClick={handleCompactTrainingSave}
-                className="inline-flex items-center gap-1.5 px-5 py-2 text-sm rounded-lg text-white transition-all min-h-[44px]"
-                style={{
-                  backgroundColor: "#13c2c2",
-                  fontWeight: 500,
-                  opacity: isStep1Valid(finalForm()) ? 1 : 0.5,
-                  cursor: isStep1Valid(finalForm()) ? "pointer" : "not-allowed",
-                }}
-              >
-                <Check size={13} /> Save
-              </button>
-            )}
-          </div>
-        ) : (
         <div
-          className={`flex items-center px-8 py-4 border-t border-gray-100 flex-shrink-0 rounded-b-2xl ${
-            showSaveDraft ? "justify-between" : "justify-end"
-          }`}
+          className="flex items-center justify-end gap-2 px-8 py-4 border-t border-gray-100 flex-shrink-0 rounded-b-2xl"
           style={{ backgroundColor: "#fafafa" }}
         >
-          {showSaveDraft ? (
+          <button
+            type="button"
+            onClick={onClose}
+            className="inline-flex items-center gap-1.5 px-4 py-2 text-sm rounded-lg border border-gray-200 text-gray-600 hover:border-gray-300 hover:bg-gray-50 transition-all min-h-[44px]"
+            style={{ fontWeight: 500 }}
+          >
+            Cancel
+          </button>
+          {variant === "basic" ? (
             <button
               type="button"
-              onClick={handleSaveDraft}
-              disabled={savedFeedback}
-              className="inline-flex items-center gap-1.5 px-4 py-2 text-sm rounded-lg border transition-all"
-              style={
-                savedFeedback
-                  ? { borderColor: "#13c2c2", color: "#13c2c2", backgroundColor: "rgba(19,194,194,0.05)", fontWeight: 500 }
-                  : { borderColor: "#e5e7eb", color: "#4b5563", backgroundColor: "white", fontWeight: 500 }
-              }
+              onClick={handleCompactBasicContinue}
+              className="inline-flex items-center gap-1.5 px-5 py-2 text-sm rounded-lg text-white transition-all min-h-[44px]"
+              style={{
+                backgroundColor: "#13c2c2",
+                fontWeight: 500,
+                opacity: isStep0Valid(finalForm()) ? 1 : 0.5,
+                cursor: isStep0Valid(finalForm()) ? "pointer" : "not-allowed",
+              }}
             >
-              {savedFeedback
-                ? <><Check size={13} /> Saved!</>
-                : <><Save size={13} /> Save Draft</>
-              }
+              Continue <ArrowRight size={13} />
             </button>
-          ) : null}
-
-          <div className="flex items-center gap-2">
-            {step > 0 && (
-              <button
-                type="button"
-                onClick={handlePrev}
-                className="inline-flex items-center gap-1.5 px-4 py-2 text-sm rounded-lg border border-gray-200 text-gray-600 hover:border-gray-300 hover:bg-gray-50 transition-all"
-                style={{ fontWeight: 500 }}
-              >
-                <ArrowLeft size={13} /> Previous
-              </button>
-            )}
-            {!isLastStep ? (
-              <button
-                type="button"
-                onClick={handleNext}
-                className="inline-flex items-center gap-1.5 px-5 py-2 text-sm rounded-lg text-white transition-all"
-                style={{
-                  backgroundColor: "#13c2c2",
-                  fontWeight: 500,
-                  opacity: isCurrentValid ? 1 : 0.5,
-                  cursor: isCurrentValid ? "pointer" : "not-allowed",
-                }}
-              >
-                Next <ArrowRight size={13} />
-              </button>
-            ) : (
-              <button
-                type="button"
-                onClick={handleSubmit}
-                className="inline-flex items-center gap-1.5 px-5 py-2 text-sm rounded-lg text-white transition-all"
-                style={{
-                  backgroundColor: "#13c2c2",
-                  fontWeight: 500,
-                  opacity: allValid ? 1 : 0.5,
-                  cursor: allValid ? "pointer" : "not-allowed",
-                }}
-              >
-                <Send size={13} /> Submit
-              </button>
-            )}
-          </div>
+          ) : (
+            <button
+              type="button"
+              onClick={handleCompactTrainingSave}
+              className="inline-flex items-center gap-1.5 px-5 py-2 text-sm rounded-lg text-white transition-all min-h-[44px]"
+              style={{
+                backgroundColor: "#13c2c2",
+                fontWeight: 500,
+                opacity: isStep1Valid(finalForm()) ? 1 : 0.5,
+                cursor: isStep1Valid(finalForm()) ? "pointer" : "not-allowed",
+              }}
+            >
+              <Check size={13} /> Save
+            </button>
+          )}
         </div>
-        )}
+
       </div>
     </div>
   );
@@ -1714,154 +1498,6 @@ function MappingSelect({ value, options, onChange }: {
   );
 }
 
-// ─── FeatureMappingTable ──────────────────────────────────────────────────────
-function FeatureMappingTable({ outputFeatures, trainingFeatures, mapping, onChange, onAutoMatchAll }: {
-  outputFeatures: string[];
-  trainingFeatures: string[];
-  mapping: Record<string, string>;
-  onChange: (m: Record<string, string>) => void;
-  onAutoMatchAll: () => void;
-}) {
-  const total = outputFeatures.length;
-  const mappedCount = outputFeatures.filter(sf => !!mapping[sf]).length;
-  const allMapped = mappedCount === total;
-
-  function setMapping(sf: string, tf: string) {
-    if (!tf) {
-      const next = { ...mapping };
-      delete next[sf];
-      onChange(next);
-    } else {
-      onChange({ ...mapping, [sf]: tf });
-    }
-  }
-
-  return (
-    <div className="rounded-lg border overflow-hidden" style={{ borderColor: "#e5e7eb" }}>
-      {/* Header */}
-      <div
-        className="flex items-center justify-between px-4 py-2.5 border-b"
-        style={{ background: "#f8fafc", borderColor: "#e5e7eb" }}
-      >
-        <div className="flex items-center gap-2">
-          <Link2 size={13} style={{ color: "#13c2c2" }} />
-          <span className="text-xs" style={{ fontWeight: 700, color: "#1a1a2e" }}>
-            Training – Serving Feature Mapping
-          </span>
-          <span
-            className="text-xs px-1.5 py-0.5 rounded-full"
-            style={{
-              background: allMapped ? "#f6ffed" : mappedCount > 0 ? "#fffbe6" : "#f3f4f6",
-              color: allMapped ? "#389e0d" : mappedCount > 0 ? "#ad6800" : "#6b7280",
-              border: `1px solid ${allMapped ? "#b7eb8f" : mappedCount > 0 ? "#ffe58f" : "#e5e7eb"}`,
-              fontWeight: 600,
-            }}
-          >
-            {mappedCount} / {total}
-          </span>
-        </div>
-        {mappedCount < total && (
-          <button
-            type="button"
-            onClick={onAutoMatchAll}
-            className="flex items-center gap-1.5 text-xs px-2.5 py-1 rounded-md transition-colors hover:opacity-80"
-            style={{
-              background: "rgba(19,194,194,0.08)",
-              color: "#0e9494",
-              border: "1px solid rgba(19,194,194,0.22)",
-              fontWeight: 600,
-            }}
-          >
-            <Zap size={11} />
-            Auto-match
-          </button>
-        )}
-      </div>
-
-      {/* Column headers */}
-      <div
-        className="grid px-4 py-2 border-b"
-        style={{ gridTemplateColumns: "1fr 20px 1fr", borderColor: "#f0f0f0", background: "#fafafa" }}
-      >
-        <span style={{ fontSize: 10, fontWeight: 700, color: "#9ca3af", textTransform: "uppercase", letterSpacing: "0.06em" }}>
-          Serving Feature (output)
-        </span>
-        <span />
-        <span style={{ fontSize: 10, fontWeight: 700, color: "#9ca3af", textTransform: "uppercase", letterSpacing: "0.06em" }}>
-          Training Feature (column)
-        </span>
-      </div>
-
-      {/* Rows */}
-      <div>
-        {outputFeatures.map((sf, idx) => {
-          const mapped = mapping[sf];
-          return (
-            <div
-              key={sf}
-              className="grid items-center gap-3 px-4 py-2.5 hover:bg-gray-50 transition-colors border-b last:border-b-0"
-              style={{
-                gridTemplateColumns: "1fr 20px 1fr",
-                background: idx % 2 === 0 ? "white" : "#fafcfc",
-                borderColor: "#f5f5f5",
-              }}
-            >
-              {/* Serving feature pill */}
-              <span
-                className="inline-flex items-center gap-1.5 px-2 py-1 rounded-md text-xs w-fit"
-                style={{
-                  background: "rgba(19,194,194,0.08)",
-                  color: "#0a8f8f",
-                  border: "1px solid rgba(19,194,194,0.22)",
-                  fontFamily: "monospace",
-                  fontWeight: 500,
-                }}
-              >
-                {sf}
-              </span>
-
-              {/* Arrow */}
-              <span style={{ color: "#d1d5db", fontSize: 14, textAlign: "center" }}>→</span>
-
-              {/* Training feature dropdown + status */}
-              <div className="flex items-center gap-2 min-w-0">
-                <MappingSelect
-                  value={mapped ?? ""}
-                  options={trainingFeatures}
-                  onChange={tf => setMapping(sf, tf)}
-                />
-                {mapped ? (
-                  <Check size={13} style={{ color: "#52c41a", flexShrink: 0 }} />
-                ) : (
-                  <span style={{ width: 13, flexShrink: 0 }} />
-                )}
-              </div>
-            </div>
-          );
-        })}
-      </div>
-
-      {/* Footer */}
-      {allMapped ? (
-        <div className="px-4 py-2 border-t flex items-center gap-1.5"
-          style={{ background: "#f6ffed", borderColor: "#b7eb8f" }}>
-          <Check size={11} style={{ color: "#52c41a" }} />
-          <p className="text-xs" style={{ color: "#389e0d", fontWeight: 500 }}>
-            All serving features are mapped to training features.
-          </p>
-        </div>
-      ) : (
-        <div className="px-4 py-2 border-t"
-          style={{ background: "#fffbe6", borderColor: "#ffe58f" }}>
-          <p className="text-xs" style={{ color: "#ad6800", fontWeight: 500 }}>
-            {total - mappedCount} serving feature{total - mappedCount > 1 ? "s" : ""} not yet mapped — will not be aligned to training data.
-          </p>
-        </div>
-      )}
-    </div>
-  );
-}
-
 // ─── LatestTransformationSelect (Name only → Name@LatestEnabledVersion) ─────
 function LatestTransformationSelect({
   value,
@@ -1954,648 +1590,3 @@ function LatestTransformationSelect({
   );
 }
 
-// ─── Step 3: Serving Config (repeatable blocks) ───────────────────────────────
-function Step2ServingBlocksConfig({
-  form,
-  setField,
-  err,
-}: {
-  form: FGFormData;
-  setField: (k: keyof FGFormData, v: any) => void;
-  err: boolean;
-}) {
-  const filteredSources = MOCK_FEATURE_SOURCES.filter(
-    s => s.region === form.region && s.status === "Connected",
-  );
-  const filteredTransforms = MOCK_TRANSFORMATIONS.filter(
-    t => t.region === form.region && t.status !== "Deprecated",
-  );
-  const dupOutputs = form.servingBlocks.length > 0 &&
-    servingOutputNamesHaveDuplicates(form.servingBlocks, form.region);
-
-  function patchBlocks(next: ServingBlock[]) {
-    setField("servingBlocks", next);
-  }
-
-  function patchBlock(id: string, patch: Partial<ServingBlock>) {
-    patchBlocks(form.servingBlocks.map(b => (b.id === id ? { ...b, ...patch } : b)));
-  }
-
-  return (
-    <div className="space-y-5">
-      <p className="text-xs text-gray-500" style={{ fontWeight: 500 }}>
-        Add one block per Feature Source + Transformation pair. Leave empty if this feature group has no online
-        serving path. Duplicate serving feature names across blocks are not allowed.
-      </p>
-
-      {err && dupOutputs && (
-        <div
-          role="alert"
-          className="rounded-lg border px-3 py-2 text-xs flex items-center gap-2"
-          style={{ background: "#fff1f0", borderColor: "#ffa39e", color: "#cf1322", fontWeight: 500 }}
-        >
-          <AlertCircle size={14} className="flex-shrink-0" />
-          Duplicate serving output feature names across blocks. Change a transformation or remove a block.
-        </div>
-      )}
-
-      {form.servingBlocks.map((b, idx) => {
-        const src = MOCK_FEATURE_SOURCES.find(s => s.name === b.featureSource);
-        const fsVer = src ? resolveFsVersionTag(src) : "";
-        const tfMock = findMockTransformationForBlock(b, form.region);
-        const outputsCnt = getBlockOutputFeatureNames(b, form.region).length;
-        return (
-          <div
-            key={b.id}
-            className="rounded-xl border border-gray-200 p-4 space-y-4"
-            style={{ background: "#fafafa" }}
-          >
-            <div className="flex items-center justify-between gap-2">
-              <span className="text-xs font-semibold text-gray-700">
-                Serving pair {idx + 1}
-              </span>
-              <button
-                type="button"
-                onClick={() => patchBlocks(form.servingBlocks.filter(x => x.id !== b.id))}
-                className="inline-flex items-center gap-1 px-2 py-1 rounded-md text-xs text-red-600 hover:bg-red-50 border border-transparent hover:border-red-100"
-                aria-label={`Remove serving block ${idx + 1}`}
-              >
-                <Trash2 size={12} /> Remove
-              </button>
-            </div>
-
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              <FormGroup
-                label="Feature Source"
-                required
-                hint={form.region ? `Region: ${form.region}` : "Select region in Basic Info"}
-                error={err && !b.featureSource.trim() ? "Feature Source is required" : undefined}
-              >
-                <div className="flex items-center gap-2 min-w-0 w-full">
-                  <div className="flex-1 min-w-0">
-                    <FeatureSourceSelect
-                      value={b.featureSource}
-                      onChange={name => {
-                        patchBlock(b.id, { featureSource: name, transformation: "" });
-                      }}
-                      sources={filteredSources}
-                      hasError={err && !b.featureSource.trim()}
-                    />
-                  </div>
-                  {fsVer ? (
-                    <span className="text-xs font-mono text-gray-500 flex-shrink-0 tabular-nums">
-                      {fsVer}
-                    </span>
-                  ) : null}
-                </div>
-              </FormGroup>
-
-              <FormGroup
-                label="Transformation"
-                required
-                hint={form.region ? `Latest enabled version for ${form.region}` : "Select region in Basic Info"}
-                error={err && !b.transformation.trim() ? "Transformation is required" : undefined}
-              >
-                <LatestTransformationSelect
-                  value={b.transformation}
-                  onChange={v => patchBlock(b.id, { transformation: v })}
-                  transformations={filteredTransforms}
-                  region={form.region}
-                  hasError={err && !b.transformation.trim()}
-                />
-              </FormGroup>
-            </div>
-
-            {src && (
-              <div
-                className="rounded-lg border px-4 py-3 space-y-2"
-                style={{ borderColor: "rgba(19,194,194,0.20)", background: "rgba(19,194,194,0.03)" }}
-              >
-                <p className="text-xs flex items-center gap-1.5" style={{ color: "#0e9494", fontWeight: 600 }}>
-                  <span className="w-1.5 h-1.5 rounded-full bg-teal-400 flex-shrink-0" />
-                  Serving pair details
-                </p>
-                <div className="grid gap-2 sm:grid-cols-2">
-                  <div className="flex items-start gap-2 min-w-0">
-                    <span className="text-xs text-gray-400 flex-shrink-0 pt-0.5" style={{ fontWeight: 500, width: 112 }}>
-                      Feature Source Type
-                    </span>
-                    <SourceTypeBadge sourceType={src.sourceType} />
-                  </div>
-                  <div className="flex items-start gap-2 min-w-0">
-                    <span className="text-xs text-gray-400 flex-shrink-0 pt-0.5" style={{ fontWeight: 500, width: 112 }}>
-                      Data Latency
-                    </span>
-                    <DataLatencyTag latency={src.dataLatency} />
-                  </div>
-                  <div className="flex items-start gap-2 min-w-0 sm:col-span-2">
-                    <span className="text-xs text-gray-400 flex-shrink-0 pt-0.5" style={{ fontWeight: 500, width: 112 }}>
-                      Input Params
-                    </span>
-                    <div className="flex flex-wrap gap-1 min-w-0">
-                      {src.inputParams.map(p => (
-                        <span
-                          key={p}
-                          className="inline-flex items-center px-2 py-0.5 rounded-md text-xs"
-                          style={{
-                            background: "#f3f4f6",
-                            color: "#374151",
-                            border: "1px solid #e5e7eb",
-                            fontFamily: "monospace",
-                            fontWeight: 500,
-                          }}
-                        >
-                          {p}
-                        </span>
-                      ))}
-                    </div>
-                  </div>
-                  <div className="flex items-center gap-2 min-w-0">
-                    <span className="text-xs text-gray-400 flex-shrink-0" style={{ fontWeight: 500, width: 112 }}>
-                      Transformation Type
-                    </span>
-                    {tfMock ? (
-                      <span
-                        className="text-xs px-2 py-0.5 rounded-md border"
-                        style={{
-                          background: tfMock.transformKind === "Aggregator" ? "#fff7e6" : "#f0f9ff",
-                          color: tfMock.transformKind === "Aggregator" ? "#ad4e00" : "#0369a1",
-                          borderColor: tfMock.transformKind === "Aggregator" ? "#ffd591" : "#bae6fd",
-                          fontWeight: 600,
-                        }}
-                      >
-                        {tfMock.transformKind}
-                      </span>
-                    ) : (
-                      <span className="text-xs text-gray-400">Select transformation</span>
-                    )}
-                  </div>
-                  <div className="flex items-center gap-2 min-w-0">
-                    <span className="text-xs text-gray-400 flex-shrink-0" style={{ fontWeight: 500, width: 112 }}>
-                      Outputs Cnt
-                    </span>
-                    {tfMock && b.transformation.trim() ? (
-                      <span className="text-xs font-mono text-gray-700 font-semibold">{outputsCnt}</span>
-                    ) : (
-                      <span className="text-xs text-gray-400">—</span>
-                    )}
-                  </div>
-                </div>
-              </div>
-            )}
-          </div>
-        );
-      })}
-
-      <button
-        type="button"
-        onClick={() =>
-          patchBlocks([
-            ...form.servingBlocks,
-            { id: newBlockId(), featureSource: "", transformation: "" },
-          ])
-        }
-        className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg border border-dashed border-gray-300 text-xs text-gray-600 hover:border-[#13c2c2] hover:text-[#0e9494] transition-colors"
-        style={{ fontWeight: 600 }}
-      >
-        <Plus size={14} /> Add serving block
-      </button>
-    </div>
-  );
-}
-
-// ─── Step 4: Feature Mapping + Compute Features ────────────────────────────────
-function Step3FeatureMappingAndCompute({
-  form,
-  setField,
-  err,
-}: {
-  form: FGFormData;
-  setField: (k: keyof FGFormData, v: any) => void;
-  err: boolean;
-}) {
-  const outputFeatures = unionServingOutputFeatures(form.servingBlocks, form.region);
-  const trainingFeatures = MOCK_TRAINING_FEATURES[form.tableName] ?? DEFAULT_TRAINING_FEATURES;
-  const servingSet = new Set(outputFeatures);
-
-  const addComputeBtnRef = useRef<HTMLButtonElement>(null);
-  const computePopoverPanelRef = useRef<HTMLDivElement>(null);
-  const [computePopoverOpen, setComputePopoverOpen] = useState(false);
-  const [computeEditingId, setComputeEditingId] = useState<string | null>(null);
-  const [computeDraft, setComputeDraft] = useState({
-    name: "",
-    sql: "",
-    dataType: "DOUBLE",
-  });
-  const [computePopoverAttempted, setComputePopoverAttempted] = useState(false);
-  const [computePanelStyle, setComputePanelStyle] = useState<{
-    top: number;
-    left: number;
-    width: number;
-    maxHeight: number;
-  } | null>(null);
-
-  const updateComputePanelPosition = useCallback(() => {
-    const el = addComputeBtnRef.current;
-    if (!el) return;
-    const rect = el.getBoundingClientRect();
-    const width = Math.max(360, Math.min(440, rect.width + 120));
-    let left = rect.right - width;
-    const margin = 8;
-    if (left < margin) left = margin;
-    if (left + width > window.innerWidth - margin) {
-      left = Math.max(margin, window.innerWidth - width - margin);
-    }
-    const top = rect.bottom + 4;
-    const maxHeight = Math.max(180, window.innerHeight - top - margin);
-    setComputePanelStyle({ top, left, width, maxHeight });
-  }, []);
-
-  useEffect(() => {
-    if (!computePopoverOpen) setComputePanelStyle(null);
-  }, [computePopoverOpen]);
-
-  useLayoutEffect(() => {
-    if (!computePopoverOpen) return;
-    updateComputePanelPosition();
-  }, [computePopoverOpen, updateComputePanelPosition]);
-
-  useEffect(() => {
-    if (!computePopoverOpen) return;
-    function onScrollOrResize() {
-      updateComputePanelPosition();
-    }
-    const scrollRoot = addComputeBtnRef.current?.closest("[data-fg-modal-scroll]");
-    window.addEventListener("resize", onScrollOrResize);
-    scrollRoot?.addEventListener("scroll", onScrollOrResize, { passive: true });
-    return () => {
-      window.removeEventListener("resize", onScrollOrResize);
-      scrollRoot?.removeEventListener("scroll", onScrollOrResize);
-    };
-  }, [computePopoverOpen, updateComputePanelPosition]);
-
-  useEffect(() => {
-    if (!computePopoverOpen) return;
-    function onDocMouse(e: MouseEvent) {
-      const t = e.target as Node;
-      if (addComputeBtnRef.current?.contains(t)) return;
-      if (computePopoverPanelRef.current?.contains(t)) return;
-      setComputePopoverOpen(false);
-      setComputePopoverAttempted(false);
-    }
-    document.addEventListener("mousedown", onDocMouse);
-    return () => document.removeEventListener("mousedown", onDocMouse);
-  }, [computePopoverOpen]);
-
-  useEffect(() => {
-    if (!computePopoverOpen) return;
-    function onKey(e: KeyboardEvent) {
-      if (e.key === "Escape") {
-        e.preventDefault();
-        e.stopPropagation();
-        setComputePopoverOpen(false);
-        setComputePopoverAttempted(false);
-      }
-    }
-    document.addEventListener("keydown", onKey, true);
-    return () => document.removeEventListener("keydown", onKey, true);
-  }, [computePopoverOpen]);
-
-  useEffect(() => {
-    if (!computePopoverOpen) return;
-    const id = requestAnimationFrame(() => {
-      computePopoverPanelRef.current?.querySelector<HTMLInputElement>("input")?.focus();
-    });
-    return () => cancelAnimationFrame(id);
-  }, [computePopoverOpen]);
-
-  useEffect(() => {
-    const prev = form.featureMapping;
-    const next: Record<string, string> = {};
-    for (const k of outputFeatures) {
-      if (prev[k] !== undefined) next[k] = prev[k];
-      else if (trainingFeatures.includes(k)) next[k] = k;
-    }
-    if (JSON.stringify(next) === JSON.stringify(prev)) return;
-    setField("featureMapping", next);
-  }, [JSON.stringify(form.servingBlocks), form.region, form.tableName]); // eslint-disable-line react-hooks/exhaustive-deps
-
-  function handleAutoMatchAll() {
-    const next = { ...form.featureMapping };
-    outputFeatures.forEach(sf => {
-      if (!next[sf] && trainingFeatures.includes(sf)) next[sf] = sf;
-    });
-    setField("featureMapping", next);
-  }
-
-  function patchCompute(id: string, patch: Partial<ComputeFeatureRow>) {
-    setField(
-      "computeFeatures",
-      form.computeFeatures.map(c => (c.id === id ? { ...c, ...patch } : c)),
-    );
-  }
-
-  function removeCompute(id: string) {
-    setField(
-      "computeFeatures",
-      form.computeFeatures.filter(c => c.id !== id),
-    );
-  }
-
-  function openComputeNew() {
-    setComputeEditingId(null);
-    setComputeDraft({ name: "", sql: "", dataType: "DOUBLE" });
-    setComputePopoverAttempted(false);
-    setComputePopoverOpen(true);
-  }
-
-  function openComputeEdit(row: ComputeFeatureRow) {
-    setComputeEditingId(row.id);
-    setComputeDraft({ name: row.name, sql: row.sql, dataType: row.dataType });
-    setComputePopoverAttempted(false);
-    setComputePopoverOpen(true);
-  }
-
-  function closeComputePopover() {
-    setComputePopoverOpen(false);
-    setComputePopoverAttempted(false);
-  }
-
-  function saveComputePopover() {
-    setComputePopoverAttempted(true);
-    const name = computeDraft.name.trim();
-    const sql = computeDraft.sql.trim();
-    const dt = computeDraft.dataType.trim();
-    if (!name || !sql || !dt) return;
-    if (outputFeatures.length === 0) return;
-    const unknown = computeSqlUnknownIdentifiers(sql, servingSet);
-    if (unknown.length > 0) return;
-    const taken = new Set(
-      form.computeFeatures
-        .filter(c => c.id !== computeEditingId)
-        .map(c => c.name.trim()),
-    );
-    if (taken.has(name)) return;
-
-    if (computeEditingId) {
-      patchCompute(computeEditingId, { name, sql, dataType: dt });
-    } else {
-      setField("computeFeatures", [
-        ...form.computeFeatures,
-        { id: newComputeId(), name, sql, dataType: dt },
-      ]);
-    }
-    closeComputePopover();
-  }
-
-  function copyComputeRow(c: ComputeFeatureRow) {
-    const base = c.name.trim() || "feature";
-    let candidate = `${base}_copy`;
-    const names = new Set(form.computeFeatures.map(x => x.name.trim()));
-    let n = 2;
-    while (names.has(candidate)) {
-      candidate = `${base}_copy${n}`;
-      n += 1;
-    }
-    setField("computeFeatures", [
-      ...form.computeFeatures,
-      { id: newComputeId(), name: candidate, sql: c.sql, dataType: c.dataType },
-    ]);
-  }
-
-  const popoverUnknown =
-    outputFeatures.length > 0 && computeDraft.sql.trim()
-      ? computeSqlUnknownIdentifiers(computeDraft.sql, servingSet)
-      : [];
-  const popoverNameDup =
-    computePopoverAttempted &&
-    computeDraft.name.trim() &&
-    form.computeFeatures.some(
-      c => c.id !== computeEditingId && c.name.trim() === computeDraft.name.trim(),
-    );
-
-  const computePopoverPortal =
-    computePopoverOpen && computePanelStyle
-      ? createPortal(
-          <div
-            ref={computePopoverPanelRef}
-            role="dialog"
-            aria-modal="true"
-            aria-labelledby="fg-compute-popover-title"
-            className="fixed z-[200] bg-white border border-gray-200 rounded-xl shadow-xl flex flex-col overflow-hidden"
-            style={{
-              top: computePanelStyle.top,
-              left: computePanelStyle.left,
-              width: computePanelStyle.width,
-              maxHeight: computePanelStyle.maxHeight,
-            }}
-          >
-            <div className="px-3 py-2 border-b border-gray-100 flex-shrink-0">
-              <h4 id="fg-compute-popover-title" className="text-xs font-semibold text-gray-800">
-                {computeEditingId ? "Edit compute feature" : "Add compute feature"}
-              </h4>
-            </div>
-            <div className="p-3 space-y-3 overflow-y-auto flex-1 min-h-0">
-              <FormGroup
-                label="Feature name"
-                required
-                error={
-                  computePopoverAttempted && !computeDraft.name.trim()
-                    ? "Name is required"
-                    : popoverNameDup
-                    ? "Name already used"
-                    : undefined
-                }
-              >
-                <StyledInput
-                  value={computeDraft.name}
-                  onChange={v => setComputeDraft(d => ({ ...d, name: v }))}
-                  placeholder="e.g. risk_score_adjusted"
-                  mono
-                  hasError={
-                    computePopoverAttempted &&
-                    (!computeDraft.name.trim() || !!popoverNameDup)
-                  }
-                />
-              </FormGroup>
-              <FormGroup
-                label="Data type"
-                required
-                error={computePopoverAttempted && !computeDraft.dataType.trim() ? "Data type is required" : undefined}
-              >
-                <StyledSelect
-                  value={computeDraft.dataType}
-                  onChange={v => setComputeDraft(d => ({ ...d, dataType: v }))}
-                  options={COMPUTE_DATA_TYPES.map(dt => ({ label: dt, value: dt }))}
-                  placeholder="Type"
-                  hasError={computePopoverAttempted && !computeDraft.dataType.trim()}
-                />
-              </FormGroup>
-              <div>
-                <label className="text-sm text-gray-700 mb-1.5 block" style={{ fontWeight: 600 }}>
-                  SQL expression
-                  <span className="text-red-500 ml-0.5">*</span>
-                </label>
-                <textarea
-                  value={computeDraft.sql}
-                  onChange={e => setComputeDraft(d => ({ ...d, sql: e.target.value }))}
-                  rows={4}
-                  aria-invalid={
-                    computePopoverAttempted &&
-                    (!computeDraft.sql.trim() || popoverUnknown.length > 0)
-                  }
-                  className={`w-full text-xs px-3 py-2 rounded-lg border outline-none transition-colors font-mono ${
-                    computePopoverAttempted &&
-                    (!computeDraft.sql.trim() || popoverUnknown.length > 0)
-                      ? "border-red-300 bg-red-50"
-                      : "border-gray-200"
-                  }`}
-                  placeholder="e.g. user_risk_score * 1.1"
-                />
-                {popoverUnknown.length > 0 && (
-                  <p className="mt-1 text-xs text-red-500" role="alert">
-                    Unknown identifiers (not in serving outputs): {popoverUnknown.join(", ")}
-                  </p>
-                )}
-                {computePopoverAttempted && !computeDraft.sql.trim() && (
-                  <p className="mt-1 text-xs text-red-500" role="alert">
-                    SQL is required
-                  </p>
-                )}
-              </div>
-            </div>
-            <div className="px-3 py-2 border-t border-gray-100 flex justify-end gap-2 flex-shrink-0 bg-gray-50">
-              <button
-                type="button"
-                onClick={closeComputePopover}
-                className="px-3 py-1.5 text-xs rounded-lg border border-gray-200 text-gray-600 hover:bg-white"
-                style={{ fontWeight: 500 }}
-              >
-                Cancel
-              </button>
-              <button
-                type="button"
-                onClick={saveComputePopover}
-                className="px-3 py-1.5 text-xs rounded-lg text-white"
-                style={{ backgroundColor: "#13c2c2", fontWeight: 600 }}
-              >
-                Save
-              </button>
-            </div>
-          </div>,
-          document.body,
-        )
-      : null;
-
-  return (
-    <div className="space-y-6">
-      {outputFeatures.length === 0 ? (
-        <div
-          className="rounded-lg border border-dashed px-4 py-8 flex flex-col items-center justify-center gap-2"
-          style={{ borderColor: "#e5e7eb", background: "#fafafa" }}
-        >
-          <Link2 size={18} className="text-gray-300" />
-          <p className="text-xs text-gray-500 text-center" style={{ fontWeight: 500 }}>
-            No serving outputs (add Serving blocks in the previous step). Mapping and compute features need serving
-            feature names.
-          </p>
-        </div>
-      ) : (
-        <FeatureMappingTable
-          outputFeatures={outputFeatures}
-          trainingFeatures={trainingFeatures}
-          mapping={form.featureMapping ?? {}}
-          onChange={m => setField("featureMapping", m)}
-          onAutoMatchAll={handleAutoMatchAll}
-        />
-      )}
-
-      <div className="space-y-2">
-        <div className="flex items-center justify-between gap-2">
-          <h3 className="text-sm font-semibold text-gray-800">Compute features (real-time SQL)</h3>
-          <button
-            ref={addComputeBtnRef}
-            type="button"
-            disabled={outputFeatures.length === 0}
-            onClick={openComputeNew}
-            className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs border transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
-            style={{ fontWeight: 600, borderColor: "#e5e7eb", color: "#374151" }}
-          >
-            <Plus size={12} /> Add compute feature
-          </button>
-        </div>
-        <p className="text-xs text-gray-500">
-          SQL may only reference serving output names listed above ({outputFeatures.length ? outputFeatures.join(", ") : "—"}).
-        </p>
-
-        <div aria-live="polite" className="sr-only">
-          {err && form.computeFeatures.length > 0 ? "Compute feature list updated." : ""}
-        </div>
-
-        {form.computeFeatures.map(c => {
-          const unknown =
-            outputFeatures.length > 0 && c.sql.trim()
-              ? computeSqlUnknownIdentifiers(c.sql, servingSet)
-              : [];
-          const rowInvalid =
-            err &&
-            (!c.name.trim() || !c.sql.trim() || !c.dataType.trim() || unknown.length > 0);
-
-          return (
-            <div
-              key={c.id}
-              className="flex items-center justify-between gap-2 min-h-[44px] rounded-lg border px-3 py-2"
-              style={{ borderColor: rowInvalid ? "#ffa39e" : "#e5e7eb", background: "white" }}
-            >
-              <div className="flex items-center gap-2 min-w-0 flex-1">
-                <span
-                  className="text-xs font-medium text-gray-800 truncate font-mono"
-                  title={c.name}
-                >
-                  {c.name || "(unnamed)"}
-                </span>
-                <span
-                  className="text-[10px] px-1.5 py-0.5 rounded border flex-shrink-0 font-semibold"
-                  style={{
-                    background: "#f0f9ff",
-                    color: "#0369a1",
-                    borderColor: "#bae6fd",
-                  }}
-                >
-                  {c.dataType}
-                </span>
-              </div>
-              <div className="flex items-center gap-0.5 flex-shrink-0">
-                <button
-                  type="button"
-                  onClick={() => openComputeEdit(c)}
-                  className="p-2 rounded-md text-gray-500 hover:bg-gray-100 hover:text-[#0e9494]"
-                  aria-label={`Edit compute feature ${c.name}`}
-                >
-                  <Pencil size={15} />
-                </button>
-                <button
-                  type="button"
-                  onClick={() => copyComputeRow(c)}
-                  className="p-2 rounded-md text-gray-500 hover:bg-gray-100 hover:text-[#0e9494]"
-                  aria-label={`Copy compute feature ${c.name}`}
-                >
-                  <Copy size={15} />
-                </button>
-                <button
-                  type="button"
-                  onClick={() => removeCompute(c.id)}
-                  className="p-2 rounded-md text-gray-500 hover:bg-red-50 hover:text-red-600"
-                  aria-label={`Delete compute feature ${c.name}`}
-                >
-                  <Trash2 size={15} />
-                </button>
-              </div>
-            </div>
-          );
-        })}
-      </div>
-      {computePopoverPortal}
-    </div>
-  );
-}
