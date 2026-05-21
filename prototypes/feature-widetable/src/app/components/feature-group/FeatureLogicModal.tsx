@@ -500,33 +500,62 @@ const SERVING_NODES  = UPSTREAM_NODES.filter(n => ["kafka", "flink", "hbase", "f
 const TERMINAL_NODE  = UPSTREAM_NODES.find(n => n.type === "feature");
 
 
-function FlowArrowSmall() {
+// ─── Merged Trace Tab (Snake layout: nodes → KAG detail on click) ───────────
+const COLUMNS = 4;
+
+function chunkNodes(nodes: typeof UPSTREAM_NODES, cols: number) {
+  const chunks: typeof UPSTREAM_NODES[] = [];
+  for (let i = 0; i < nodes.length; i += cols) {
+    chunks.push(nodes.slice(i, i + cols));
+  }
+  return chunks;
+}
+
+function RowArrow() {
   return (
-    <svg width="18" height="12" viewBox="0 0 18 12" className="text-slate-300">
-      <path d="M0 3h12v4H0z" fill="currentColor" className="opacity-40" />
-      <path d="M12 0l5 5.5L12 11" fill="none" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round" />
-    </svg>
+    <div className="flex items-center justify-center flex-shrink-0 px-0.5">
+      <svg width="20" height="12" viewBox="0 0 20 12" className="text-slate-300">
+        <path d="M0 4h14v3H0z" fill="currentColor" className="opacity-40" />
+        <path d="M14 0l5 5.5L14 11" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+      </svg>
+    </div>
   );
 }
 
-// ─── Merged Trace Tab (Lineage topology + Processing detail) ──────────────────
+function SnakeConnector({ cols }: { cols: number }) {
+  return (
+    <div className="flex items-center h-6">
+      {Array.from({ length: cols }).map((_, i) => (
+        <div key={i} className="flex-1 flex items-center justify-center">
+          {i === Math.floor(cols / 2) && (
+            <svg width="14" height="14" viewBox="0 0 14 14" className="text-slate-300">
+              <path d="M5 0v8h4V0M0 8h4v3h6V8h4M5 11l2 3 2-3" fill="none" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round" />
+            </svg>
+          )}
+        </div>
+      ))}
+    </div>
+  );
+}
+
 function MergedTraceTabContent({ featureName, stages }: { featureName: string; stages: ProcessingStage[] }) {
   const [selectedId, setSelectedId] = useState<string | null>(null);
-  const [selectedStageId, setSelectedStageId] = useState<string | null>(null);
 
-    const selectedNode = UPSTREAM_NODES.find((n) => n.id === selectedId);
-
-  // Map connector positions to processing stages
-  const trainingConnectors = useMemo(() => {
-    const trainingStages = stages.filter(s => s.path === "training");
-    return TRAINING_NODES.slice(0, -1).map((_, i) => trainingStages[i] ?? null).filter(Boolean) as ProcessingStage[];
+  const nodeToStage = useMemo(() => {
+    const map: Record<string, ProcessingStage> = {};
+    const byPathOrder = (path: string, ids: string[]) => {
+      const pathStages = stages.filter(s => s.path === path).sort((a, b) => a.order - b.order);
+      ids.forEach((id, i) => { if (pathStages[i]) map[id] = pathStages[i]; });
+    };
+    byPathOrder("training", ["ods", "dwd", "ads"]);
+    byPathOrder("serving",  ["kafka", "stream", "hbase", "fs", "fg"]);
+    // fgNode maps to the last serving stage
+    const fgStage = stages.filter(s => s.path === "serving" && s.stageLabel === "FG Serving Canvas")[0];
+    if (fgStage) map["fg"] = fgStage;
+    return map;
   }, [stages]);
-  const servingConnectors = useMemo(() => {
-    const servingStages = stages.filter(s => s.path === "serving");
-    return SERVING_NODES.slice(0, -1).map((_, i) => servingStages[i] ?? null).filter(Boolean) as ProcessingStage[];
-  }, [stages]);
 
-  const selectedStage = stages.find(s => s.id === selectedStageId) ?? null;
+  const selectedStage = selectedId ? (nodeToStage[selectedId] ?? null) : null;
 
   return (
     <div className="px-4 sm:px-6 py-5">
@@ -538,152 +567,74 @@ function MergedTraceTabContent({ featureName, stages }: { featureName: string; s
         <span className="text-slate-500 normal-case tracking-normal">from raw data to fine feature</span>
       </div>
 
-      {/* ─── Pipeline Flow ─── */}
-      <div className="rounded-2xl border border-slate-200/80 shadow-sm overflow-hidden" style={{ background: "linear-gradient(135deg, #fafcff 0%, #f8fbfb 40%, #f4f8f6 100%)" }}>
-
-        {/* ── Training Track ── */}
-        <div className="border-b border-emerald-100/60">
-          <div className="flex items-center gap-2 px-4 pt-3 pb-2">
-            <div className="flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-emerald-50 border border-emerald-200 text-[10px] font-semibold text-emerald-700">
-              <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" /> Training Path
-            </div>
-            <span className="text-[10px] text-slate-400">Hive ODS → Spark Batch → ADS table</span>
-          </div>
-          <div className="px-3 pb-4 overflow-x-auto" style={{ scrollbarWidth: "thin" }}>
-            <div className="flex items-start justify-between gap-0 min-w-max">
-              {TRAINING_NODES.map((node, idx) => (
-                <motion.div
-                  key={node.id}
-                  initial={{ opacity: 0, y: 12 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  transition={{ delay: idx * 0.07, duration: 0.3 }}
-                  className="flex items-center gap-0"
-                >
-                  <div className="flex flex-col items-center gap-1.5">
-                    <NodeButton node={node} selectedId={selectedId} onSelect={setSelectedId} />
-                  </div>
-                  {idx < TRAINING_NODES.length - 1 ? (
-                    <div className="flex flex-col items-center justify-center px-3 gap-1 group flex-shrink-0" style={{ width: 100 }}>
-                      {/* Arrow line */}
-                      <div className="relative w-full flex items-center justify-center">
-                        <svg width="100%" height="20" viewBox="0 0 100 20" preserveAspectRatio="none" className="text-slate-300">
-                          <line x1="0" y1="10" x2="70" y2="10" stroke="currentColor" strokeWidth="1.5" opacity="0.6" />
-                          <polygon points="70,6 85,10 70,14" fill="currentColor" opacity="0.7" />
-                        </svg>
-                      </div>
-                      {/* Task name on hover */}
-                      {(() => {
-                        const conn = trainingConnectors[idx];
-                        if (!conn) return null;
-                        const isSel = selectedStageId === conn.id;
-                        return (
-                          <button
-                            onClick={() => { setSelectedStageId(isSel ? null : conn.id); setSelectedId(null); }}
-                            className={`text-[10px] px-2 py-0.5 rounded border transition-all truncate max-w-[90px] ${
-                              isSel
-                                ? "bg-teal-500 text-white border-teal-500 shadow-sm"
-                                : "bg-white text-slate-400 border-slate-200 opacity-0 group-hover:opacity-100 hover:text-teal-600"
-                            }`}
-                            title={conn.taskName}
-                          >
-                            {conn.taskName}
-                          </button>
-                        );
-                      })()}
-                    </div>
-                  ) : (
-                    <div className="flex items-center justify-center flex-shrink-0 px-3" style={{ width: 100 }}>
-                      <svg width="100%" height="20" viewBox="0 0 100 20" preserveAspectRatio="none" className="text-slate-200">
-                        <line x1="0" y1="10" x2="70" y2="10" stroke="currentColor" strokeWidth="1" opacity="0.4" strokeDasharray="4 3" />
-                        <polygon points="70,6 85,10 70,14" fill="currentColor" opacity="0.4" />
-                      </svg>
-                    </div>
-                  )}
-                </motion.div>
-              ))}
-            </div>
+      {/* ─── Snake DAG Grid ─── */}
+      <div className="rounded-2xl bg-gradient-to-b from-slate-50/80 to-white border border-slate-200/80 p-4 sm:p-6 shadow-sm">
+        {/* Training branch label */}
+        <div className="flex items-center gap-2 mb-2">
+          <div className="flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-emerald-50 border border-emerald-200 text-[10px] font-semibold text-emerald-700">
+            <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" /> Training Path
           </div>
         </div>
 
-        {/* ── Serving Track ── */}
-        <div className="border-b border-violet-100/60">
-          <div className="flex items-center gap-2 px-4 pt-3 pb-2">
-            <div className="flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-violet-50 border border-violet-200 text-[10px] font-semibold text-violet-700">
-              <span className="w-1.5 h-1.5 rounded-full bg-violet-400" /> Serving Path
-            </div>
-            <span className="text-[10px] text-slate-400">Kafka → Flink SQL → HBase → FG Canvas</span>
-          </div>
-          <div className="px-3 pb-3 overflow-x-auto" style={{ scrollbarWidth: "thin" }}>
-            <div className="flex items-start justify-between gap-0 min-w-max">
-              {SERVING_NODES.map((node, idx) => (
-                <motion.div
-                  key={node.id}
-                  initial={{ opacity: 0, y: 12 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  transition={{ delay: idx * 0.07 + 0.25, duration: 0.3 }}
-                  className="flex items-center gap-0"
-                >
-                  <div className="flex flex-col items-center gap-1.5">
-                    <NodeButton node={node} selectedId={selectedId} onSelect={setSelectedId} />
-                  </div>
-                  {idx < SERVING_NODES.length - 1 ? (
-                    <div className="flex flex-col items-center justify-center px-3 gap-1 group flex-shrink-0" style={{ width: 100 }}>
-                      <div className="relative w-full flex items-center justify-center">
-                        <svg width="100%" height="20" viewBox="0 0 100 20" preserveAspectRatio="none" className="text-slate-300">
-                          <line x1="0" y1="10" x2="70" y2="10" stroke="currentColor" strokeWidth="1.5" opacity="0.6" />
-                          <polygon points="70,6 85,10 70,14" fill="currentColor" opacity="0.7" />
-                        </svg>
-                      </div>
-                      {(() => {
-                        const conn = servingConnectors[idx];
-                        if (!conn) return null;
-                        const isSel = selectedStageId === conn.id;
-                        return (
-                          <button
-                            onClick={() => { setSelectedStageId(isSel ? null : conn.id); setSelectedId(null); }}
-                            className={`text-[10px] px-2 py-0.5 rounded border transition-all truncate max-w-[90px] ${
-                              isSel
-                                ? "bg-teal-500 text-white border-teal-500 shadow-sm"
-                                : "bg-white text-slate-400 border-slate-200 opacity-0 group-hover:opacity-100 hover:text-teal-600"
-                            }`}
-                            title={conn.taskName}
-                          >
-                            {conn.taskName}
-                          </button>
-                        );
-                      })()}
-                    </div>
-                  ) : (
-                    <div className="flex items-center justify-center flex-shrink-0 px-3" style={{ width: 100 }}>
-                      <svg width="100%" height="20" viewBox="0 0 100 20" preserveAspectRatio="none" className="text-slate-200">
-                        <line x1="0" y1="10" x2="70" y2="10" stroke="currentColor" strokeWidth="1" opacity="0.4" strokeDasharray="4 3" />
-                        <polygon points="70,6 85,10 70,14" fill="currentColor" opacity="0.4" />
-                      </svg>
-                    </div>
-                  )}
-                </motion.div>
-              ))}
-            </div>
+        {/* Training nodes row */}
+        <div className="grid gap-2 mb-4" style={{ gridTemplateColumns: `repeat(${COLUMNS}, minmax(0, 1fr))` }}>
+          {TRAINING_NODES.map((node, idx) => (
+            <motion.div
+              key={node.id}
+              initial={{ opacity: 0, y: 12 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ delay: idx * 0.07, duration: 0.3 }}
+              className="flex items-center gap-1 min-w-0"
+            >
+              <NodeButton node={node} selectedId={selectedId} onSelect={setSelectedId} />
+              {idx < TRAINING_NODES.length - 1 && <RowArrow />}
+            </motion.div>
+          ))}
+          {Array.from({ length: Math.max(0, COLUMNS - TRAINING_NODES.length) }).map((_, i) => (
+            <div key={`train-empty-${i}`} className="flex-1" />
+          ))}
+        </div>
+
+        {/* Snake connector */}
+        <SnakeConnector cols={COLUMNS} />
+
+        {/* Serving branch label */}
+        <div className="flex items-center gap-2 mb-2 mt-1">
+          <div className="flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-violet-50 border border-violet-200 text-[10px] font-semibold text-violet-700">
+            <span className="w-1.5 h-1.5 rounded-full bg-violet-400" /> Serving Path
           </div>
         </div>
 
-        {/* ── Convergence to Terminal Feature ── */}
+        {/* Serving nodes */}
+        <div className="grid gap-2 mb-3" style={{ gridTemplateColumns: `repeat(${COLUMNS}, minmax(0, 1fr))` }}>
+          {SERVING_NODES.map((node, idx) => (
+            <motion.div
+              key={node.id}
+              initial={{ opacity: 0, y: 12 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ delay: idx * 0.07 + 0.25, duration: 0.3 }}
+              className="flex items-center gap-1 min-w-0"
+            >
+              <NodeButton node={node} selectedId={selectedId} onSelect={setSelectedId} />
+              {idx < SERVING_NODES.length - 1 && <RowArrow />}
+            </motion.div>
+          ))}
+          {Array.from({ length: Math.max(0, COLUMNS - SERVING_NODES.length) }).map((_, i) => (
+            <div key={`serve-empty-${i}`} className="flex-1" />
+          ))}
+        </div>
+
+        {/* Snake connector */}
+        <SnakeConnector cols={COLUMNS} />
+
+        {/* Terminal feature node — centered */}
         {TERMINAL_NODE && (
           <motion.div
-            initial={{ opacity: 0, scale: 0.95 }}
+            initial={{ opacity: 0, scale: 0.9 }}
             animate={{ opacity: 1, scale: 1 }}
-            transition={{ delay: 0.55, duration: 0.4 }}
-            className="px-5 py-4 flex flex-col items-center gap-3"
+            transition={{ delay: 0.55, duration: 0.35 }}
+            className="flex justify-center pt-2"
           >
-            {/* Converging lines */}
-            <div className="w-full max-w-md flex items-center justify-center">
-              <svg width="100%" height="40" viewBox="0 0 200 40" preserveAspectRatio="xMidYMid meet" className="text-slate-300">
-                <line x1="60" y1="0" x2="100" y2="30" stroke="currentColor" strokeWidth="1" opacity="0.5" />
-                <line x1="140" y1="0" x2="100" y2="30" stroke="currentColor" strokeWidth="1" opacity="0.5" />
-                <circle cx="60" cy="2" r="2" fill="currentColor" opacity="0.6" />
-                <circle cx="140" cy="2" r="2" fill="currentColor" opacity="0.6" />
-              </svg>
-            </div>
             <div className="flex items-center gap-3">
               <NodeButton node={TERMINAL_NODE} selectedId={selectedId} onSelect={setSelectedId} />
               <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-teal-50 border border-teal-200 text-[10px] font-medium text-teal-700">
@@ -695,7 +646,7 @@ function MergedTraceTabContent({ featureName, stages }: { featureName: string; s
         )}
       </div>
 
-      {/* Selected pipeline task detail (AI-KAG) */}
+      {/* Selected node KAG detail */}
       {selectedStage && (
         <motion.div
           initial={{ opacity: 0, y: 8 }}
@@ -800,6 +751,7 @@ function MergedTraceTabContent({ featureName, stages }: { featureName: string; s
     </div>
   );
 }
+
 
 // ─── Node Button (extracted for reuse) ────────────────────────────────────────
 function NodeButton({
