@@ -40,7 +40,7 @@ function HealthTag({ status, count }: { status: "healthy" | "warning"; count: nu
     return (
       <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[11px] font-medium bg-amber-50 text-amber-700 border border-amber-200 whitespace-nowrap">
         Warning
-        <span className="inline-flex items-center justify-center min-w-[18px] h-[18px] rounded-full text-[9px] font-bold text-white bg-amber-500">{count}</span>
+        <span className="inline-flex items-center justify-center min-w-[14px] h-[14px] rounded-full text-[8px] font-semibold text-white bg-amber-500 leading-none">{count}</span>
       </span>
     );
   }
