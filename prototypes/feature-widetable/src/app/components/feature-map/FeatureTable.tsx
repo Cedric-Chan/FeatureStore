@@ -38,17 +38,18 @@ function BoolTag({ value }: { value: boolean | null }) {
 function HealthTag({ status, count }: { status: "healthy" | "warning"; count: number }) {
   if (status === "warning") {
     return (
-      <span className="inline-flex items-center gap-1.5 text-amber-600 text-xs whitespace-nowrap">
-        <span className="w-1.5 h-1.5 rounded-full bg-amber-500 inline-block flex-shrink-0" />
+      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[11px] font-medium bg-amber-50 text-amber-700 border border-amber-200 whitespace-nowrap">
         Warning
-        <span className="inline-flex items-center justify-center min-w-[16px] h-4 rounded-full text-[9px] font-bold text-white bg-amber-500 px-1">{count}</span>
+        <span className="inline-flex items-center justify-center min-w-[18px] h-[18px] rounded-full text-[9px] font-bold text-white bg-amber-500">{count}</span>
       </span>
     );
   }
   return (
-    <span className="inline-flex items-center gap-1 text-emerald-600 text-xs whitespace-nowrap">
-      <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 inline-block flex-shrink-0" />
-      Healthy
+    <span className="inline-flex items-center gap-1.5 text-xs whitespace-nowrap">
+      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-emerald-50/80 text-emerald-700 border border-emerald-200/60">
+        <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 inline-block flex-shrink-0" />
+        Healthy
+      </span>
     </span>
   );
 }

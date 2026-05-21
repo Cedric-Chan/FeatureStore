@@ -7,7 +7,7 @@ import { Pagination } from "@/app/components/feature-map/Pagination";
 import { FeatureCart } from "@/app/components/feature-map/FeatureCart";
 import { mockFeatures, mockModules } from "@/app/components/feature-map/mockData";
 import type { FilterState, Feature } from "@/app/components/feature-map/types";
-import { FeatureTraceModal, buildFreshness, buildMetrics } from "@/app/components/feature-group/FeatureLogicModal";
+import { FeatureTraceModal } from "@/app/components/feature-group/FeatureLogicModal";
 
 const DEFAULT_FILTERS: FilterState = {
   keyword: "",
@@ -83,13 +83,14 @@ export function FeatureMapPage() {
 
   const healthMap = useMemo(() => {
     const map: Record<string, { status: "healthy" | "warning"; count: number }> = {};
+    // Vary health per feature: some healthy, some warning for demo
+    const warningNames = new Set(["risk_score", "overdue_days_30", "acard_score", "rec_score", "credit_limit", "graph_degree"]);
     for (const f of paginatedFeatures) {
-      const freshness = buildFreshness(f.name);
-      const metrics = buildMetrics(f.name);
-      const fw = freshness.filter(s => s.severity === "warning" || s.severity === "critical").length;
-      const mw = metrics.filter(m => m.severity === "warning" || m.severity === "critical").length;
-      const total = fw + mw;
-      map[f.name] = { status: total > 0 ? "warning" : "healthy", count: total };
+      if (warningNames.has(f.name)) {
+        map[f.name] = { status: "warning", count: f.name === "risk_score" ? 3 : f.name === "overdue_days_30" ? 1 : 2 };
+      } else {
+        map[f.name] = { status: "healthy", count: 0 };
+      }
     }
     return map;
   }, [paginatedFeatures]);
