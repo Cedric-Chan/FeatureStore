@@ -20,6 +20,7 @@ import {
   Brain,
   Filter,
   ArrowUpDown,
+  ChevronDown,
 } from "lucide-react";
 
 // ─── Health signal types ──────────────────────────────────────────────────────
@@ -366,15 +367,8 @@ export function FeatureTraceModal({
             active={tab === "lineage"}
             onClick={() => setTab("lineage")}
             icon={<GitBranch className="w-3.5 h-3.5" />}
-            label="Lineage"
-            subtitle="Upstream DAG"
-          />
-          <TabBtn
-            active={tab === "processing"}
-            onClick={() => setTab("processing")}
-            icon={<FileText className="w-3.5 h-3.5" />}
-            label="Processing"
-            subtitle="Stage-by-stage logic"
+            label="Trace"
+            subtitle="Pipeline topology + logic"
           />
           <TabBtn
             active={tab === "health"}
@@ -393,10 +387,7 @@ export function FeatureTraceModal({
         {/* ─── Body ─── */}
         <AnimatePresence mode="wait">
           <motion.div key={tab} initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -4 }} transition={{ duration: 0.2 }} className="flex-1 overflow-y-auto">
-          {tab === "lineage" && <LineageTabContent featureName={featureName} />}
-          {tab === "processing" && (
-            <ProcessingTabContent stages={processingStages} featureName={featureName} />
-          )}
+          {tab === "lineage" && <MergedTraceTabContent featureName={featureName} stages={processingStages} />}
           {tab === "health" && (
             <HealthTabContent signals={healthSignals} featureName={featureName} hasTraining={hasTraining} hasServing={hasServing} />
           )}
@@ -491,6 +482,15 @@ function chunkNodes(nodes: typeof UPSTREAM_NODES, cols: number) {
   return chunks;
 }
 
+function FlowArrowSmall() {
+  return (
+    <svg width="14" height="10" viewBox="0 0 14 10" className="text-slate-300">
+      <path d="M0 3h10v3H0z" fill="currentColor" className="opacity-40" />
+      <path d="M10 0l4 4.5L10 9" fill="none" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  );
+}
+
 // Arrow between two adjacent nodes in the same row
 function FlowArrow() {
   return (
@@ -520,15 +520,28 @@ function RowConnector({ cols }: { cols: number }) {
   );
 }
 
-// ─── Tab 1: Lineage (Snake Layout) ────────────────────────────────────────────
-function LineageTabContent({ featureName }: { featureName: string }) {
+// ─── Merged Trace Tab (Lineage topology + Processing detail) ──────────────────
+function MergedTraceTabContent({ featureName, stages }: { featureName: string; stages: ProcessingStage[] }) {
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [selectedStageId, setSelectedStageId] = useState<string | null>(null);
 
   // Merge Training → Serving → Terminal into one flow
   const flowNodes = [...TRAINING_NODES, ...SERVING_NODES, ...(TERMINAL_NODE ? [TERMINAL_NODE] : [])];
   const rows = chunkNodes(flowNodes, COLUMNS);
 
   const selectedNode = UPSTREAM_NODES.find((n) => n.id === selectedId);
+
+  // Map connector positions to processing stages
+  const trainingConnectors = useMemo(() => {
+    const trainingStages = stages.filter(s => s.path === "training");
+    return TRAINING_NODES.slice(0, -1).map((_, i) => trainingStages[i] ?? null).filter(Boolean);
+  }, [stages]);
+  const servingConnectors = useMemo(() => {
+    const servingStages = stages.filter(s => s.path === "serving");
+    return SERVING_NODES.slice(0, -1).map((_, i) => servingStages[i] ?? null).filter(Boolean);
+  }, [stages]);
+
+  const selectedStage = stages.find(s => s.id === selectedStageId) ?? null;
 
   return (
     <div className="px-4 sm:px-6 py-5">
@@ -560,8 +573,37 @@ function LineageTabContent({ featureName }: { featureName: string }) {
               className="flex items-center gap-1 min-w-0"
             >
               <NodeButton node={node} selectedId={selectedId} onSelect={setSelectedId} />
-              {idx < TRAINING_NODES.length - 1 && (
-                <FlowArrow />
+              {idx < TRAINING_NODES.length - 1 ? (
+                <div className="flex flex-col items-center justify-center flex-shrink-0 gap-0.5">
+                  <div className="flex items-center justify-center px-0.5">
+                    <svg width="20" height="12" viewBox="0 0 20 12" className="text-slate-300">
+                      <path d="M0 4h14v3H0z" fill="currentColor" className="opacity-40" />
+                      <path d="M14 0l5 5.5L14 11" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+                    </svg>
+                  </div>
+                  {(() => {
+                    const conn = trainingConnectors[idx];
+                    if (!conn) return null;
+                    const isSel = selectedStageId === conn.id;
+                    return (
+                      <button
+                        onClick={() => { setSelectedStageId(isSel ? null : conn.id); setSelectedId(null); }}
+                        className={`text-[9px] px-2 py-0.5 rounded border transition-all whitespace-nowrap ${
+                          isSel
+                            ? "bg-teal-500 text-white border-teal-500"
+                            : "bg-white text-slate-500 border-slate-200 hover:border-teal-400 hover:text-teal-600"
+                        }`}
+                        title={conn.taskName}
+                      >
+                        {conn.taskName}
+                      </button>
+                    );
+                  })()}
+                </div>
+              ) : (
+                <div className="flex items-center justify-center flex-shrink-0 px-0.5">
+                  <FlowArrowSmall />
+                </div>
               )}
             </motion.div>
           ))}
@@ -592,8 +634,37 @@ function LineageTabContent({ featureName }: { featureName: string }) {
               className="flex items-center gap-1 min-w-0"
             >
               <NodeButton node={node} selectedId={selectedId} onSelect={setSelectedId} />
-              {idx < SERVING_NODES.length - 1 && (
-                <FlowArrow />
+              {idx < SERVING_NODES.length - 1 ? (
+                <div className="flex flex-col items-center justify-center flex-shrink-0 gap-0.5">
+                  <div className="flex items-center justify-center px-0.5">
+                    <svg width="20" height="12" viewBox="0 0 20 12" className="text-slate-300">
+                      <path d="M0 4h14v3H0z" fill="currentColor" className="opacity-40" />
+                      <path d="M14 0l5 5.5L14 11" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+                    </svg>
+                  </div>
+                  {(() => {
+                    const conn = servingConnectors[idx];
+                    if (!conn) return null;
+                    const isSel = selectedStageId === conn.id;
+                    return (
+                      <button
+                        onClick={() => { setSelectedStageId(isSel ? null : conn.id); setSelectedId(null); }}
+                        className={`text-[9px] px-2 py-0.5 rounded border transition-all whitespace-nowrap ${
+                          isSel
+                            ? "bg-teal-500 text-white border-teal-500"
+                            : "bg-white text-slate-500 border-slate-200 hover:border-teal-400 hover:text-teal-600"
+                        }`}
+                        title={conn.taskName}
+                      >
+                        {conn.taskName}
+                      </button>
+                    );
+                  })()}
+                </div>
+              ) : (
+                <div className="flex items-center justify-center flex-shrink-0 px-0.5">
+                  <FlowArrowSmall />
+                </div>
               )}
             </motion.div>
           ))}
@@ -624,36 +695,90 @@ function LineageTabContent({ featureName }: { featureName: string }) {
         )}
       </div>
 
-      {/* Selected node detail */}
-      {selectedNode && (
+      {/* Selected pipeline task detail (AI-KAG) */}
+      {selectedStage && (
         <motion.div
-          initial={{ opacity: 0, y: -6 }}
+          initial={{ opacity: 0, y: 8 }}
           animate={{ opacity: 1, y: 0 }}
-          className="mt-4 mx-auto max-w-2xl p-4 rounded-xl border border-teal-200 bg-teal-50/50"
+          className="mt-5 space-y-4"
         >
-          <div className="flex items-center gap-2 mb-2 flex-wrap">
-            <span className="text-xs font-mono text-teal-700 font-semibold">
-              {selectedNode.label}
-            </span>
-            <span className={`px-1.5 py-0.5 rounded text-[10px] font-medium border ${NODE_STYLE[selectedNode.type] ? '' : 'bg-teal-100 text-teal-700 border-teal-200'}`}
-              style={NODE_STYLE[selectedNode.type] ? undefined : {}}>
-              {selectedNode.type}
-            </span>
-            {selectedNode.type === "source" || selectedNode.type === "hive" ? (
-              <span className="px-1.5 py-0.5 rounded text-[10px] bg-emerald-50 text-emerald-700 border border-emerald-200">Training</span>
-            ) : selectedNode.type !== "feature" ? (
-              <span className="px-1.5 py-0.5 rounded text-[10px] bg-violet-50 text-violet-700 border border-violet-200">Serving</span>
-            ) : null}
+          <div className="flex items-center gap-2 text-[11px] text-slate-400 uppercase tracking-wider">
+            <FileText className="w-3 h-3 text-teal-500" />
+            <span>AI-distilled processing logic for</span>
+            <span className="font-mono text-teal-600 normal-case tracking-normal">{featureName}</span>
           </div>
-          <p className="text-[11px] text-slate-500 leading-relaxed">
-            {selectedId === "feature"
-              ? `Terminal fine feature. Consumed by downstream models and services via FeatureGroup. Both Training (offline Hive) and Serving (online HBase → Groovy) availability confirmed.`
-              : selectedId === "fg"
-                ? `Platform-internal node. FeatureSource ${featureName} → Groovy Transformer V1 → Fine Feature ${featureName}. Orchestrated by FeatureGroup serving canvas.`
-                : selectedNode.type === "source" || selectedNode.type === "hive"
-                  ? `Training path pipeline node. Managed by Unity Catalog. T+1 sync. Click through to DataVerse for full task details and DQC reports.`
-                  : `Serving path pipeline node. Managed by Unity Catalog. T+1 sync. Click through to DataVerse for full task details and DQC reports.`}
-          </p>
+
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 items-start">
+            {/* Detail card */}
+            <div className="rounded-xl border border-slate-200 overflow-hidden">
+              <div className="px-4 py-3 bg-slate-50/60 border-b border-slate-200 flex items-center justify-between flex-wrap gap-2">
+                <div className="flex items-center gap-2 flex-wrap">
+                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-medium border bg-slate-100 text-slate-700 border-slate-200">
+                    {selectedStage.path === "training"
+                      ? <Layers className="w-3 h-3" />
+                      : <Zap className="w-3 h-3" />
+                    }
+                    {selectedStage.path === "training" ? "Spark Batch" : "Flink Stream"}
+                  </span>
+                  <span className="text-xs font-mono text-slate-800">{selectedStage.taskName}</span>
+                  <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-medium border bg-teal-50 text-teal-700 border-teal-200">
+                    <Sparkles className="w-3 h-3" />
+                    AI-KAG
+                  </span>
+                </div>
+                {selectedStage.dataverseUrl ? (
+                  <a href={selectedStage.dataverseUrl} target="_blank" rel="noreferrer"
+                    className="inline-flex items-center gap-1 text-[11px] text-teal-600 hover:text-teal-800">
+                    View in DataVerse <ExternalLink className="w-3 h-3" />
+                  </a>
+                ) : null}
+              </div>
+
+              <div className="px-4 py-3 grid grid-cols-2 gap-3 text-[11px] border-b border-slate-100">
+                <div>
+                  <div className="text-slate-400 uppercase tracking-wide text-[10px] mb-1">Input</div>
+                  <div className="flex flex-wrap gap-1">
+                    {selectedStage.inputAssets.map((a) => (
+                      <span key={a} className="px-1.5 py-0.5 rounded bg-slate-100 text-slate-700 font-mono border border-slate-200">{a}</span>
+                    ))}
+                  </div>
+                </div>
+                <div>
+                  <div className="text-slate-400 uppercase tracking-wide text-[10px] mb-1">Output</div>
+                  <span className="px-1.5 py-0.5 rounded bg-slate-100 text-slate-700 font-mono border border-slate-200">{selectedStage.outputAsset}</span>
+                </div>
+              </div>
+
+              <div className="bg-slate-900 text-slate-100 px-4 py-3 font-mono text-[11.5px] leading-relaxed overflow-x-auto">
+                <div className="flex items-center gap-2 mb-2 text-[10px] uppercase tracking-wide text-slate-400">
+                  <Sparkles className="w-3 h-3 text-amber-300" />
+                  <span>AI-extracted · only fragments related to <span className="text-teal-300">{featureName}</span></span>
+                </div>
+                <pre className="whitespace-pre">{selectedStage.snippet}</pre>
+              </div>
+            </div>
+
+            {/* Context card */}
+            <div className="space-y-3">
+              <div className={`rounded-xl border px-4 py-3 ${selectedStage.path === "training" ? "bg-emerald-50/60 border-emerald-200" : "bg-violet-50/60 border-violet-200"}`}>
+                <div className="flex items-center gap-2 mb-1">
+                  <span className="text-sm font-semibold text-slate-800">{selectedStage.stageLabel}</span>
+                </div>
+                <p className="text-[11px] text-slate-500 leading-relaxed">{selectedStage.description}</p>
+              </div>
+              <div className="rounded-xl border px-4 py-3 bg-teal-50/60 border-teal-200">
+                <div className="flex items-center gap-2 mb-1">
+                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full border text-[11px] font-semibold bg-teal-50 text-teal-700 border-teal-200">
+                    <Sparkles className="w-3 h-3" />
+                    AI-KAG
+                  </span>
+                </div>
+                <p className="text-[10px] text-slate-500 leading-relaxed">
+                  Logic auto-extracted by AI Agent from upstream code repositories (Git). Refined by T+1 batch processing from Unity Catalog metadata and OpenLineage traces.
+                </p>
+              </div>
+            </div>
+          </div>
         </motion.div>
       )}
 
