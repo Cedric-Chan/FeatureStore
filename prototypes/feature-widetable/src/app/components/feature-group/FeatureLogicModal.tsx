@@ -41,7 +41,7 @@ const SEV_STYLE: Record<string, { cls: string; icon: React.ReactNode }> = {
   critical: { cls: "bg-red-50 text-red-600 border-red-200", icon: <AlertTriangle className="w-3 h-3" /> },
 };
 
-function buildFreshness(fn: string): HealthSignal[] {
+export function buildFreshness(fn: string): HealthSignal[] {
   const t = "2026-05-15 08:30";
   return [
     { id:"h-1",stage:"binlog.user_credit_events → ods.user_credit_events",stageType:"ods",path:"training",signalType:"ok",severity:"ok",summary:"ODS ingestion on track",detail:"ods.user_credit_events daily partition dt=2026-05-14 completed at 03:22 UTC.",value:"2026-05-14 03:22",baseline:"daily before 04:00",updatedAt:t },
@@ -52,7 +52,7 @@ function buildFreshness(fn: string): HealthSignal[] {
   ];
 }
 function buildRules(): HealthRule[] { return [{id:"r-1",metric:"null_pct",operator:">=",threshold:"5",enabled:true},{id:"r-2",metric:"fail_pct",operator:">=",threshold:"1",enabled:true},{id:"r-3",metric:"drift",operator:"!=",threshold:"0.1",enabled:true}]; }
-function buildMetrics(fn: string): HealthMetric[] {
+export function buildMetrics(fn: string): HealthMetric[] {
   const t = "2026-05-20 08:30";
   return [
     { id:"m-1",metric:"null_pct",label:"Null %",current:"2.1%",threshold:">= 5%",severity:"ok",detail:"2.1% null rate across 1.2M serving calls yesterday. Well within threshold.",updatedAt:t },

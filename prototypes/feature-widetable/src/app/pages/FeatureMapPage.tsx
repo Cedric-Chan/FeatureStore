@@ -6,7 +6,8 @@ import { FeatureTable } from "@/app/components/feature-map/FeatureTable";
 import { Pagination } from "@/app/components/feature-map/Pagination";
 import { FeatureCart } from "@/app/components/feature-map/FeatureCart";
 import { mockFeatures, mockModules } from "@/app/components/feature-map/mockData";
-import type { FilterState } from "@/app/components/feature-map/types";
+import type { FilterState, Feature } from "@/app/components/feature-map/types";
+import { FeatureTraceModal, buildFreshness, buildMetrics } from "@/app/components/feature-group/FeatureLogicModal";
 
 const DEFAULT_FILTERS: FilterState = {
   keyword: "",
@@ -27,6 +28,11 @@ export function FeatureMapPage() {
   );
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(20);
+  const [lineageTarget, setLineageTarget] = useState<{
+    featureName: string;
+    hasTraining: boolean;
+    hasServing: boolean;
+  } | null>(null);
 
   const filteredFeatures = useMemo(() => {
     let result = [...mockFeatures];
@@ -74,6 +80,19 @@ export function FeatureMapPage() {
     const start = (page - 1) * pageSize;
     return filteredFeatures.slice(start, start + pageSize);
   }, [filteredFeatures, page, pageSize]);
+
+  const healthMap = useMemo(() => {
+    const map: Record<string, { status: "healthy" | "warning"; count: number }> = {};
+    for (const f of paginatedFeatures) {
+      const freshness = buildFreshness(f.name);
+      const metrics = buildMetrics(f.name);
+      const fw = freshness.filter(s => s.severity === "warning" || s.severity === "critical").length;
+      const mw = metrics.filter(m => m.severity === "warning" || m.severity === "critical").length;
+      const total = fw + mw;
+      map[f.name] = { status: total > 0 ? "warning" : "healthy", count: total };
+    }
+    return map;
+  }, [paginatedFeatures]);
 
   const selectedFeatures = useMemo(
     () => mockFeatures.filter((f) => selectedIds.has(f.id)),
@@ -124,6 +143,14 @@ export function FeatureMapPage() {
 
   const handleClearCart = () => setSelectedIds(new Set());
 
+  const handleTrace = (feature: Feature) => {
+    setLineageTarget({
+      featureName: feature.name,
+      hasTraining: feature.training ?? false,
+      hasServing: feature.serving ?? false,
+    });
+  };
+
   return (
     <div className="min-h-full bg-[#f5f7fa]">
       <header className="bg-white border-b border-gray-100 px-6 py-3 flex items-center gap-3 shadow-sm">
@@ -132,12 +159,7 @@ export function FeatureMapPage() {
             <Database size={14} className="text-white" />
           </div>
           <div>
-            <h1
-              className="text-gray-800 leading-tight"
-              style={{ fontSize: "15px", fontWeight: 600 }}
-            >
-              Feature Map
-            </h1>
+            <h1 className="text-gray-800 leading-tight" style={{ fontSize: "15px", fontWeight: 600 }}>Feature Map</h1>
           </div>
         </div>
         <div className="ml-auto flex items-center gap-2 text-xs text-gray-400">
@@ -147,75 +169,34 @@ export function FeatureMapPage() {
       </header>
 
       <main className="p-5 flex flex-col gap-4 max-w-[1600px] mx-auto">
-        <FilterBar
-          filters={filters}
-          onFiltersChange={setFilters}
-          onSearch={handleSearch}
-          onReset={handleReset}
-        />
-
+        <FilterBar filters={filters} onFiltersChange={setFilters} onSearch={handleSearch} onReset={handleReset} />
         <div className="flex gap-4 items-start">
-          <ModuleTree
-            modules={mockModules}
-            selectedNode={selectedNode}
-            onSelectNode={setSelectedNode}
-          />
-
+          <ModuleTree modules={mockModules} selectedNode={selectedNode} onSelectNode={setSelectedNode} />
           <div className="flex-1 min-w-0 flex flex-col gap-3">
             <div className="bg-white rounded-xl border border-gray-100 shadow-sm px-4 py-2.5 flex items-center justify-between">
               <div className="flex items-center gap-2">
                 {selectedIds.size > 0 ? (
                   <div className="flex items-center gap-2">
-                    <span className="inline-flex items-center gap-1.5 text-sm text-[#13c2c2]">
-                      <span className="w-2 h-2 rounded-full bg-[#13c2c2] inline-block" />
-                      <span className="font-medium">{selectedIds.size}</span>{" "}
-                      feature(s) selected
-                    </span>
-                    <button
-                      type="button"
-                      onClick={handleClearCart}
-                      className="text-xs text-gray-400 hover:text-gray-600 px-2 py-0.5 rounded border border-gray-200 transition-colors"
-                    >
-                      Clear
-                    </button>
+                    <span className="inline-flex items-center gap-1.5 text-sm text-[#13c2c2]"><span className="w-2 h-2 rounded-full bg-[#13c2c2] inline-block" /><span className="font-medium">{selectedIds.size}</span> feature(s) selected</span>
+                    <button type="button" onClick={handleClearCart} className="text-xs text-gray-400 hover:text-gray-600 px-2 py-0.5 rounded border border-gray-200 transition-colors">Clear</button>
                   </div>
                 ) : (
-                  <span className="text-sm text-gray-400">
-                    {filteredFeatures.length} feature(s) found
-                  </span>
+                  <span className="text-sm text-gray-400">{filteredFeatures.length} feature(s) found</span>
                 )}
               </div>
-              <FeatureCart
-                selectedFeatures={selectedFeatures}
-                onRemove={handleRemoveFromCart}
-                onClear={handleClearCart}
-              />
+              <FeatureCart selectedFeatures={selectedFeatures} onRemove={handleRemoveFromCart} onClear={handleClearCart} />
             </div>
-
             <div className="bg-white rounded-xl border border-gray-100 shadow-sm overflow-hidden">
-              <FeatureTable
-                features={paginatedFeatures}
-                selectedIds={selectedIds}
-                onToggleSelect={handleToggleSelect}
-                onToggleAll={handleToggleAll}
-              />
+              <FeatureTable features={paginatedFeatures} selectedIds={selectedIds} onToggleSelect={handleToggleSelect} onToggleAll={handleToggleAll} onTrace={handleTrace} healthMap={healthMap} />
             </div>
-
             <div className="bg-white rounded-xl border border-gray-100 shadow-sm px-4 py-3">
-              <Pagination
-                total={filteredFeatures.length}
-                page={page}
-                pageSize={pageSize}
-                onPageChange={setPage}
-                onPageSizeChange={(s) => {
-                  setPageSize(s);
-                  setPage(1);
-                }}
-              />
+              <Pagination total={filteredFeatures.length} page={page} pageSize={pageSize} onPageChange={setPage} onPageSizeChange={(s) => { setPageSize(s); setPage(1); }} />
             </div>
           </div>
         </div>
       </main>
+
+      <FeatureTraceModal open={!!lineageTarget} featureName={lineageTarget?.featureName ?? ""} hasTraining={lineageTarget?.hasTraining ?? false} hasServing={lineageTarget?.hasServing ?? false} onClose={() => setLineageTarget(null)} />
     </div>
   );
 }

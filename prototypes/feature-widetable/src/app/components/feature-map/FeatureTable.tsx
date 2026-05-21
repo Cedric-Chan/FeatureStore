@@ -6,6 +6,8 @@ interface FeatureTableProps {
   selectedIds: Set<string>;
   onToggleSelect: (id: string) => void;
   onToggleAll: () => void;
+  onTrace: (feature: Feature) => void;
+  healthMap: Record<string, { status: "healthy" | "warning"; count: number }>;
 }
 
 function RegionTag({ region }: { region: string }) {
@@ -33,7 +35,24 @@ function BoolTag({ value }: { value: boolean | null }) {
   );
 }
 
-// Fully custom checkbox — white bg by default, teal when active, dash for indeterminate
+function HealthTag({ status, count }: { status: "healthy" | "warning"; count: number }) {
+  if (status === "warning") {
+    return (
+      <span className="inline-flex items-center gap-1.5 text-amber-600 text-xs whitespace-nowrap">
+        <span className="w-1.5 h-1.5 rounded-full bg-amber-500 inline-block flex-shrink-0" />
+        Warning
+        <span className="inline-flex items-center justify-center min-w-[16px] h-4 rounded-full text-[9px] font-bold text-white bg-amber-500 px-1">{count}</span>
+      </span>
+    );
+  }
+  return (
+    <span className="inline-flex items-center gap-1 text-emerald-600 text-xs whitespace-nowrap">
+      <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 inline-block flex-shrink-0" />
+      Healthy
+    </span>
+  );
+}
+
 function CustomCheckbox({
   checked,
   indeterminate,
@@ -78,20 +97,20 @@ export function FeatureTable({
   selectedIds,
   onToggleSelect,
   onToggleAll,
+  onTrace,
+  healthMap,
 }: FeatureTableProps) {
   const allSelected = features.length > 0 && selectedIds.size === features.length;
   const someSelected = selectedIds.size > 0 && selectedIds.size < features.length;
 
-  // Sticky col widths (px) — checkbox + feature name
-  const stickyCheckboxW = 56;   // w-14
-  const stickyNameW    = 200;   // min-w
+  const stickyCheckboxW = 56;
+  const stickyNameW    = 200;
 
   return (
     <div className="overflow-x-auto rounded-xl border border-gray-100">
       <table className="w-full text-sm border-separate border-spacing-0">
         <thead>
           <tr className="bg-gray-50">
-            {/* Sticky: checkbox */}
             <th
               className="px-4 py-3 text-left text-xs font-medium text-gray-500 border-b border-gray-100 whitespace-nowrap sticky left-0 z-20 bg-gray-50"
               style={{ width: stickyCheckboxW, minWidth: stickyCheckboxW }}
@@ -102,7 +121,6 @@ export function FeatureTable({
                 onChange={onToggleAll}
               />
             </th>
-            {/* Sticky: Feature Name */}
             <th
               className="px-4 py-3 text-left text-xs font-medium text-gray-500 border-b border-gray-100 whitespace-nowrap sticky z-20 bg-gray-50 after:absolute after:inset-y-0 after:right-0 after:w-px after:bg-gray-200"
               style={{ left: stickyCheckboxW, minWidth: stickyNameW }}
@@ -116,7 +134,8 @@ export function FeatureTable({
             <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 border-b border-gray-100 whitespace-nowrap w-24">Data Type</th>
             <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 border-b border-gray-100 whitespace-nowrap w-20">Training</th>
             <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 border-b border-gray-100 whitespace-nowrap w-20">Serving</th>
-            <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 border-b border-gray-100 whitespace-nowrap w-36">Update Time</th>
+            <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 border-b border-gray-100 whitespace-nowrap w-24">Health</th>
+            <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 border-b border-gray-100 whitespace-nowrap w-20">Action</th>
           </tr>
         </thead>
         <tbody>
@@ -128,10 +147,10 @@ export function FeatureTable({
               ? "bg-white"
               : "bg-gray-50/40";
             const rowHover = isSelected ? "hover:bg-[#d5f5f0]" : "hover:bg-gray-50/80";
+            const health = healthMap[feature.name] ?? { status: "healthy" as const, count: 0 };
 
             return (
               <tr key={feature.id} className={`group transition-colors ${rowBg} ${rowHover}`}>
-                {/* Sticky: checkbox */}
                 <td
                   className={`px-4 py-3 border-b border-gray-50 sticky left-0 z-10 transition-colors ${rowBg} ${rowHover}`}
                   style={{ width: stickyCheckboxW, minWidth: stickyCheckboxW }}
@@ -141,7 +160,6 @@ export function FeatureTable({
                     onChange={() => onToggleSelect(feature.id)}
                   />
                 </td>
-                {/* Sticky: Feature Name */}
                 <td
                   className={`px-4 py-3 border-b border-gray-50 sticky z-10 transition-colors after:absolute after:inset-y-0 after:right-0 after:w-px after:bg-gray-200 ${rowBg} ${rowHover}`}
                   style={{ left: stickyCheckboxW, minWidth: stickyNameW }}
@@ -173,8 +191,16 @@ export function FeatureTable({
                 <td className="px-4 py-3 border-b border-gray-50 w-20">
                   <BoolTag value={feature.serving} />
                 </td>
-                <td className="px-4 py-3 border-b border-gray-50 w-36">
-                  <span className="text-gray-500 text-xs tabular-nums whitespace-nowrap">{feature.updateTime}</span>
+                <td className="px-4 py-3 border-b border-gray-50 w-24">
+                  <HealthTag status={health.status} count={health.count} />
+                </td>
+                <td className="px-4 py-3 border-b border-gray-50 w-20">
+                  <button
+                    onClick={(e) => { e.stopPropagation(); onTrace(feature); }}
+                    className="text-[11px] text-teal-600 hover:text-teal-800 hover:underline transition-colors whitespace-nowrap"
+                  >
+                    Trace
+                  </button>
                 </td>
               </tr>
             );
