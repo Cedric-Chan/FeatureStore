@@ -384,8 +384,8 @@ export function FeatureTraceModal({
             active={tab === "lineage"}
             onClick={() => setTab("lineage")}
             icon={<GitBranch className="w-3.5 h-3.5" />}
-            label="Trace"
-            subtitle="Pipeline topology + logic"
+            label="Lineage"
+            subtitle="Topology + KAG logic"
           />
           <TabBtn
             active={tab === "freshness"}
@@ -499,7 +499,7 @@ const TRAINING_NODES = UPSTREAM_NODES.filter(n => ["source", "hive"].includes(n.
 const SERVING_NODES  = UPSTREAM_NODES.filter(n => ["kafka", "flink", "hbase", "fs", "fg"].includes(n.type));
 const TERMINAL_NODE  = UPSTREAM_NODES.find(n => n.type === "feature");
 
-const COLUMNS = 4;
+const COLUMNS = 5;
 
 function chunkNodes(nodes: typeof UPSTREAM_NODES, cols: number) {
   const chunks: typeof UPSTREAM_NODES[] = [];
@@ -511,9 +511,9 @@ function chunkNodes(nodes: typeof UPSTREAM_NODES, cols: number) {
 
 function FlowArrowSmall() {
   return (
-    <svg width="14" height="10" viewBox="0 0 14 10" className="text-slate-300">
-      <path d="M0 3h10v3H0z" fill="currentColor" className="opacity-40" />
-      <path d="M10 0l4 4.5L10 9" fill="none" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round" />
+    <svg width="18" height="12" viewBox="0 0 18 12" className="text-slate-300">
+      <path d="M0 3h12v4H0z" fill="currentColor" className="opacity-40" />
+      <path d="M12 0l5 5.5L12 11" fill="none" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round" />
     </svg>
   );
 }
@@ -601,9 +601,9 @@ function MergedTraceTabContent({ featureName, stages }: { featureName: string; s
             >
               <NodeButton node={node} selectedId={selectedId} onSelect={setSelectedId} />
               {idx < TRAINING_NODES.length - 1 ? (
-                <div className="flex flex-col items-center justify-center flex-shrink-0 gap-0.5">
+                <div className="flex flex-col items-center justify-center flex-shrink-0 gap-1 group">
                   <div className="flex items-center justify-center px-0.5">
-                    <svg width="20" height="12" viewBox="0 0 20 12" className="text-slate-300">
+                    <svg width="28" height="16" viewBox="0 0 28 16" className="text-slate-300 group-hover:text-teal-400 transition-colors">
                       <path d="M0 4h14v3H0z" fill="currentColor" className="opacity-40" />
                       <path d="M14 0l5 5.5L14 11" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
                     </svg>
@@ -615,10 +615,10 @@ function MergedTraceTabContent({ featureName, stages }: { featureName: string; s
                     return (
                       <button
                         onClick={() => { setSelectedStageId(isSel ? null : conn.id); setSelectedId(null); }}
-                        className={`text-[9px] px-2 py-0.5 rounded border transition-all whitespace-nowrap ${
+                        className={`text-[9px] px-1.5 py-0.5 rounded border transition-all whitespace-nowrap opacity-0 group-hover:opacity-100 ${
                           isSel
-                            ? "bg-teal-500 text-white border-teal-500"
-                            : "bg-white text-slate-500 border-slate-200 hover:border-teal-400 hover:text-teal-600"
+                            ? "bg-teal-500 text-white border-teal-500 opacity-100"
+                            : "bg-white text-slate-400 border-slate-200"
                         }`}
                         title={conn.taskName}
                       >
@@ -661,9 +661,9 @@ function MergedTraceTabContent({ featureName, stages }: { featureName: string; s
             >
               <NodeButton node={node} selectedId={selectedId} onSelect={setSelectedId} />
               {idx < SERVING_NODES.length - 1 ? (
-                <div className="flex flex-col items-center justify-center flex-shrink-0 gap-0.5">
+                <div className="flex flex-col items-center justify-center flex-shrink-0 gap-1 group">
                   <div className="flex items-center justify-center px-0.5">
-                    <svg width="20" height="12" viewBox="0 0 20 12" className="text-slate-300">
+                    <svg width="28" height="16" viewBox="0 0 28 16" className="text-slate-300 group-hover:text-teal-400 transition-colors">
                       <path d="M0 4h14v3H0z" fill="currentColor" className="opacity-40" />
                       <path d="M14 0l5 5.5L14 11" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
                     </svg>
@@ -675,10 +675,10 @@ function MergedTraceTabContent({ featureName, stages }: { featureName: string; s
                     return (
                       <button
                         onClick={() => { setSelectedStageId(isSel ? null : conn.id); setSelectedId(null); }}
-                        className={`text-[9px] px-2 py-0.5 rounded border transition-all whitespace-nowrap ${
+                        className={`text-[9px] px-1.5 py-0.5 rounded border transition-all whitespace-nowrap opacity-0 group-hover:opacity-100 ${
                           isSel
-                            ? "bg-teal-500 text-white border-teal-500"
-                            : "bg-white text-slate-500 border-slate-200 hover:border-teal-400 hover:text-teal-600"
+                            ? "bg-teal-500 text-white border-teal-500 opacity-100"
+                            : "bg-white text-slate-400 border-slate-200"
                         }`}
                         title={conn.taskName}
                       >
@@ -870,7 +870,7 @@ function NodeButton({
   return (
     <button
       onClick={() => onSelect(isSel ? null : node.id)}
-      className={`relative rounded-xl border px-3 py-2.5 text-xs transition-all text-center w-full ${
+      className={`relative rounded-xl border px-4 py-3.5 text-xs transition-all text-center w-full ${
         bgColor} ${textColor} ${borderColor} ${hoverBg} ${
         isSel
           ? "ring-2 ring-teal-400 ring-offset-1 scale-[1.04] shadow-md"
