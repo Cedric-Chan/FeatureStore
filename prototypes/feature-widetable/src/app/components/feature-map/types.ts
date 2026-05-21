@@ -8,6 +8,7 @@ export interface Feature {
   dataType: string;
   training: boolean | null;
   serving: boolean | null;
+  ydServingReq: number;
   updateTime: string;
 }
 

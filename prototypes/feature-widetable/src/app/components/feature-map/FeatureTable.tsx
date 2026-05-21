@@ -134,6 +134,7 @@ export function FeatureTable({
             <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 border-b border-gray-100 whitespace-nowrap w-24">Data Type</th>
             <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 border-b border-gray-100 whitespace-nowrap w-20">Training</th>
             <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 border-b border-gray-100 whitespace-nowrap w-20">Serving</th>
+            <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 border-b border-gray-100 whitespace-nowrap w-36">Yd Serving Req#</th>
             <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 border-b border-gray-100 whitespace-nowrap w-24">Health</th>
             <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 border-b border-gray-100 whitespace-nowrap w-20">Action</th>
           </tr>
@@ -190,6 +191,9 @@ export function FeatureTable({
                 </td>
                 <td className="px-4 py-3 border-b border-gray-50 w-20">
                   <BoolTag value={feature.serving} />
+                </td>
+                <td className="px-4 py-3 border-b border-gray-50 w-36 text-right">
+                  <span className="text-gray-600 text-xs font-mono tabular-nums">{feature.ydServingReq.toLocaleString("en-US")}</span>
                 </td>
                 <td className="px-4 py-3 border-b border-gray-50 w-24">
                   <HealthTag status={health.status} count={health.count} />

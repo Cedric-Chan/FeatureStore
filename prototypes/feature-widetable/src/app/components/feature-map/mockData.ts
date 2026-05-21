@@ -11,6 +11,7 @@ export const mockFeatures: Feature[] = [
     dataType: "FLOAT",
     training: true,
     serving: true,
+    ydServingReq: 1248000,
     updateTime: "2026-02-16 14:00",
   },
   {
@@ -23,6 +24,7 @@ export const mockFeatures: Feature[] = [
     dataType: "STRING",
     training: true,
     serving: true,
+    ydServingReq: 1248000,
     updateTime: "2026-02-16 14:00",
   },
   {
@@ -35,6 +37,7 @@ export const mockFeatures: Feature[] = [
     dataType: "INT",
     training: true,
     serving: false,
+    ydServingReq: 0,
     updateTime: "2026-02-15 10:30",
   },
   {
@@ -47,6 +50,7 @@ export const mockFeatures: Feature[] = [
     dataType: "FLOAT",
     training: true,
     serving: true,
+    ydServingReq: 876500,
     updateTime: "2026-02-14 18:45",
   },
   {
@@ -59,6 +63,7 @@ export const mockFeatures: Feature[] = [
     dataType: "STRING",
     training: true,
     serving: true,
+    ydServingReq: 876500,
     updateTime: "2026-02-14 18:45",
   },
   {
@@ -71,6 +76,7 @@ export const mockFeatures: Feature[] = [
     dataType: "VECTOR",
     training: true,
     serving: true,
+    ydServingReq: 2150000,
     updateTime: "2026-02-11 16:16",
   },
   {
@@ -83,6 +89,7 @@ export const mockFeatures: Feature[] = [
     dataType: "FLOAT",
     training: false,
     serving: false,
+    ydServingReq: 0,
     updateTime: "2026-02-04 17:03",
   },
   {
@@ -95,6 +102,7 @@ export const mockFeatures: Feature[] = [
     dataType: "FLOAT",
     training: true,
     serving: true,
+    ydServingReq: 932000,
     updateTime: "2026-02-13 13:30",
   },
   {
@@ -107,6 +115,7 @@ export const mockFeatures: Feature[] = [
     dataType: "FLOAT",
     training: true,
     serving: true,
+    ydServingReq: 560000,
     updateTime: "2026-02-10 09:00",
   },
   {
@@ -119,6 +128,7 @@ export const mockFeatures: Feature[] = [
     dataType: "FLOAT",
     training: true,
     serving: false,
+    ydServingReq: 0,
     updateTime: "2026-02-09 11:20",
   },
   {
@@ -131,6 +141,7 @@ export const mockFeatures: Feature[] = [
     dataType: "INT",
     training: false,
     serving: true,
+    ydServingReq: 410000,
     updateTime: "2026-02-08 15:00",
   },
   {
@@ -143,6 +154,7 @@ export const mockFeatures: Feature[] = [
     dataType: "FLOAT",
     training: true,
     serving: true,
+    ydServingReq: 1890000,
     updateTime: "2026-02-07 12:30",
   },
   {
@@ -155,6 +167,7 @@ export const mockFeatures: Feature[] = [
     dataType: "INT",
     training: true,
     serving: false,
+    ydServingReq: 0,
     updateTime: "2026-02-06 08:45",
   },
 ];
