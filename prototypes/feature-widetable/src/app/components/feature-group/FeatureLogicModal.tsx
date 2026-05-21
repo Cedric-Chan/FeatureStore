@@ -21,6 +21,10 @@ import {
   Filter,
   ArrowUpDown,
   ChevronDown,
+  Plus,
+  Trash2,
+  Bell,
+  Gauge,
 } from "lucide-react";
 
 // ─── Health signal types ──────────────────────────────────────────────────────
@@ -54,8 +58,45 @@ interface ProcessingStage {
   dataverseUrl?: string;
 }
 
+// ─── Health monitoring rule ───────────────────────────────────────────────────
+interface HealthRule {
+  id: string;
+  metric: "null_pct" | "fail_pct" | "drift";
+  operator: ">=" | "<=" | "!=";
+  threshold: string;
+  receivers: string[];
+  enabled: boolean;
+}
+
+const METRIC_OPTIONS: { value: HealthRule["metric"]; label: string }[] = [
+  { value: "null_pct", label: "Null %" },
+  { value: "fail_pct", label: "Fail %" },
+  { value: "drift",    label: "Drifting" },
+];
+
+const OPERATOR_OPTIONS: { value: HealthRule["operator"]; label: string }[] = [
+  { value: ">=", label: ">=" },
+  { value: "<=", label: "<=" },
+  { value: "!=", label: "!=" },
+];
+
+const MOCK_RECEIVERS = [
+  "alice.wang@company.com",
+  "bob.chen@company.com",
+  "diana.xu@company.com",
+  "zhengyi.loh@seamoney.com",
+  "huangwei@shopee.com",
+  "cedric.chencan@seamoney.com",
+];
+
+const SEVERITY_STYLE: Record<HealthSignal["severity"], { cls: string; icon: React.ReactNode }> = {
+  ok:       { cls: "bg-emerald-50 text-emerald-700 border-emerald-200", icon: <CheckCircle2 className="w-3 h-3" /> },
+  warning:  { cls: "bg-amber-50 text-amber-700 border-amber-200",       icon: <TrendingUp  className="w-3 h-3" /> },
+  critical: { cls: "bg-red-50 text-red-600 border-red-200",             icon: <AlertTriangle className="w-3 h-3" /> },
+};
+
 // ─── Mock data builders ───────────────────────────────────────────────────────
-function buildMockHealthSignals(featureName: string): HealthSignal[] {
+function buildMockFreshnessSignals(featureName: string): HealthSignal[] {
   const now = "2026-05-15 08:30";
   return [
     {
@@ -71,13 +112,6 @@ function buildMockHealthSignals(featureName: string): HealthSignal[] {
       summary: "DWD aggregation delayed by 1.5h",
       detail: "dwd.user_credit_30d_features dt=2026-05-14 completed at 05:48. Typical completion is 04:15 ± 30 min. Spark job queued longer than usual due to cluster contention.",
       value: "05:48 (+1.5h)", baseline: "~04:15", updatedAt: now,
-    },
-    {
-      id: "h-3", stage: "dwd.user_credit_30d_features → risk_db.user_risk_score_ods",
-      stageType: "ads", path: "training", signalType: "drift", severity: "warning",
-      summary: "risk_score distribution shift detected",
-      detail: `Column risk_score mean shifted from 612.3 (7d avg) to 688.7 (+12.5%). P95 increased from 921 to 952. Distribution is right-skewed; possible underlying event pattern change.`,
-      value: "+12.5%", baseline: "7d avg 612.3", updatedAt: now,
     },
     {
       id: "h-4", stage: "kafka.credit_events → stream.credit_events_enriched",
@@ -100,6 +134,27 @@ function buildMockHealthSignals(featureName: string): HealthSignal[] {
       detail: `FG serving p99 = 182ms (HBase scan 96ms + Groovy transform 86ms). Call volume 12.3K/min. Zero errors in last hour.`,
       value: "p99 182ms", baseline: "< 500ms", updatedAt: now,
     },
+  ];
+}
+
+function buildMockDriftSignals(featureName: string): HealthSignal[] {
+  const now = "2026-05-15 08:30";
+  return [
+    {
+      id: "h-3", stage: "dwd.user_credit_30d_features → risk_db.user_risk_score_ods",
+      stageType: "ads", path: "training", signalType: "drift", severity: "warning",
+      summary: "risk_score distribution shift detected",
+      detail: `Column risk_score mean shifted from 612.3 (7d avg) to 688.7 (+12.5%). P95 increased from 921 to 952. Distribution is right-skewed; possible underlying event pattern change.`,
+      value: "+12.5%", baseline: "7d avg 612.3", updatedAt: now,
+    },
+  ];
+}
+
+function buildMockHealthRules(): HealthRule[] {
+  return [
+    { id: "r-1", metric: "null_pct", operator: ">=", threshold: "5", receivers: ["alice.wang@company.com", "bob.chen@company.com"], enabled: true },
+    { id: "r-2", metric: "fail_pct", operator: ">=", threshold: "1", receivers: ["alice.wang@company.com"], enabled: true },
+    { id: "r-3", metric: "drift",    operator: "!=", threshold: "0.1", receivers: ["diana.xu@company.com", "cedric.chencan@seamoney.com"], enabled: false },
   ];
 }
 
@@ -158,7 +213,7 @@ SELECT user_id,
                 ROUND(600
                   + 1.5 * COALESCE(repay_cnt_30d,0)
                   - 0.8 * COALESCE(overdue_amt_30d,0)/100)
-             )) AS ${featureName}
+             )) AS risk_score
 FROM dwd.user_credit_30d_features
 WHERE dt = '\${dt}';`,
       dataverseUrl: "#",
@@ -198,75 +253,49 @@ SELECT user_id,
                   + 1.5 * repay_cnt_30d_rt
                   - 0.8 * overdue_amt_30d_rt/100)
              )) AS risk_score_raw
-FROM TABLE(TUMBLE(TABLE credit_events_src,
-     DESCRIPTOR(event_ts), INTERVAL '1' MINUTE));`,
+FROM TABLE(TUMBLE(TABLE credit_events_src, DESCRIPTOR(event_ts), INTERVAL '1' MINUTE));`,
       dataverseUrl: "#",
     },
     {
       id: "p-s-3", order: 3,
-      taskName: "FG Serving Canvas · credit_hbase_user_risk · ID · V1",
+      taskName: "FG Serving Canvas · ID · V1",
       path: "serving", stageLabel: "FG Serving Canvas",
-      inputAssets: ["hbase.user_risk:cf:risk_score_raw (via FeatureSource)"],
+      inputAssets: ["hbase.user_risk:cf:risk_score_raw  (via FeatureSource)"],
       outputAsset: `feature: ${featureName}`,
       language: "Groovy",
-      description: `在线 Serving 阶段：通过 HBase FeatureSource 扫描获取 raw value，经 Groovy Transformer 进行黑名单过滤和分数裁剪，产出最终 online Fine Feature。`,
+      description: "在线 Serving 阶段：通过 HBase FeatureSource 扫描获取 raw value，经 Groovy Transformer 进行黑名单过滤和分数裁剪，产出最终 online Fine Feature。",
       reviewStatus: "AI-KAG",
-      snippet: `// FG Serving Canvas — Groovy region script (ID · V1)
-def raw = HBaseCall.query(
+      snippet: `def raw = HBaseCall.query(
     tableName: "user_risk",
     rowKey: input.user_id,
     qualifier: "cf:risk_score_raw"
 )
-
 if (raw == null || raw.risk_score_raw == null) {
-    output.risk_score = -1
-    return
+    output.risk_score = -1; return
 }
-
 def score = raw.risk_score_raw as int
-
-if (input.is_blacklisted) {
-    output.risk_score = 999
-    return
-}
-
+if (input.is_blacklisted) { output.risk_score = 999; return }
 output.risk_score = Math.max(300, Math.min(900, score))`,
+      dataverseUrl: "#",
     },
   ];
 }
 
+// ─── Upstream DAG nodes (shared between Lineage modes) ─────────────────────────
+interface UpstreamNode { id: string; label: string; type: "source" | "hive" | "kafka" | "flink" | "hbase" | "fs" | "fg" | "feature"; }
 
-// ─── Severity config ──────────────────────────────────────────────────────────
-const SEVERITY_STYLE: Record<string, { cls: string; icon: React.ReactNode }> = {
-  critical: { cls: "bg-red-50 text-red-700 border-red-200",  icon: <AlertTriangle className="w-3 h-3" /> },
-  warning:  { cls: "bg-amber-50 text-amber-700 border-amber-200", icon: <TrendingUp className="w-3 h-3" /> },
-  ok:       { cls: "bg-emerald-50 text-emerald-700 border-emerald-200", icon: <CheckCircle2 className="w-3 h-3" /> },
+const NODE_STYLE: Record<UpstreamNode["type"], { bg: string; border: string; text: string; dot?: string }> = {
+  source:  { bg: "bg-slate-100/80",        border: "border-slate-300",       text: "text-slate-600" },
+  hive:    { bg: "bg-emerald-50/60", border: "border-emerald-200", text: "text-emerald-800", dot: "bg-emerald-400" },
+  kafka:   { bg: "bg-violet-50/60",  border: "border-violet-200",  text: "text-violet-800",  dot: "bg-violet-400" },
+  flink:   { bg: "bg-violet-50/60",  border: "border-violet-200",  text: "text-violet-800",  dot: "bg-violet-400" },
+  hbase:   { bg: "bg-violet-50/60",  border: "border-violet-200",  text: "text-violet-800",  dot: "bg-violet-400" },
+  fs:      { bg: "bg-violet-50/60",  border: "border-violet-200",  text: "text-violet-800",  dot: "bg-violet-400" },
+  fg:      { bg: "bg-teal-50/60",    border: "border-teal-300",    text: "text-teal-700",    dot: "bg-teal-400" },
+  feature: { bg: "bg-teal-600",      border: "border-teal-600",    text: "text-white" },
 };
 
-
-const REVIEW_STYLE: Record<string, { cls: string; icon: React.ReactNode }> = {
-  "AI-KAG": { cls: "bg-teal-50 text-teal-700 border-teal-200", icon: <Sparkles className="w-3 h-3" /> },
-};
-
-
-const TASK_TYPE_STYLE: Record<string, { label: string; cls: string; icon: React.ReactNode }> = {
-  SparkBatch:      { label: "Spark Batch",      cls: "bg-blue-50 text-blue-700 border-blue-200",       icon: <Layers className="w-3 h-3" /> },
-  FlinkStream:     { label: "Flink Stream",     cls: "bg-violet-50 text-violet-700 border-violet-200", icon: <Zap className="w-3 h-3" /> },
-  HiveETL:         { label: "Hive ETL",         cls: "bg-amber-50 text-amber-700 border-amber-200",    icon: <Database className="w-3 h-3" /> },
-  FGServingCanvas: { label: "FG Serving Canvas",cls: "bg-teal-50 text-teal-700 border-teal-300",       icon: <Code2 className="w-3 h-3" /> },
-};
-
-// ─── Mock lineage DAG ─────────────────────────────────────────────────────────
-const MOCK_LINEAGE_EDGES = [
-  { from: "ods.user_credit_events", to: "dwd.user_credit_30d_features", label: "Spark Batch" },
-  { from: "dwd.user_credit_30d_features", to: "risk_db.user_risk_score_ods", label: "Spark Batch" },
-  { from: "kafka.credit_events", to: "stream.credit_events_enriched", label: "Flink Stream" },
-  { from: "stream.credit_events_enriched", to: "hbase.user_risk:cf", label: "Flink Stream" },
-  { from: "hbase.user_risk:cf", to: "FeatureSource credit_hbase_user_risk", label: "HBase Scan" },
-  { from: "FeatureSource credit_hbase_user_risk", to: "FG Serving Canvas", label: "Groovy V1" },
-];
-
-const UPSTREAM_NODES = [
+const UPSTREAM_NODES: UpstreamNode[] = [
   { id: "binlog", label: "binlog.user_credit_events", type: "source" },
   { id: "ods", label: "ods.user_credit_events", type: "hive" },
   { id: "dwd", label: "dwd.user_credit_30d_features", type: "hive" },
@@ -279,19 +308,8 @@ const UPSTREAM_NODES = [
   { id: "feature", label: "risk_score", type: "feature" },
 ];
 
-const NODE_STYLE: Record<string, string> = {
-  source: "border-slate-300 bg-slate-50 text-slate-700",
-  hive: "border-amber-300 bg-amber-50 text-amber-800",
-  kafka: "border-violet-300 bg-violet-50 text-violet-800",
-  flink: "border-blue-300 bg-blue-50 text-blue-800",
-  hbase: "border-teal-300 bg-teal-50 text-teal-800",
-  fs: "border-emerald-300 bg-emerald-50 text-emerald-800",
-  fg: "border-teal-500 bg-teal-100 text-teal-800 border-2",
-  feature: "border-teal-600 bg-teal-600 text-white border-2 shadow-md shadow-teal-200",
-};
-
-// ─── Main Modal Component ─────────────────────────────────────────────────────
-type TraceTab = "lineage" | "processing" | "health";
+// ─── Component ────────────────────────────────────────────────────────────────
+type TraceTab = "lineage" | "freshness" | "health";
 
 export function FeatureTraceModal({
   open,
@@ -308,22 +326,21 @@ export function FeatureTraceModal({
 }) {
   const [tab, setTab] = useState<TraceTab>("lineage");
 
-  const healthSignals = useMemo(() => buildMockHealthSignals(featureName), [featureName]);
+  const freshnessSignals = useMemo(() => buildMockFreshnessSignals(featureName), [featureName]);
+  const driftSignals = useMemo(() => buildMockDriftSignals(featureName), [featureName]);
   const processingStages = useMemo(() => buildMockProcessingStages(featureName), [featureName]);
+  const healthRules = useMemo(() => buildMockHealthRules(), []);
 
   useEffect(() => {
     if (!open) return;
     setTab("lineage");
   }, [open, featureName]);
 
-  const criticalCount = healthSignals.filter((s) => s.severity === "critical").length;
-  const warningCount = healthSignals.filter((s) => s.severity === "warning").length;
-  const healthSummary =
-    criticalCount > 0
-      ? `${criticalCount} critical`
-      : warningCount > 0
-        ? `${warningCount} warning`
-        : "all healthy";
+  const freshnessWarningCount = freshnessSignals.filter((s) => s.severity === "warning" || s.severity === "critical").length;
+  const freshnessSummary =
+    freshnessWarningCount > 0
+      ? `${freshnessWarningCount} warning`
+      : "all on track";
 
   if (!open) return null;
 
@@ -371,16 +388,23 @@ export function FeatureTraceModal({
             subtitle="Pipeline topology + logic"
           />
           <TabBtn
-            active={tab === "health"}
-            onClick={() => setTab("health")}
+            active={tab === "freshness"}
+            onClick={() => setTab("freshness")}
             icon={<Activity className="w-3.5 h-3.5" />}
-            label="Health"
-            subtitle={healthSummary}
+            label="Freshness"
+            subtitle={freshnessSummary}
             badge={
-              warningCount > 0
-                ? { count: warningCount, color: "bg-amber-500" }
+              freshnessWarningCount > 0
+                ? { count: freshnessWarningCount, color: "bg-amber-500" }
                 : undefined
             }
+          />
+          <TabBtn
+            active={tab === "health"}
+            onClick={() => setTab("health")}
+            icon={<Gauge className="w-3.5 h-3.5" />}
+            label="Health"
+            subtitle="Monitoring rules"
           />
         </div>
 
@@ -388,8 +412,11 @@ export function FeatureTraceModal({
         <AnimatePresence mode="wait">
           <motion.div key={tab} initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -4 }} transition={{ duration: 0.2 }} className="flex-1 overflow-y-auto">
           {tab === "lineage" && <MergedTraceTabContent featureName={featureName} stages={processingStages} />}
+          {tab === "freshness" && (
+            <FreshnessTabContent signals={freshnessSignals} featureName={featureName} hasTraining={hasTraining} hasServing={hasServing} />
+          )}
           {tab === "health" && (
-            <HealthTabContent signals={healthSignals} featureName={featureName} hasTraining={hasTraining} hasServing={hasServing} />
+            <HealthConfigTabContent rules={healthRules} featureName={featureName} />
           )}
           </motion.div>
         </AnimatePresence>
@@ -534,11 +561,11 @@ function MergedTraceTabContent({ featureName, stages }: { featureName: string; s
   // Map connector positions to processing stages
   const trainingConnectors = useMemo(() => {
     const trainingStages = stages.filter(s => s.path === "training");
-    return TRAINING_NODES.slice(0, -1).map((_, i) => trainingStages[i] ?? null).filter(Boolean);
+    return TRAINING_NODES.slice(0, -1).map((_, i) => trainingStages[i] ?? null).filter(Boolean) as ProcessingStage[];
   }, [stages]);
   const servingConnectors = useMemo(() => {
     const servingStages = stages.filter(s => s.path === "serving");
-    return SERVING_NODES.slice(0, -1).map((_, i) => servingStages[i] ?? null).filter(Boolean);
+    return SERVING_NODES.slice(0, -1).map((_, i) => servingStages[i] ?? null).filter(Boolean) as ProcessingStage[];
   }, [stages]);
 
   const selectedStage = stages.find(s => s.id === selectedStageId) ?? null;
@@ -607,7 +634,6 @@ function MergedTraceTabContent({ featureName, stages }: { featureName: string; s
               )}
             </motion.div>
           ))}
-          {/* Fill remaining slots so grid aligns */}
           {Array.from({ length: Math.max(0, COLUMNS - TRAINING_NODES.length) }).map((_, i) => (
             <div key={`train-empty-${i}`} className="flex-1" />
           ))}
@@ -860,260 +886,29 @@ function NodeButton({
   );
 }
 
-// ─── Tab 2: Processing ────────────────────────────────────────────────────────
-
-const PATH_CONFIG: Record<string, {
+// ─── Health path config ──────────────────────────────────────────────────────
+const HEALTH_PATH: Record<string, {
   label: string;
-  sublabel: string;
-  icon: React.ReactNode;
   accentBg: string; accentBorder: string; accentText: string;
-  stepBg: string; stepText: string;
-  cardBorder: string; cardHover: string;
-  headerBg: string;
-  expandedBorder: string; expandedBg: string;
-  codeBar: string;
   emptyIcon: React.ReactNode;
   emptyText: string;
 }> = {
   training: {
-    label: "Training Path",
-    sublabel: "ODS binlog → Spark SQL → ADS · consumed by Batch Training API",
-    icon: <Layers className="w-3.5 h-3.5" />,
+    label: "Training",
     accentBg: "bg-emerald-50/60", accentBorder: "border-emerald-200", accentText: "text-emerald-700",
-    stepBg: "bg-emerald-100", stepText: "text-emerald-700",
-    cardBorder: "border-l-[3px] border-l-emerald-400 border-slate-200",
-    cardHover: "hover:border-l-emerald-500 hover:shadow-sm",
-    headerBg: "bg-emerald-50/30",
-    expandedBorder: "border-emerald-200", expandedBg: "bg-emerald-50/20",
-    codeBar: "bg-emerald-900",
     emptyIcon: <Layers className="w-8 h-8 text-emerald-300" />,
-    emptyText: "No Training pipeline for this feature",
+    emptyText: "No Training freshness signals",
   },
   serving: {
-    label: "Serving Path",
-    sublabel: "Kafka → Flink SQL → HBase → FG Canvas · consumed by Serving API",
-    icon: <Zap className="w-3.5 h-3.5" />,
+    label: "Serving",
     accentBg: "bg-violet-50/60", accentBorder: "border-violet-200", accentText: "text-violet-700",
-    stepBg: "bg-violet-100", stepText: "text-violet-700",
-    cardBorder: "border-l-[3px] border-l-violet-400 border-slate-200",
-    cardHover: "hover:border-l-violet-500 hover:shadow-sm",
-    headerBg: "bg-violet-50/30",
-    expandedBorder: "border-violet-200", expandedBg: "bg-violet-50/20",
-    codeBar: "bg-violet-900",
     emptyIcon: <Zap className="w-8 h-8 text-violet-300" />,
-    emptyText: "No Serving pipeline for this feature",
+    emptyText: "No Serving freshness signals",
   },
 };
 
-function ProcessingTabContent({
-  stages,
-  featureName,
-}: {
-  stages: ProcessingStage[];
-  featureName: string;
-}) {
-  const trainingStages = stages.filter((s) => s.path === "training");
-  const servingStages  = stages.filter((s) => s.path === "serving");
-
-  return (
-    <div className="px-4 sm:px-6 py-5 space-y-5">
-      <div className="flex items-center gap-2 text-[11px] text-slate-400 uppercase tracking-wider">
-        <FileText className="w-3 h-3 text-teal-500" />
-        <span>AI-distilled processing logic for</span>
-        <span className="font-mono text-teal-600 normal-case tracking-normal">{featureName}</span>
-      </div>
-
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 items-start">
-        <ProcessingPathColumn
-          path="training"
-          stages={trainingStages}
-          featureName={featureName}
-        />
-        <ProcessingPathColumn
-          path="serving"
-          stages={servingStages}
-          featureName={featureName}
-        />
-      </div>
-    </div>
-  );
-}
-
-function ProcessingPathColumn({
-  path,
-  stages,
-  featureName,
-}: {
-  path: "training" | "serving";
-  stages: ProcessingStage[];
-  featureName: string;
-}) {
-  const cfg = PATH_CONFIG[path];
-
-  return (
-    <div className="space-y-3">
-      <div className={`rounded-xl border ${cfg.accentBorder} ${cfg.accentBg} px-4 py-3`}>
-        <div className="flex items-center gap-2 mb-1">
-          <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full ${cfg.accentBg} ${cfg.accentBorder} border ${cfg.accentText} text-[11px] font-semibold`}>
-            <span className={`w-1.5 h-1.5 rounded-full ${path === "training" ? "bg-emerald-400" : "bg-violet-400"}`} />
-            {cfg.label}
-          </span>
-        </div>
-        <p className="text-[10px] text-slate-500 leading-relaxed">{cfg.sublabel}</p>
-      </div>
-
-      {stages.length > 0 ? (
-        stages.map((stage) => (
-          <ProcessingStageCard
-            key={stage.id}
-            stage={stage}
-            section={path}
-          />
-        ))
-      ) : (
-        <div className={`rounded-xl border border-dashed ${cfg.accentBorder} ${cfg.accentBg} flex flex-col items-center justify-center py-10 px-4 text-center`}>
-          {cfg.emptyIcon}
-          <p className="text-xs text-slate-400 mt-2">{cfg.emptyText}</p>
-        </div>
-      )}
-    </div>
-  );
-}
-
-function ProcessingStageCard({
-  stage,
-  section,
-}: {
-  stage: ProcessingStage;
-  section: "training" | "serving";
-}) {
-  const [isExpanded, setExpanded] = useState(false);
-  const cfg = PATH_CONFIG[section];
-
-  return (
-    <motion.div
-      layout
-      className={`rounded-xl border overflow-hidden transition-all ${cfg.cardBorder} ${cfg.cardHover} bg-white`}
-    >
-      <button
-        onClick={() => setExpanded(!isExpanded)}
-        className={`w-full flex items-start justify-between px-4 py-3 text-left transition-colors ${cfg.headerBg} hover:bg-opacity-80`}
-      >
-        <div className="flex items-start gap-3 min-w-0">
-          <span className={`inline-flex items-center justify-center w-6 h-6 rounded-lg ${cfg.stepBg} ${cfg.stepText} text-[11px] font-bold flex-shrink-0 mt-0.5`}>
-            {stage.order}
-          </span>
-          <div className="min-w-0">
-            <div className="flex items-center gap-2 flex-wrap">
-              <span className="text-sm font-semibold text-slate-800">
-                {stage.stageLabel}
-              </span>
-              <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-medium border bg-teal-50 text-teal-700 border-teal-200">
-                <Sparkles className="w-3 h-3" />
-                AI-KAG
-              </span>
-              <span className="text-[10px] text-slate-400 font-mono">{stage.language}</span>
-            </div>
-            <p className="text-[11px] text-slate-500 mt-0.5 line-clamp-2">
-              {stage.description}
-            </p>
-            <div className="flex items-center gap-2 mt-1.5 text-[10px] text-slate-400">
-              <span className="flex items-center gap-1">
-                <Database className="w-2.5 h-2.5" />
-                {stage.inputAssets.join(", ")}
-              </span>
-              <ArrowRight className="w-2.5 h-2.5 flex-shrink-0" />
-              <span className="font-mono text-slate-600 truncate">{stage.outputAsset}</span>
-            </div>
-          </div>
-        </div>
-        <span className={`text-slate-300 transition-transform flex-shrink-0 ml-2 ${isExpanded ? "rotate-180" : ""}`}>
-          ▼
-        </span>
-      </button>
-
-      <AnimatePresence>
-        {isExpanded && (
-          <motion.div
-            initial={{ height: 0, opacity: 0 }}
-            animate={{ height: "auto", opacity: 1 }}
-            exit={{ height: 0, opacity: 0 }}
-            transition={{ duration: 0.2 }}
-            className="border-t border-slate-100 overflow-hidden"
-          >
-            <div className="px-4 py-3 grid grid-cols-1 sm:grid-cols-3 gap-3 text-[11px] bg-slate-50/60">
-              <div>
-                <span className="text-slate-400 uppercase text-[10px] tracking-wider">Input</span>
-                <div className="flex flex-wrap gap-1 mt-1">
-                  {stage.inputAssets.map((a) => (
-                    <span key={a} className="px-1.5 py-0.5 rounded bg-white text-slate-700 font-mono border border-slate-200 text-[10px]">
-                      {a}
-                    </span>
-                  ))}
-                </div>
-              </div>
-              <div>
-                <span className="text-slate-400 uppercase text-[10px] tracking-wider">Output</span>
-                <div className="mt-1">
-                  <span className="px-1.5 py-0.5 rounded bg-white text-slate-700 font-mono border border-slate-200 text-[10px]">
-                    {stage.outputAsset}
-                  </span>
-                </div>
-              </div>
-              <div>
-                <span className="text-slate-400 uppercase text-[10px] tracking-wider">Language</span>
-                <span className="block mt-1 text-slate-700 text-[11px]">{stage.language}</span>
-                {stage.dataverseUrl && (
-                  <a href={stage.dataverseUrl} target="_blank" rel="noreferrer"
-                    className="inline-flex items-center gap-0.5 text-teal-600 hover:text-teal-800 mt-0.5 text-[10px]">
-                    View in DataVerse <ExternalLink className="w-2.5 h-2.5" />
-                  </a>
-                )}
-              </div>
-            </div>
-
-            <div className={`px-4 py-3 border-b border-slate-100 ${cfg.expandedBg}`}>
-              <div className="flex items-center gap-1.5 text-[10px] text-slate-400 uppercase tracking-wide mb-1.5">
-                <Brain className={`w-3 h-3 ${section === "training" ? "text-emerald-400" : "text-violet-400"}`} />
-                AI Summary
-              </div>
-              <p className="text-[12px] text-slate-600 leading-relaxed">{stage.description}</p>
-            </div>
-
-            <div className={`${cfg.codeBar} text-slate-100 px-4 py-3 font-mono text-[11.5px] leading-relaxed overflow-x-auto`}>
-              <div className="flex items-center gap-2 mb-2 text-[10px] uppercase tracking-wide text-slate-400">
-                <Sparkles className="w-3 h-3 text-amber-300" />
-                <span>AI-KAG · knowledge asset graph extracted by AI agent</span>
-              </div>
-              <pre className="whitespace-pre">{stage.snippet}</pre>
-            </div>
-          </motion.div>
-        )}
-      </AnimatePresence>
-    </motion.div>
-  );
-}
-
-// ─── Health path colors ────────────────────────────────────────────────────────
-const HEALTH_PATH: Record<string, {
-  label: string; icon: React.ReactNode;
-  accentBg: string; accentBorder: string; accentText: string; emptyIcon: React.ReactNode; emptyText: string;
-}> = {
-  training: {
-    label: "Training", icon: <Layers className="w-3 h-3" />,
-    accentBg: "bg-emerald-50/60", accentBorder: "border-emerald-200", accentText: "text-emerald-700",
-    emptyIcon: <Activity className="w-8 h-8 text-emerald-300" />,
-    emptyText: "No Training health signals",
-  },
-  serving: {
-    label: "Serving", icon: <Zap className="w-3 h-3" />,
-    accentBg: "bg-violet-50/60", accentBorder: "border-violet-200", accentText: "text-violet-700",
-    emptyIcon: <Activity className="w-8 h-8 text-violet-300" />,
-    emptyText: "No Serving health signals",
-  },
-};
-
-function HealthTabContent({
+// ─── Tab 2: Freshness (Lagging / Latency only — no drift) ────────────────────
+function FreshnessTabContent({
   signals,
   featureName,
   hasTraining,
@@ -1139,22 +934,19 @@ function HealthTabContent({
   const filteredServing  = servingSignals.filter(filterFn);
 
   const tOk = trainingSignals.filter((s) => s.severity === "ok").length;
-  const tWarn = trainingSignals.filter((s) => s.severity === "warning").length;
-  const tCrit = trainingSignals.filter((s) => s.severity === "critical").length;
+  const tWarn = trainingSignals.filter((s) => s.severity === "warning" || s.severity === "critical").length;
   const sOk = servingSignals.filter((s) => s.severity === "ok").length;
-  const sWarn = servingSignals.filter((s) => s.severity === "warning").length;
-  const sCrit = servingSignals.filter((s) => s.severity === "critical").length;
+  const sWarn = servingSignals.filter((s) => s.severity === "warning" || s.severity === "critical").length;
 
   const summaryOk = tOk + sOk;
   const summaryWarn = tWarn + sWarn;
-  const summaryCrit = tCrit + sCrit;
 
   return (
     <div className="px-4 sm:px-6 py-5 space-y-5">
       {/* Section label */}
       <div className="flex items-center gap-2 text-[11px] text-slate-400 uppercase tracking-wider">
         <Activity className="w-3 h-3 text-teal-500" />
-        <span>Upstream pipeline health for</span>
+        <span>Upstream pipeline freshness for</span>
         <span className="font-mono text-teal-600 normal-case tracking-normal">{featureName}</span>
       </div>
 
@@ -1173,15 +965,10 @@ function HealthTabContent({
                 <span className="w-1.5 h-1.5 rounded-full bg-amber-400" /> {summaryWarn} warning
               </span>
             )}
-            {summaryCrit > 0 && (
-              <span className="flex items-center gap-1">
-                <span className="w-1.5 h-1.5 rounded-full bg-red-400" /> {summaryCrit} critical
-              </span>
-            )}
           </div>
         </div>
         <div className="flex items-center gap-1 ml-auto">
-          {(["all", "warning", "critical"] as const).map((f) => (
+          {(["all", "warning"] as const).map((f) => (
             <button
               key={f}
               onClick={() => setFilterSeverity(f)}
@@ -1191,7 +978,7 @@ function HealthTabContent({
                   : "text-slate-400 hover:text-slate-600"
               }`}
             >
-              {f === "all" ? "All" : f === "warning" ? "Warnings" : "Critical"}
+              {f === "all" ? "All" : "Warnings"}
             </button>
           ))}
         </div>
@@ -1199,14 +986,14 @@ function HealthTabContent({
 
       {/* Two parallel columns */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 items-start">
-        <HealthPathColumn path="training" signals={filteredTraining} hasPath={hasTraining} />
-        <HealthPathColumn path="serving"  signals={filteredServing}  hasPath={hasServing}  />
+        <FreshnessPathColumn path="training" signals={filteredTraining} hasPath={hasTraining} />
+        <FreshnessPathColumn path="serving"  signals={filteredServing}  hasPath={hasServing}  />
       </div>
     </div>
   );
 }
 
-function HealthPathColumn({
+function FreshnessPathColumn({
   path,
   signals,
   hasPath,
@@ -1224,13 +1011,13 @@ function HealthPathColumn({
         <div className="flex items-center gap-2">
           <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full ${cfg.accentBg} ${cfg.accentBorder} border ${cfg.accentText} text-[11px] font-semibold`}>
             <span className={`w-1.5 h-1.5 rounded-full ${path === "training" ? "bg-emerald-400" : "bg-violet-400"}`} />
-            {cfg.label} Health
+            {cfg.label} Freshness
           </span>
         </div>
         <p className="text-[10px] text-slate-500 leading-relaxed mt-1">
           {path === "training"
-            ? "Hive ODS/DWD/ADS pipeline · latency, drift, freshness"
-            : "Kafka/Flink/HBase/FG pipeline · latency, freshness, serving"}
+            ? "Hive ODS/DWD/ADS pipeline · ingestion latency, partition freshness"
+            : "Kafka/Flink/HBase/FG pipeline · consumer lag, write freshness, serving latency"}
         </p>
       </div>
 
@@ -1256,7 +1043,7 @@ function HealthPathColumn({
                   <div className="flex items-start gap-2.5 min-w-0">
                     <span className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-medium border ${sev.cls} flex-shrink-0`}>
                       {sev.icon}
-                      {signal.signalType === "latency" ? "Latency" : signal.signalType === "drift" ? "Drift" : signal.signalType === "freshness" ? "Freshness" : "OK"}
+                      {signal.signalType === "latency" ? "Latency" : signal.signalType === "freshness" ? "Freshness" : "OK"}
                     </span>
                     <div className="min-w-0">
                       <div className="text-[12px] font-semibold text-slate-800">{signal.summary}</div>
@@ -1281,6 +1068,376 @@ function HealthPathColumn({
           {cfg.emptyIcon}
           <p className="text-xs text-slate-400 mt-2">{cfg.emptyText}</p>
         </div>
+      )}
+    </div>
+  );
+}
+
+// ─── Tab 3: Health (Monitoring Rules Configuration) ───────────────────────────
+function HealthConfigTabContent({
+  rules: initialRules,
+  featureName,
+}: {
+  rules: HealthRule[];
+  featureName: string;
+}) {
+  const [rules, setRules] = useState<HealthRule[]>(initialRules);
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [draft, setDraft] = useState<Partial<HealthRule>>({});
+  const [receiverInput, setReceiverInput] = useState("");
+  const [showReceiverDropdown, setShowReceiverDropdown] = useState(false);
+
+  const isAdding = editingId === "__new__";
+  const isEditing = editingId !== null;
+
+  function startAdd() {
+    setEditingId("__new__");
+    setDraft({ metric: "null_pct", operator: ">=", threshold: "", receivers: [], enabled: true });
+    setReceiverInput("");
+    setShowReceiverDropdown(false);
+  }
+
+  function startEdit(rule: HealthRule) {
+    setEditingId(rule.id);
+    setDraft({ ...rule });
+    setReceiverInput("");
+    setShowReceiverDropdown(false);
+  }
+
+  function cancelEdit() {
+    setEditingId(null);
+    setDraft({});
+    setReceiverInput("");
+    setShowReceiverDropdown(false);
+  }
+
+  function saveRule() {
+    if (!draft.metric || !draft.operator || !draft.threshold?.trim()) return;
+    const saved: HealthRule = {
+      id: isAdding ? `r_${Date.now()}` : editingId!,
+      metric: draft.metric as HealthRule["metric"],
+      operator: draft.operator as HealthRule["operator"],
+      threshold: draft.threshold,
+      receivers: draft.receivers ?? [],
+      enabled: draft.enabled ?? true,
+    };
+    if (isAdding) {
+      setRules(prev => [...prev, saved]);
+    } else {
+      setRules(prev => prev.map(r => r.id === saved.id ? saved : r));
+    }
+    cancelEdit();
+  }
+
+  function deleteRule(id: string) {
+    setRules(prev => prev.filter(r => r.id !== id));
+    if (editingId === id) cancelEdit();
+  }
+
+  function toggleRule(id: string) {
+    setRules(prev => prev.map(r => r.id === id ? { ...r, enabled: !r.enabled } : r));
+  }
+
+  function addReceiver() {
+    const email = receiverInput.trim();
+    if (!email || !draft.receivers || draft.receivers.includes(email)) return;
+    setDraft(prev => ({ ...prev, receivers: [...(prev.receivers ?? []), email] }));
+    setReceiverInput("");
+    setShowReceiverDropdown(false);
+  }
+
+  function removeReceiver(email: string) {
+    setDraft(prev => ({ ...prev, receivers: (prev.receivers ?? []).filter(r => r !== email) }));
+  }
+
+  function handleReceiverKeyDown(e: React.KeyboardEvent) {
+    if (e.key === "Enter") { e.preventDefault(); addReceiver(); }
+  }
+
+  const filteredReceivers = MOCK_RECEIVERS.filter(
+    r => r.toLowerCase().includes(receiverInput.toLowerCase()) && !(draft.receivers ?? []).includes(r)
+  );
+
+  return (
+    <div className="px-4 sm:px-6 py-5 space-y-5">
+      {/* Section label */}
+      <div className="flex items-center gap-2 text-[11px] text-slate-400 uppercase tracking-wider">
+        <Gauge className="w-3 h-3 text-teal-500" />
+        <span>Health monitoring rules for</span>
+        <span className="font-mono text-teal-600 normal-case tracking-normal">{featureName}</span>
+      </div>
+
+      <div className="rounded-xl border border-slate-200 overflow-hidden">
+        {/* Column headers */}
+        <div className="px-4 py-3 bg-slate-50/60 border-b border-slate-200 flex items-center gap-4 text-[10px] uppercase tracking-wide text-slate-400 font-medium">
+          <span className="w-5 flex-shrink-0" />
+          <span className="flex-1">Metric</span>
+          <span className="w-20 text-center">Operator</span>
+          <span className="w-20 text-center">Threshold</span>
+          <span className="flex-1">Receiver(s)</span>
+          <span className="w-16 text-center">Status</span>
+          <span className="w-14" />
+        </div>
+
+        {/* Rule rows */}
+        <div className="divide-y divide-slate-50">
+          {rules.map((rule) => {
+            const isActive = editingId === rule.id;
+            const metricLabel = METRIC_OPTIONS.find(m => m.value === rule.metric)?.label ?? rule.metric;
+            const metricColor =
+              rule.metric === "null_pct" ? "bg-sky-50 text-sky-700 border-sky-200" :
+              rule.metric === "fail_pct" ? "bg-red-50 text-red-600 border-red-200" :
+              "bg-amber-50 text-amber-700 border-amber-200";
+
+            if (isActive) {
+              return (
+                <div key={rule.id} className="px-4 py-3 bg-teal-50/30 flex items-center gap-4">
+                  {/* Metric */}
+                  <select
+                    value={draft.metric ?? "null_pct"}
+                    onChange={e => setDraft(prev => ({ ...prev, metric: e.target.value as HealthRule["metric"] }))}
+                    className="flex-1 px-2 py-1.5 rounded-lg border border-slate-200 text-xs font-medium bg-white focus:outline-none focus:ring-2 focus:ring-teal-400"
+                  >
+                    {METRIC_OPTIONS.map(opt => (
+                      <option key={opt.value} value={opt.value}>{opt.label}</option>
+                    ))}
+                  </select>
+                  {/* Operator */}
+                  <select
+                    value={draft.operator ?? ">="}
+                    onChange={e => setDraft(prev => ({ ...prev, operator: e.target.value as HealthRule["operator"] }))}
+                    className="w-20 px-2 py-1.5 rounded-lg border border-slate-200 text-xs text-center font-mono bg-white focus:outline-none focus:ring-2 focus:ring-teal-400"
+                  >
+                    {OPERATOR_OPTIONS.map(opt => (
+                      <option key={opt.value} value={opt.value}>{opt.label}</option>
+                    ))}
+                  </select>
+                  {/* Threshold */}
+                  <input
+                    value={draft.threshold ?? ""}
+                    onChange={e => setDraft(prev => ({ ...prev, threshold: e.target.value }))}
+                    placeholder="e.g. 5"
+                    className="w-20 px-2 py-1.5 rounded-lg border border-slate-200 text-xs text-center font-mono bg-white focus:outline-none focus:ring-2 focus:ring-teal-400"
+                  />
+                  {/* Receivers */}
+                  <div className="flex-1 relative">
+                    <div className="flex flex-wrap gap-1 mb-1">
+                      {(draft.receivers ?? []).map(email => (
+                        <span key={email} className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-white text-[10px] text-slate-600 border border-slate-200">
+                          {email}
+                          <button onClick={() => removeReceiver(email)} className="text-slate-400 hover:text-red-500">
+                            <X className="w-2.5 h-2.5" />
+                          </button>
+                        </span>
+                      ))}
+                    </div>
+                    <div className="relative">
+                      <input
+                        value={receiverInput}
+                        onChange={e => { setReceiverInput(e.target.value); setShowReceiverDropdown(true); }}
+                        onFocus={() => setShowReceiverDropdown(true)}
+                        onKeyDown={handleReceiverKeyDown}
+                        placeholder="Add email..."
+                        className="w-full px-2 py-1 rounded border border-slate-200 text-[10px] bg-white focus:outline-none focus:ring-2 focus:ring-teal-400"
+                      />
+                      {showReceiverDropdown && filteredReceivers.length > 0 && (
+                        <div className="absolute top-full left-0 right-0 mt-1 bg-white border border-slate-200 rounded-lg shadow-lg z-10 max-h-28 overflow-y-auto">
+                          {filteredReceivers.map(r => (
+                            <button
+                              key={r}
+                              onClick={() => { setReceiverInput(r); addReceiver(); }}
+                              className="w-full text-left px-2.5 py-1.5 text-[10px] text-slate-600 hover:bg-teal-50 font-mono"
+                            >
+                              {r}
+                            </button>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                  {/* Status toggle */}
+                  <div className="w-16 flex justify-center">
+                    <button
+                      onClick={() => setDraft(prev => ({ ...prev, enabled: !(prev.enabled ?? true) }))}
+                      className={`relative w-8 h-4 rounded-full transition-colors ${(draft.enabled ?? true) ? "bg-teal-500" : "bg-slate-200"}`}
+                    >
+                      <span className={`absolute top-0.5 w-3 h-3 rounded-full bg-white shadow transition-all ${(draft.enabled ?? true) ? "left-4" : "left-0.5"}`} />
+                    </button>
+                  </div>
+                  {/* Actions */}
+                  <div className="w-14 flex items-center gap-1.5 justify-end">
+                    <button onClick={saveRule} className="p-1 rounded text-teal-600 hover:bg-teal-100 transition-colors" title="Save">
+                      <CheckCircle2 className="w-3.5 h-3.5" />
+                    </button>
+                    <button onClick={cancelEdit} className="p-1 rounded text-slate-400 hover:bg-slate-100 transition-colors" title="Cancel">
+                      <X className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+                </div>
+              );
+            }
+
+            return (
+              <div key={rule.id} className="px-4 py-3 flex items-center gap-4 hover:bg-slate-50/50 transition-colors">
+                {/* Drag handle */}
+                <span className="w-5 flex items-center justify-center text-slate-300 cursor-grab">
+                  <svg width="8" height="12" viewBox="0 0 8 12" fill="currentColor">
+                    <circle cx="2" cy="2" r="1" /><circle cx="6" cy="2" r="1" />
+                    <circle cx="2" cy="6" r="1" /><circle cx="6" cy="6" r="1" />
+                    <circle cx="2" cy="10" r="1" /><circle cx="6" cy="10" r="1" />
+                  </svg>
+                </span>
+                {/* Metric */}
+                <span className="flex-1">
+                  <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-medium border ${metricColor}`}>
+                    {rule.metric === "null_pct" && <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="10"/><line x1="8" y1="12" x2="16" y2="12"/></svg>}
+                    {rule.metric === "fail_pct" && <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>}
+                    {rule.metric === "drift" && <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="22 7 13.5 15.5 8.5 10.5 2 17"/><polyline points="16 7 22 7 22 13"/></svg>}
+                    {metricLabel}
+                  </span>
+                </span>
+                {/* Operator */}
+                <span className="w-20 text-center text-xs font-mono text-slate-600">{rule.operator}</span>
+                {/* Threshold */}
+                <span className="w-20 text-center text-xs font-mono text-slate-700 font-semibold">{rule.threshold}</span>
+                {/* Receivers */}
+                <span className="flex-1">
+                  <div className="flex flex-wrap gap-1">
+                    {rule.receivers.slice(0, 2).map(email => (
+                      <span key={email} className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-slate-100 text-[10px] text-slate-500 font-mono border border-slate-200">
+                        {email}
+                      </span>
+                    ))}
+                    {rule.receivers.length > 2 && (
+                      <span className="text-[10px] text-slate-400">+{rule.receivers.length - 2} more</span>
+                    )}
+                  </div>
+                </span>
+                {/* Status */}
+                <div className="w-16 flex justify-center">
+                  <button onClick={() => toggleRule(rule.id)} className="relative w-8 h-4 rounded-full transition-colors" style={{ backgroundColor: rule.enabled ? "#13c2c2" : "#cbd5e1" }}>
+                    <span className="absolute top-0.5 w-3 h-3 rounded-full bg-white shadow transition-all" style={{ left: rule.enabled ? "1rem" : "0.125rem" }} />
+                  </button>
+                </div>
+                {/* Actions */}
+                <div className="w-14 flex items-center gap-1.5 justify-end">
+                  <button onClick={() => startEdit(rule)} className="p-1 rounded text-slate-400 hover:text-teal-600 hover:bg-teal-50 transition-colors" title="Edit">
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+                  </button>
+                  <button onClick={() => deleteRule(rule.id)} className="p-1 rounded text-slate-400 hover:text-red-500 hover:bg-red-50 transition-colors" title="Delete">
+                    <Trash2 className="w-3 h-3" />
+                  </button>
+                </div>
+              </div>
+            );
+          })}
+
+          {/* Empty state */}
+          {rules.length === 0 && !isAdding && (
+            <div className="px-4 py-10 text-center">
+              <Bell className="w-8 h-8 text-slate-200 mx-auto mb-2" />
+              <p className="text-xs text-slate-400">No health rules configured yet</p>
+            </div>
+          )}
+
+          {/* Inline add form */}
+          {isAdding && (
+            <div className="px-4 py-3 bg-teal-50/30 flex items-center gap-4">
+              {/* Metric */}
+              <select
+                value={draft.metric ?? "null_pct"}
+                onChange={e => setDraft(prev => ({ ...prev, metric: e.target.value as HealthRule["metric"] }))}
+                className="flex-1 px-2 py-1.5 rounded-lg border border-slate-200 text-xs font-medium bg-white focus:outline-none focus:ring-2 focus:ring-teal-400"
+              >
+                {METRIC_OPTIONS.map(opt => (
+                  <option key={opt.value} value={opt.value}>{opt.label}</option>
+                ))}
+              </select>
+              {/* Operator */}
+              <select
+                value={draft.operator ?? ">="}
+                onChange={e => setDraft(prev => ({ ...prev, operator: e.target.value as HealthRule["operator"] }))}
+                className="w-20 px-2 py-1.5 rounded-lg border border-slate-200 text-xs text-center font-mono bg-white focus:outline-none focus:ring-2 focus:ring-teal-400"
+              >
+                {OPERATOR_OPTIONS.map(opt => (
+                  <option key={opt.value} value={opt.value}>{opt.label}</option>
+                ))}
+              </select>
+              {/* Threshold */}
+              <input
+                value={draft.threshold ?? ""}
+                onChange={e => setDraft(prev => ({ ...prev, threshold: e.target.value }))}
+                placeholder="e.g. 5"
+                className="w-20 px-2 py-1.5 rounded-lg border border-slate-200 text-xs text-center font-mono bg-white focus:outline-none focus:ring-2 focus:ring-teal-400"
+              />
+              {/* Receivers */}
+              <div className="flex-1 relative">
+                <div className="flex flex-wrap gap-1 mb-1">
+                  {(draft.receivers ?? []).map(email => (
+                    <span key={email} className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-white text-[10px] text-slate-600 border border-slate-200">
+                      {email}
+                      <button onClick={() => removeReceiver(email)} className="text-slate-400 hover:text-red-500">
+                        <X className="w-2.5 h-2.5" />
+                      </button>
+                    </span>
+                  ))}
+                </div>
+                <div className="relative">
+                  <input
+                    value={receiverInput}
+                    onChange={e => { setReceiverInput(e.target.value); setShowReceiverDropdown(true); }}
+                    onFocus={() => setShowReceiverDropdown(true)}
+                    onKeyDown={handleReceiverKeyDown}
+                    placeholder="Add email..."
+                    className="w-full px-2 py-1 rounded border border-slate-200 text-[10px] bg-white focus:outline-none focus:ring-2 focus:ring-teal-400"
+                  />
+                  {showReceiverDropdown && filteredReceivers.length > 0 && (
+                    <div className="absolute top-full left-0 right-0 mt-1 bg-white border border-slate-200 rounded-lg shadow-lg z-10 max-h-28 overflow-y-auto">
+                      {filteredReceivers.map(r => (
+                        <button
+                          key={r}
+                          onClick={() => { setReceiverInput(r); addReceiver(); }}
+                          className="w-full text-left px-2.5 py-1.5 text-[10px] text-slate-600 hover:bg-teal-50 font-mono"
+                        >
+                          {r}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </div>
+              {/* Status toggle */}
+              <div className="w-16 flex justify-center">
+                <button
+                  onClick={() => setDraft(prev => ({ ...prev, enabled: !(prev.enabled ?? true) }))}
+                  className={`relative w-8 h-4 rounded-full transition-colors ${(draft.enabled ?? true) ? "bg-teal-500" : "bg-slate-200"}`}
+                >
+                  <span className={`absolute top-0.5 w-3 h-3 rounded-full bg-white shadow transition-all ${(draft.enabled ?? true) ? "left-4" : "left-0.5"}`} />
+                </button>
+              </div>
+              {/* Actions */}
+              <div className="w-14 flex items-center gap-1.5 justify-end">
+                <button onClick={saveRule} className="p-1 rounded text-teal-600 hover:bg-teal-100 transition-colors" title="Save">
+                  <CheckCircle2 className="w-3.5 h-3.5" />
+                </button>
+                <button onClick={cancelEdit} className="p-1 rounded text-slate-400 hover:bg-slate-100 transition-colors" title="Cancel">
+                  <X className="w-3.5 h-3.5" />
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* Add rule button */}
+      {!isAdding && (
+        <button
+          onClick={startAdd}
+          className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg border-2 border-dashed border-slate-300 text-[12px] text-slate-500 hover:border-teal-400 hover:text-teal-600 transition-colors bg-white"
+        >
+          <Plus className="w-3.5 h-3.5" />
+          Add Rule
+        </button>
       )}
     </div>
   );
