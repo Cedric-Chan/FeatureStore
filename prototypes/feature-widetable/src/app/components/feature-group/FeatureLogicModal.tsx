@@ -403,8 +403,8 @@ export function FeatureTraceModal({
             active={tab === "health"}
             onClick={() => setTab("health")}
             icon={<Gauge className="w-3.5 h-3.5" />}
-            label="Health"
-            subtitle="Monitoring rules"
+            label="Monitor"
+            subtitle="Alert rules"
           />
         </div>
 
