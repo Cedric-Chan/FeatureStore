@@ -118,6 +118,93 @@ function getHiveSchema(table: string): HiveSchemaRow[] | null {
 }
 
 
+interface KafkaSchemaCol {
+  field: string;
+  type: string;
+  sample: string;
+  children?: KafkaSchemaCol[];
+}
+
+const KafkaTopicSchema: Record<string, KafkaSchemaCol[]> = {
+  "kafka.credit_events_id": [
+    { field: "event_id",      type: "STRING",  sample: '"evt_20260520_001"' },
+    { field: "user_id",       type: "STRING",  sample: '"ID00123456789"' },
+    { field: "event_type",    type: "STRING",  sample: '"OVERDUE"' },
+    { field: "payload",       type: "STRUCT",  sample: "{...}",
+      children: [
+        { field: "amount",        type: "DECIMAL(18,2)", sample: "15000.00" },
+        { field: "currency",      type: "STRING",        sample: '"IDR"' },
+        { field: "channel",       type: "STRING",        sample: '"APP"' },
+        { field: "device",        type: "STRUCT",        sample: "{...}",
+          children: [
+            { field: "device_id",     type: "STRING",  sample: '"DEV_XP9K2"' },
+            { field: "os_type",       type: "STRING",  sample: '"iOS"' },
+            { field: "app_version",   type: "STRING",  sample: '"4.12.0"' },
+          ],
+        },
+      ],
+    },
+    { field: "event_ts",      type: "TIMESTAMP(3)", sample: "2026-05-20 14:30:00.123" },
+    { field: "metadata",      type: "MAP<STRING,STRING>", sample: '{"region":"ID","ver":"2"}' },
+  ],
+  "kafka.credit_events_th": [
+    { field: "event_id",      type: "STRING",  sample: '"evt_TH_20260520_042"' },
+    { field: "user_id",       type: "STRING",  sample: '"TH00234890112"' },
+    { field: "event_type",    type: "STRING",  sample: '"REPAY"' },
+    { field: "payload",       type: "STRUCT",  sample: "{...}",
+      children: [
+        { field: "amount",        type: "DECIMAL(18,2)", sample: "8500.50" },
+        { field: "currency",      type: "STRING",        sample: '"THB"' },
+        { field: "channel",       type: "STRING",        sample: '"WEB"' },
+      ],
+    },
+    { field: "event_ts",      type: "TIMESTAMP(3)", sample: "2026-05-20 09:15:00.456" },
+  ],
+  "kafka.acard_events_mx": [
+    { field: "event_id",      type: "STRING",  sample: '"acard_mx_evt_099"' },
+    { field: "user_id",       type: "STRING",  sample: '"MX009992341"' },
+    { field: "acard_txn",     type: "STRUCT",  sample: "{...}",
+      children: [
+        { field: "txn_id",        type: "STRING",        sample: '"TXN_20260520_001"' },
+        { field: "score_raw",     type: "FLOAT",         sample: "0.7845" },
+        { field: "decision",      type: "STRING",        sample: '"APPROVE"' },
+        { field: "limit_amount",  type: "DECIMAL(18,2)", sample: "50000.00" },
+      ],
+    },
+    { field: "event_ts",      type: "TIMESTAMP(3)", sample: "2026-05-20 11:00:00.000" },
+  ],
+  "kafka.acard_events_id": [
+    { field: "event_id",      type: "STRING",  sample: '"acard_id_evt_012"' },
+    { field: "user_id",       type: "STRING",  sample: '"ID005672341"' },
+    { field: "acard_txn",     type: "STRUCT",  sample: "{...}",
+      children: [
+        { field: "txn_id",        type: "STRING",        sample: '"TXN_20260520_099"' },
+        { field: "score_raw",     type: "FLOAT",         sample: "0.6512" },
+        { field: "decision",      type: "STRING",        sample: '"REVIEW"' },
+      ],
+    },
+    { field: "event_ts",      type: "TIMESTAMP(3)", sample: "2026-05-20 08:45:00.789" },
+  ],
+};
+
+function getKafkaSchema(topic: string): KafkaSchemaCol[] | null {
+  return KafkaTopicSchema[topic] ?? null;
+}
+
+function flattenKafkaSchema(cols: KafkaSchemaCol[], depth: number = 0): (KafkaSchemaCol & { depth: number; hasChildren: boolean; isLastChild: boolean })[] {
+  const result: (KafkaSchemaCol & { depth: number; hasChildren: boolean; isLastChild: boolean })[] = [];
+  cols.forEach((col, i) => {
+    const isLast = i === cols.length - 1 && (!col.children || col.children.length === 0);
+    result.push({ ...col, depth, hasChildren: !!col.children && col.children.length > 0, isLastChild: isLast });
+    if (col.children && col.children.length > 0) {
+      result.push(...flattenKafkaSchema(col.children, depth + 1));
+    }
+  });
+  return result;
+}
+
+
+
 const KNOWN_KAFKA_TOPICS = new Set([
   "kafka.credit_events_id", "kafka.credit_events_th", "kafka.credit_events_mx",
   "kafka.acard_events_mx",  "kafka.acard_events_id",  "kafka.acard_events_th",
@@ -417,6 +504,75 @@ function ConfigModal({ type, current, onClose, onSave }: {
             />
             <p className="mt-1.5 text-[11px] text-slate-400">Optional. Append conditions to WHERE clause for data filtering.</p>
           </div>
+
+          {/* Kafka Schema Preview */}
+          {kafkaVal === "found" && (() => {
+            const schema = getKafkaSchema(kafkaTopic.trim());
+            if (!schema) return null;
+            const flat = flattenKafkaSchema(schema);
+            const totalFields = flat.length;
+            return (
+              <div className="mt-3 pt-3 border-t border-slate-100">
+                <div className="flex items-center gap-2 mb-2">
+                  <label className="text-[12px] text-slate-500">Schema Preview</label>
+                  <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[9px] font-medium bg-violet-50 text-violet-700 border border-violet-200">
+                    <Zap className="w-2.5 h-2.5" />
+                    {totalFields} fields · Avro
+                  </span>
+                </div>
+                <div className="rounded-xl border border-slate-200 overflow-hidden shadow-sm">
+                  <div className="max-h-48 overflow-y-auto" style={{ scrollbarWidth: "thin" }}>
+                    <table className="w-full text-xs border-separate border-spacing-0">
+                      <thead className="sticky top-0 z-10">
+                        <tr className="bg-slate-100/80 text-[10px] uppercase tracking-wide text-slate-500 font-semibold backdrop-blur-sm">
+                          <th className="text-left px-3 py-2 border-b border-slate-200" style={{ paddingLeft: 12 }}>Field</th>
+                          <th className="text-left px-3 py-2 border-b border-slate-200 w-36">Data Type</th>
+                          <th className="text-left px-3 py-2 border-b border-slate-200">Sample</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-100">
+                        {flat.map((row, i) => {
+                          const indent = row.depth * 20;
+                          const isNested = row.depth > 0;
+                          const isStruct = row.type === "STRUCT" || row.type.startsWith("MAP<") || row.type.startsWith("ARRAY<");
+                          return (
+                            <tr key={`${row.field}-${i}`} className={i % 2 === 0 ? "bg-white" : "bg-slate-50/50"}>
+                              <td className="px-3 py-2 font-mono text-slate-800" style={{ paddingLeft: 12 + indent }}>
+                                <span className="flex items-center gap-1">
+                                  {isNested && (
+                                    <span className="text-slate-300 flex-shrink-0 text-[10px]" style={{ marginLeft: -6 }}>
+                                      └
+                                    </span>
+                                  )}
+                                  {row.field}
+                                </span>
+                              </td>
+                              <td className="px-3 py-2">
+                                <span className={`inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-mono border ${
+                                  isStruct
+                                    ? "bg-violet-50 text-violet-700 border-violet-200"
+                                    : row.depth > 0
+                                      ? "bg-slate-100 text-slate-600 border-slate-200"
+                                      : "bg-indigo-50 text-indigo-700 border-indigo-200"
+                                }`}>
+                                  {row.type}
+                                </span>
+                              </td>
+                              <td className="px-3 py-2 font-mono text-[11px] text-slate-500 truncate max-w-[180px]" title={row.sample}>
+                                {row.sample}
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+                <p className="mt-1.5 text-[11px] text-slate-400">Auto-detected from Schema Registry · Avro · last sync 2026-05-20 02:00 UTC</p>
+              </div>
+            );
+          })()}
+
         </div>
       )}
       {type === "online" && (
