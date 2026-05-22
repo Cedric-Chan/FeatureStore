@@ -20,8 +20,8 @@ import {
 
 type ConfigType = "offline" | "nearline" | "online";
 
-interface OfflineConfig  { hiveTable: string;        status: "Healthy"|"Warning"|"Offline"; lastUpdated: string; }
-interface NearlineConfig { kafkaTopic: string;        status: "Healthy"|"Warning"|"Offline"; lag: string; }
+interface OfflineConfig  { hiveTable: string; customFilter?: string; status: "Healthy"|"Warning"|"Offline"; lastUpdated: string; }
+interface NearlineConfig { kafkaTopic: string; customFilter?: string; status: "Healthy"|"Warning"|"Offline"; lag: string; }
 interface OnlineConfig   { featureSourceName: string; status: "Healthy"|"Warning"|"Offline"; protocol: "HTTP"|"gRPC"; }
 
 interface DataSourceEntry {
@@ -223,6 +223,7 @@ function ConfigModal({ type, current, onClose, onSave }: {
 
   // Offline
   const [hiveTable,      setHiveTable]      = useState((current as OfflineConfig  | undefined)?.hiveTable         ?? "");
+  const [customFilter,   setCustomFilter]   = useState((current as OfflineConfig | NearlineConfig | undefined)?.customFilter ?? "");
   const [hiveVal,        setHiveVal]        = useState<"idle"|"checking"|"found"|"not-found">("idle");
   // Nearline
   const [kafkaTopic,     setKafkaTopic]     = useState((current as NearlineConfig | undefined)?.kafkaTopic        ?? "");
@@ -260,8 +261,8 @@ function ConfigModal({ type, current, onClose, onSave }: {
 
   const handleSave = () => {
     if (!valid) return;
-    if (type === "offline")  onSave({ hiveTable:  hiveTable.trim(),  status:"Healthy", lastUpdated:"just now" });
-    if (type === "nearline") onSave({ kafkaTopic: kafkaTopic.trim(), status:"Healthy", lag:"—" });
+    if (type === "offline")  onSave({ hiveTable:  hiveTable.trim(),  customFilter: customFilter.trim() || undefined, status:"Healthy", lastUpdated:"just now" });
+    if (type === "nearline") onSave({ kafkaTopic: kafkaTopic.trim(), customFilter: customFilter.trim() || undefined, status:"Healthy", lag:"—" });
     if (type === "online")   onSave({ featureSourceName: selectedSrc, protocol: derivedProtocol!, status:"Healthy" });
   };
 
@@ -291,6 +292,17 @@ function ConfigModal({ type, current, onClose, onSave }: {
           </div>
           {hiveVal === "not-found" && <p className="mt-1 text-[11px] text-red-500">Not found in the Hive metastore.</p>}
           <p className="mt-1.5 text-[11px] text-slate-400">Binlog Hive table path used for offline feature computation.</p>
+          <div className="mt-3 pt-3 border-t border-slate-100">
+            <label className={labelCls}>Custom Filter</label>
+            <textarea
+              value={customFilter}
+              onChange={e => setCustomFilter(e.target.value)}
+              placeholder="please input filter sql after 'WHERE'"
+              rows={3}
+              className={`${inputCls} font-mono resize-none`}
+            />
+            <p className="mt-1.5 text-[11px] text-slate-400">Optional. Append conditions to WHERE clause for data filtering.</p>
+          </div>
         </div>
       )}
       {type === "nearline" && (
@@ -306,6 +318,17 @@ function ConfigModal({ type, current, onClose, onSave }: {
           </div>
           {kafkaVal === "not-found" && <p className="mt-1 text-[11px] text-red-500">Not found in the Kafka registry.</p>}
           <p className="mt-1.5 text-[11px] text-slate-400">Kafka topic consumed by the Flink Streaming job for nearline sync.</p>
+          <div className="mt-3 pt-3 border-t border-slate-100">
+            <label className={labelCls}>Custom Filter</label>
+            <textarea
+              value={customFilter}
+              onChange={e => setCustomFilter(e.target.value)}
+              placeholder="please input filter sql after 'WHERE'"
+              rows={3}
+              className={`${inputCls} font-mono resize-none`}
+            />
+            <p className="mt-1.5 text-[11px] text-slate-400">Optional. Append conditions to WHERE clause for data filtering.</p>
+          </div>
         </div>
       )}
       {type === "online" && (
