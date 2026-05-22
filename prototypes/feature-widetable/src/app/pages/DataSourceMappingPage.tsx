@@ -234,6 +234,12 @@ function ModalShell({ title, icon, onClose, children, footer }: {
   title: string; icon: React.ReactNode; onClose: () => void;
   children: React.ReactNode; footer: React.ReactNode;
 }) {
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
+    window.addEventListener("keydown", handler);
+    return () => window.removeEventListener("keydown", handler);
+  }, [onClose]);
+
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center" onMouseDown={e => { if (e.target === e.currentTarget) onClose(); }}>
       <div className="absolute inset-0 bg-black/40" />
