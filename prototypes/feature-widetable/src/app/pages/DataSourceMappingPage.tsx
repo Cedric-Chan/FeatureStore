@@ -79,6 +79,45 @@ const KNOWN_HIVE_TABLES = new Set([
   "dwd.user_profile_sg", "dwd.transaction_id_features", "dwd.acard_mx_features",
 ]);
 
+interface HiveSchemaRow { col: string; type: string; sample: string; }
+
+const HiveSchema: Record<string, HiveSchemaRow[]> = {
+  "ods.credit_user_id_binlog": [
+    { col: "user_id",       type: "STRING",     sample: '"100234567890"' },
+    { col: "event_type",    type: "STRING",     sample: '"OVERDUE"' },
+    { col: "amount",        type: "DECIMAL(18,2)", sample: "15000.00" },
+    { col: "event_ts",      type: "TIMESTAMP",  sample: "2026-05-20 14:30:00" },
+    { col: "channel",       type: "STRING",     sample: '"APP"' },
+    { col: "dt",            type: "STRING",     sample: '"2026-05-20"' },
+  ],
+  "ods.credit_user_th_binlog": [
+    { col: "user_id",       type: "STRING",     sample: '"TH00234890112"' },
+    { col: "event_type",    type: "STRING",     sample: '"REPAY"' },
+    { col: "amount",        type: "DECIMAL(18,2)", sample: "8500.50" },
+    { col: "event_ts",      type: "TIMESTAMP",  sample: "2026-05-20 09:15:00" },
+    { col: "dt",            type: "STRING",     sample: '"2026-05-20"' },
+  ],
+  "ods.acard_user_mx_binlog": [
+    { col: "user_id",       type: "STRING",     sample: '"MX009992341"' },
+    { col: "acard_txn_id",  type: "STRING",     sample: '"TXN_20260520_001"' },
+    { col: "score_raw",     type: "FLOAT",      sample: "0.7845" },
+    { col: "event_ts",      type: "TIMESTAMP",  sample: "2026-05-20 11:00:00" },
+    { col: "dt",            type: "STRING",     sample: '"2026-05-20"' },
+  ],
+  "ods.acard_user_id_binlog": [
+    { col: "user_id",       type: "STRING",     sample: '"ID005672341"' },
+    { col: "acard_txn_id",  type: "STRING",     sample: '"TXN_20260520_099"' },
+    { col: "score_raw",     type: "FLOAT",      sample: "0.6512" },
+    { col: "event_ts",      type: "TIMESTAMP",  sample: "2026-05-20 08:45:00" },
+    { col: "dt",            type: "STRING",     sample: '"2026-05-20"' },
+  ],
+};
+
+function getHiveSchema(table: string): HiveSchemaRow[] | null {
+  return HiveSchema[table] ?? null;
+}
+
+
 const KNOWN_KAFKA_TOPICS = new Set([
   "kafka.credit_events_id", "kafka.credit_events_th", "kafka.credit_events_mx",
   "kafka.acard_events_mx",  "kafka.acard_events_id",  "kafka.acard_events_th",
@@ -303,6 +342,55 @@ function ConfigModal({ type, current, onClose, onSave }: {
             />
             <p className="mt-1.5 text-[11px] text-slate-400">Optional. Append conditions to WHERE clause for data filtering.</p>
           </div>
+
+          {/* Schema Preview */}
+          {hiveVal === "found" && (() => {
+            const schema = getHiveSchema(hiveTable.trim());
+            if (!schema) return null;
+            return (
+              <div className="mt-3 pt-3 border-t border-slate-100">
+                <div className="flex items-center gap-2 mb-2">
+                  <label className="text-[12px] text-slate-500">Schema Preview</label>
+                  <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[9px] font-medium bg-teal-50 text-teal-700 border border-teal-200">
+                    <Database className="w-2.5 h-2.5" />
+                    {schema.length} columns
+                  </span>
+                </div>
+                <div className="rounded-xl border border-slate-200 overflow-hidden shadow-sm">
+                  <div className="max-h-48 overflow-y-auto" style={{ scrollbarWidth: "thin" }}>
+                    <table className="w-full text-xs border-separate border-spacing-0">
+                      <thead className="sticky top-0 z-10">
+                        <tr className="bg-slate-100/80 text-[10px] uppercase tracking-wide text-slate-500 font-semibold backdrop-blur-sm">
+                          <th className="text-left px-3 py-2 border-b border-slate-200 w-8 text-center">#</th>
+                          <th className="text-left px-3 py-2 border-b border-slate-200">Column Name</th>
+                          <th className="text-left px-3 py-2 border-b border-slate-200">Data Type</th>
+                          <th className="text-left px-3 py-2 border-b border-slate-200">Sample</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-100">
+                        {schema.map((row, i) => (
+                          <tr key={row.col} className={i % 2 === 0 ? "bg-white" : "bg-slate-50/50"}>
+                            <td className="px-3 py-2 text-center text-[10px] text-slate-400 font-mono">{i + 1}</td>
+                            <td className="px-3 py-2 font-mono text-slate-800">{row.col}</td>
+                            <td className="px-3 py-2">
+                              <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-mono bg-indigo-50 text-indigo-700 border border-indigo-200">
+                                {row.type}
+                              </span>
+                            </td>
+                            <td className="px-3 py-2 font-mono text-[11px] text-slate-500 truncate max-w-[160px]" title={row.sample}>
+                              {row.sample}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+                <p className="mt-1.5 text-[11px] text-slate-400">Auto-detected from Hive metastore · last sync 2026-05-20 02:00 UTC</p>
+              </div>
+            );
+          })()}
+
         </div>
       )}
       {type === "nearline" && (
