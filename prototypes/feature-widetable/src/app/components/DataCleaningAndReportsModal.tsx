@@ -21,7 +21,7 @@ import {
   parseColumnCount,
 } from "@/app/components/DataReportModal";
 
-const FILLNA_METHODS = ["mean", "median", "constant", "forward_fill", "fixed_value"] as const;
+const FILLNA_METHODS = ["mean", "median", "fixed_value"] as const;
 
 /** Mock cleaning task lifecycle until backend API is wired. */
 export type CleaningTaskStatus = "NONE" | "PENDING" | "RUNNING" | "SUCCESS" | "FAILED";
