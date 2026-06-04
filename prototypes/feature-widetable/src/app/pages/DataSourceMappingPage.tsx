@@ -20,7 +20,7 @@ import {
 
 type ConfigType = "offline" | "nearline" | "online";
 
-interface OfflineConfig  { hiveTable: string; customFilter?: string; status: "Healthy"|"Warning"|"Offline"; lastUpdated: string; }
+interface OfflineConfig  { hiveServer: string; hiveSchema: string; hiveTable: string; customFilter?: string; status: "Healthy"|"Warning"|"Offline"; lastUpdated: string; }
 interface NearlineConfig { kafkaTopic: string; customFilter?: string; status: "Healthy"|"Warning"|"Offline"; lag: string; }
 interface OnlineConfig   { featureSourceName: string; status: "Healthy"|"Warning"|"Offline"; protocol: "HTTP"|"gRPC"; }
 
@@ -35,29 +35,29 @@ interface DataSourceEntry {
 const INIT_DATA: DataSourceEntry[] = [
   { id:"ds-1", region:"ID",        logicalName:"user_risk_hbase_id",    description:"User risk score HBase data source for Indonesia",  updateTime:"2026-05-10 09:00",
     owners:["alice.wang@company.com", "bob.chen@company.com"],
-    offline: { hiveTable:"ods.credit_user_id_binlog",      status:"Healthy", lastUpdated:"2h ago"  },
+    offline: { hiveServer:"Shopee SG", hiveSchema:"ods", hiveTable:"credit_user_id_binlog",      status:"Healthy", lastUpdated:"2h ago"  },
     nearline:{ kafkaTopic:"kafka.credit_events_id",         status:"Healthy", lag:"320 ms"          } },
   { id:"ds-2", region:"TH",        logicalName:"user_risk_hbase_th",    description:"User risk score HBase data source for Thailand",    updateTime:"2026-05-09 14:30",
     owners:["alice.wang@company.com"],
-    offline: { hiveTable:"ods.credit_user_th_binlog",       status:"Warning", lastUpdated:"6h ago"  },
+    offline: { hiveServer:"Shopee SG", hiveSchema:"ods", hiveTable:"credit_user_th_binlog",       status:"Warning", lastUpdated:"6h ago"  },
     nearline:{ kafkaTopic:"kafka.credit_events_th",          status:"Warning", lag:"4.2 min"         } },
   { id:"ds-3", region:"MX",        logicalName:"acard_feature_mx",      description:"ACard scoring feature data source for Mexico",      updateTime:"2026-05-11 18:00",
     owners:["carlos.li@company.com"],
-    offline: { hiveTable:"ods.acard_user_mx_binlog",        status:"Healthy", lastUpdated:"4h ago"  },
+    offline: { hiveServer:"Shopee US", hiveSchema:"ods", hiveTable:"acard_user_mx_binlog",        status:"Healthy", lastUpdated:"4h ago"  },
     nearline:{ kafkaTopic:"kafka.acard_events_mx",           status:"Healthy", lag:"85 ms"           },
     online:  { featureSourceName:"acard_grpc_mx_source",    status:"Healthy", protocol:"gRPC"       } },
   { id:"ds-4", region:"ID",        logicalName:"acard_feature_id",      description:"ACard scoring feature data source for Indonesia",   updateTime:"2026-05-08 11:00",
     owners:["carlos.li@company.com", "diana.xu@company.com"],
-    offline: { hiveTable:"ods.acard_user_id_binlog",        status:"Healthy", lastUpdated:"3h ago"  },
+    offline: { hiveServer:"Shopee SG", hiveSchema:"ods", hiveTable:"acard_user_id_binlog",        status:"Healthy", lastUpdated:"3h ago"  },
     nearline:{ kafkaTopic:"kafka.acard_events_id",           status:"Offline", lag:"—"               } },
   { id:"ds-5", region:"SHOPEE_SG", logicalName:"recommend_behavior_sg", description:"Recommendation behavior data source for Shopee SG", updateTime:"2026-05-12 02:00",
     owners:["diana.xu@company.com"],
-    offline: { hiveTable:"ods.user_behavior_sg_binlog",     status:"Healthy", lastUpdated:"2h ago"  },
+    offline: { hiveServer:"Shopee SG", hiveSchema:"ods", hiveTable:"user_behavior_sg_binlog",     status:"Healthy", lastUpdated:"2h ago"  },
     nearline:{ kafkaTopic:"kafka.user_behavior_sg",          status:"Healthy", lag:"120 ms"          },
     online:  { featureSourceName:"recommend_http_sg_source", status:"Healthy", protocol:"HTTP"      } },
   { id:"ds-6", region:"TH",        logicalName:"graph_relation_th",     description:"Graph relation feature data source for Thailand",   updateTime:"2026-05-07 22:00",
     owners:["evan.park@company.com", "bob.chen@company.com"],
-    offline: { hiveTable:"ods.relation_events_th_binlog",   status:"Warning", lastUpdated:"8h ago"  },
+    offline: { hiveServer:"Shopee US", hiveSchema:"ods", hiveTable:"relation_events_th_binlog",   status:"Warning", lastUpdated:"8h ago"  },
     nearline:{ kafkaTopic:"kafka.relation_events_th",         status:"Warning", lag:"4.2 min"         } },
 ];
 
@@ -71,6 +71,8 @@ const AVAILABLE_ONLINE_SOURCES: { name: string; protocol: "HTTP"|"gRPC" }[] = [
 ];
 
 const ALL_REGIONS = ["ID", "TH", "MX", "SG", "PH", "VN", "SHOPEE_SG", "SHOPEE_US", "BR"];
+
+const HIVE_SERVERS = ["Shopee SG", "Shopee US"] as const;
 
 const KNOWN_HIVE_TABLES = new Set([
   "ods.credit_user_id_binlog", "ods.credit_user_th_binlog", "ods.credit_user_mx_binlog",
@@ -354,6 +356,8 @@ function ConfigModal({ type, current, onClose, onSave }: {
   const isEdit = !!current;
 
   // Offline
+  const [hiveServer,     setHiveServer]     = useState((current as OfflineConfig  | undefined)?.hiveServer        ?? "");
+  const [hiveSchema,     setHiveSchema]     = useState((current as OfflineConfig  | undefined)?.hiveSchema        ?? "");
   const [hiveTable,      setHiveTable]      = useState((current as OfflineConfig  | undefined)?.hiveTable         ?? "");
   const [customFilter,   setCustomFilter]   = useState((current as OfflineConfig | NearlineConfig | undefined)?.customFilter ?? "");
   const [hiveVal,        setHiveVal]        = useState<"idle"|"checking"|"found"|"not-found">("idle");
@@ -366,11 +370,12 @@ function ConfigModal({ type, current, onClose, onSave }: {
 
   useEffect(() => {
     if (type !== "offline") return;
-    if (!hiveTable.trim()) { setHiveVal("idle"); return; }
+    if (!hiveServer || !hiveSchema.trim() || !hiveTable.trim()) { setHiveVal("idle"); return; }
     setHiveVal("checking");
-    const t = setTimeout(() => setHiveVal(KNOWN_HIVE_TABLES.has(hiveTable.trim()) ? "found" : "not-found"), 600);
+    const fullTable = `${hiveSchema.trim()}.${hiveTable.trim()}`;
+    const t = setTimeout(() => setHiveVal(KNOWN_HIVE_TABLES.has(fullTable) ? "found" : "not-found"), 600);
     return () => clearTimeout(t);
-  }, [hiveTable, type]);
+  }, [hiveServer, hiveSchema, hiveTable, type]);
 
   useEffect(() => {
     if (type !== "nearline") return;
@@ -393,7 +398,7 @@ function ConfigModal({ type, current, onClose, onSave }: {
 
   const handleSave = () => {
     if (!valid) return;
-    if (type === "offline")  onSave({ hiveTable:  hiveTable.trim(),  customFilter: customFilter.trim() || undefined, status:"Healthy", lastUpdated:"just now" });
+    if (type === "offline")  onSave({ hiveServer: hiveServer, hiveSchema: hiveSchema.trim(), hiveTable: hiveTable.trim(), customFilter: customFilter.trim() || undefined, status:"Healthy", lastUpdated:"just now" });
     if (type === "nearline") onSave({ kafkaTopic: kafkaTopic.trim(), customFilter: customFilter.trim() || undefined, status:"Healthy", lag:"—" });
     if (type === "online")   onSave({ featureSourceName: selectedSrc, protocol: derivedProtocol!, status:"Healthy" });
   };
@@ -413,17 +418,37 @@ function ConfigModal({ type, current, onClose, onSave }: {
     >
       {type === "offline" && (
         <div>
-          <label className={labelCls}><span className="text-red-500 mr-0.5">*</span>Hive Table (Binlog)</label>
-          <div className="relative">
-            <input value={hiveTable} onChange={e => setHiveTable(e.target.value)} placeholder="e.g. ods.user_id_binlog" className={`${inputCls} font-mono pr-8`} />
-            <span className="absolute right-2.5 top-1/2 -translate-y-1/2 pointer-events-none">
-              {hiveVal === "checking"  && <Loader2      className="w-3.5 h-3.5 text-slate-400 animate-spin" />}
-              {hiveVal === "found"     && <CheckCircle2 className="w-3.5 h-3.5 text-emerald-500" />}
-              {hiveVal === "not-found" && <XCircle      className="w-3.5 h-3.5 text-red-500" />}
-            </span>
+          {/* Hive Server */}
+          <label className={labelCls}><span className="text-red-500 mr-0.5">*</span>Hive Server</label>
+          <select value={hiveServer} onChange={e => setHiveServer(e.target.value)} className={inputCls}>
+            <option value="">Select Hive cluster…</option>
+            {HIVE_SERVERS.map(s => (<option key={s} value={s}>{s}</option>))}
+          </select>
+          <p className="mt-1.5 text-[11px] text-slate-400">Hive cluster instance where the offline table resides.</p>
+
+          {/* Hive Schema */}
+          <div className="mt-3">
+            <label className={labelCls}><span className="text-red-500 mr-0.5">*</span>Hive Schema</label>
+            <input value={hiveSchema} onChange={e => setHiveSchema(e.target.value)} placeholder="e.g. ods" className={`${inputCls} font-mono`} />
+            <p className="mt-1.5 text-[11px] text-slate-400">Database / schema name in the Hive metastore.</p>
           </div>
-          {hiveVal === "not-found" && <p className="mt-1 text-[11px] text-red-500">Not found in the Hive metastore.</p>}
-          <p className="mt-1.5 text-[11px] text-slate-400">Binlog Hive table path used for offline feature computation.</p>
+
+          {/* Hive Table */}
+          <div className="mt-3">
+            <label className={labelCls}><span className="text-red-500 mr-0.5">*</span>Hive Table (Binlog)</label>
+            <div className="relative">
+              <input value={hiveTable} onChange={e => setHiveTable(e.target.value)} placeholder="e.g. credit_user_id_binlog" className={`${inputCls} font-mono pr-8`} />
+              <span className="absolute right-2.5 top-1/2 -translate-y-1/2 pointer-events-none">
+                {hiveVal === "checking"  && <Loader2      className="w-3.5 h-3.5 text-slate-400 animate-spin" />}
+                {hiveVal === "found"     && <CheckCircle2 className="w-3.5 h-3.5 text-emerald-500" />}
+                {hiveVal === "not-found" && <XCircle      className="w-3.5 h-3.5 text-red-500" />}
+              </span>
+            </div>
+            {hiveVal === "not-found" && (
+              <p className="mt-1 text-[11px] text-red-500">Table {hiveSchema.trim()}.{hiveTable.trim()} not found in the Hive metastore.</p>
+            )}
+            <p className="mt-1.5 text-[11px] text-slate-400">Binlog Hive table used for offline feature computation.</p>
+          </div>
           <div className="mt-3 pt-3 border-t border-slate-100">
             <label className={labelCls}>Custom Filter</label>
             <textarea
@@ -438,12 +463,13 @@ function ConfigModal({ type, current, onClose, onSave }: {
 
           {/* Schema Preview */}
           {hiveVal === "found" && (() => {
-            const schema = getHiveSchema(hiveTable.trim());
+            const schema = getHiveSchema(`${hiveSchema.trim()}.${hiveTable.trim()}`);
             if (!schema) return null;
             return (
               <div className="mt-3 pt-3 border-t border-slate-100">
                 <div className="flex items-center gap-2 mb-2">
                   <label className="text-[12px] text-slate-500">Schema Preview</label>
+                  <span className="text-[10px] font-mono text-slate-400">{hiveSchema.trim()}.{hiveTable.trim()}</span>
                   <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[9px] font-medium bg-teal-50 text-teal-700 border border-teal-200">
                     <Database className="w-2.5 h-2.5" />
                     {schema.length} columns
@@ -521,6 +547,7 @@ function ConfigModal({ type, current, onClose, onSave }: {
               <div className="mt-3 pt-3 border-t border-slate-100">
                 <div className="flex items-center gap-2 mb-2">
                   <label className="text-[12px] text-slate-500">Schema Preview</label>
+                  <span className="text-[10px] font-mono text-slate-400">{hiveSchema.trim()}.{hiveTable.trim()}</span>
                   <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[9px] font-medium bg-violet-50 text-violet-700 border border-violet-200">
                     <Zap className="w-2.5 h-2.5" />
                     {totalFields} fields · Avro
@@ -764,7 +791,7 @@ function DataSourceCard({ entry, onBind, onUnbind, onTest, onDelete, onEditOwner
           <div className="flex items-stretch gap-1.5">
             {entry.offline
               ? <ConfigBlock label="Offline" icon={<Database className="w-3 h-3" />} typeLabel="Hive Table (Binlog)"
-                  value={entry.offline.hiveTable} meta={`Updated ${entry.offline.lastUpdated}`}
+                  value={`${entry.offline.hiveSchema}.${entry.offline.hiveTable}`} meta={`${entry.offline.hiveServer} · Updated ${entry.offline.lastUpdated}`}
                   onEdit={() => onBind("offline")} onUnbind={() => onUnbind("offline")} />
               : <UnboundSlot label="Offline" icon={<Database className="w-5 h-5" />} onBind={() => onBind("offline")} />}
 
