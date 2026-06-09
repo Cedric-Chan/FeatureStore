@@ -13,6 +13,16 @@ export const mockFeatures: Feature[] = [
     serving: true,
     ydServingReq: 1248000,
     updateTime: "2026-02-16 14:00",
+    returnType: "float",
+    errorHandle: "-9998",
+    tags: ["risk", "score", "core", "high-iv", "pii"],
+    description:
+      "Composite user risk score (0-1) blending behavioral, transaction and device signals. Higher means riskier.",
+    usedBy: [
+      { assetType: "WideTable", assetName: "risk_score_sg_v3_wt", version: "-", owner: "zhangsan" },
+      { assetType: "Feature Service", assetName: "risk-serving-th", version: "v2.4.1", owner: "lisi" },
+      { assetType: "Workflow Service", assetName: "fraud-detection-th-svc", version: "v1.8.0", owner: "wangwu" },
+    ],
   },
   {
     id: "f2",
@@ -26,6 +36,13 @@ export const mockFeatures: Feature[] = [
     serving: true,
     ydServingReq: 1248000,
     updateTime: "2026-02-16 14:00",
+    returnType: "string",
+    errorHandle: "UNKNOWN",
+    tags: ["risk", "binned", "psi-stable"],
+    description: "Bucketed risk tier (LOW / MEDIUM / HIGH) derived from risk_score thresholds.",
+    usedBy: [
+      { assetType: "WideTable", assetName: "credit_features_th_wt", version: "-", owner: "lisi" },
+    ],
   },
   {
     id: "f3",
@@ -39,6 +56,13 @@ export const mockFeatures: Feature[] = [
     serving: false,
     ydServingReq: 0,
     updateTime: "2026-02-15 10:30",
+    returnType: "int",
+    errorHandle: "-1",
+    tags: ["credit", "overdue", "high-iv"],
+    description: "Count of overdue days within the trailing 30-day window. Training-only feature.",
+    usedBy: [
+      { assetType: "WideTable", assetName: "credit_features_id_wt", version: "-", owner: "budi" },
+    ],
   },
   {
     id: "f4",
@@ -52,6 +76,14 @@ export const mockFeatures: Feature[] = [
     serving: true,
     ydServingReq: 876500,
     updateTime: "2026-02-14 18:45",
+    returnType: "float",
+    errorHandle: "-9998",
+    tags: ["acard", "score", "core", "scaled", "decision-use"],
+    description: "Real-time A-card application score for Mexico, refreshed on each credit event.",
+    usedBy: [
+      { assetType: "Feature Service", assetName: "acard-serving-mx", version: "v3.1.0", owner: "carlos" },
+      { assetType: "WideTable", assetName: "acard_train_mx_wt", version: "-", owner: "maria" },
+    ],
   },
   {
     id: "f5",
@@ -65,6 +97,11 @@ export const mockFeatures: Feature[] = [
     serving: true,
     ydServingReq: 876500,
     updateTime: "2026-02-14 18:45",
+    returnType: "string",
+    errorHandle: "UNKNOWN",
+    tags: ["acard", "binned"],
+    description: "Discrete A-card tier label mapped from acard_score.",
+    usedBy: [],
   },
   {
     id: "f6",
@@ -78,6 +115,13 @@ export const mockFeatures: Feature[] = [
     serving: true,
     ydServingReq: 2150000,
     updateTime: "2026-02-11 16:16",
+    returnType: "list<float>",
+    errorHandle: "[]",
+    tags: ["graph", "embedding", "masked"],
+    description: "128-dim user embedding (v3) combining graph and NLP-derived representations.",
+    usedBy: [
+      { assetType: "Feature Service", assetName: "embedding-serving-th", version: "v3.0.2", owner: "huangwei" },
+    ],
   },
   {
     id: "f7",
@@ -91,6 +135,11 @@ export const mockFeatures: Feature[] = [
     serving: false,
     ydServingReq: 0,
     updateTime: "2026-02-04 17:03",
+    returnType: "float",
+    errorHandle: "-1",
+    tags: ["recommend", "score", "drift-prone"],
+    description: "Recommendation relevance score (draft FG, not yet published for training or serving).",
+    usedBy: [],
   },
   {
     id: "f8",
@@ -104,6 +153,13 @@ export const mockFeatures: Feature[] = [
     serving: true,
     ydServingReq: 932000,
     updateTime: "2026-02-13 13:30",
+    returnType: "float",
+    errorHandle: "-9998",
+    tags: ["graph", "network", "scaled"],
+    description: "Normalized degree centrality of the user node in the social/device graph.",
+    usedBy: [
+      { assetType: "Workflow Service", assetName: "graph-fraud-th-svc", version: "v1.2.3", owner: "zhaoliu" },
+    ],
   },
   {
     id: "f9",
@@ -117,6 +173,14 @@ export const mockFeatures: Feature[] = [
     serving: true,
     ydServingReq: 560000,
     updateTime: "2026-02-10 09:00",
+    returnType: "float",
+    errorHandle: "-9998",
+    tags: ["credit", "limit", "core", "decision-use"],
+    description: "Approved credit limit for the user, used as both training and serving feature.",
+    usedBy: [
+      { assetType: "WideTable", assetName: "credit_features_ph_wt", version: "-", owner: "jose" },
+      { assetType: "Workflow Service", assetName: "credit-scoring-online-svc", version: "v2.0.5", owner: "anna" },
+    ],
   },
   {
     id: "f10",
@@ -130,6 +194,13 @@ export const mockFeatures: Feature[] = [
     serving: false,
     ydServingReq: 0,
     updateTime: "2026-02-09 11:20",
+    returnType: "float",
+    errorHandle: "-1",
+    tags: ["credit", "scaled", "psi-stable", "pii"],
+    description: "Ratio of on-time payments to total dues over the trailing 90 days.",
+    usedBy: [
+      { assetType: "WideTable", assetName: "credit_features_vn_wt", version: "-", owner: "minh" },
+    ],
   },
   {
     id: "f11",
@@ -143,6 +214,13 @@ export const mockFeatures: Feature[] = [
     serving: true,
     ydServingReq: 410000,
     updateTime: "2026-02-08 15:00",
+    returnType: "int",
+    errorHandle: "-9998",
+    tags: ["acard", "limit", "decision-use"],
+    description: "Real-time A-card credit limit served online. Serving-only feature.",
+    usedBy: [
+      { assetType: "Feature Service", assetName: "acard-serving-br", version: "v3.1.0", owner: "carlos" },
+    ],
   },
   {
     id: "f12",
@@ -156,6 +234,14 @@ export const mockFeatures: Feature[] = [
     serving: true,
     ydServingReq: 1890000,
     updateTime: "2026-02-07 12:30",
+    returnType: "float",
+    errorHandle: "0.0",
+    tags: ["recommend", "ctr", "drift-prone"],
+    description: "Trailing 7-day click-through rate on recommended items.",
+    usedBy: [
+      { assetType: "WideTable", assetName: "rec_train_sg_wt", version: "-", owner: "kelvin" },
+      { assetType: "Feature Service", assetName: "rec-serving-sg", version: "v1.5.0", owner: "kelvin" },
+    ],
   },
   {
     id: "f13",
@@ -169,6 +255,11 @@ export const mockFeatures: Feature[] = [
     serving: false,
     ydServingReq: 0,
     updateTime: "2026-02-06 08:45",
+    returnType: "int",
+    errorHandle: "-1",
+    tags: ["graph", "raw", "drift-prone"],
+    description: "Raw node degree (edge count) of the user in the relation graph.",
+    usedBy: [],
   },
 ];
 

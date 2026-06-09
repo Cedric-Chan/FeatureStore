@@ -6,6 +6,7 @@ interface FeatureTableProps {
   selectedIds: Set<string>;
   onToggleSelect: (id: string) => void;
   onToggleAll: () => void;
+  onDetail: (feature: Feature) => void;
   onTrace: (feature: Feature) => void;
   healthMap: Record<string, { status: "healthy" | "warning"; count: number }>;
 }
@@ -98,6 +99,7 @@ export function FeatureTable({
   selectedIds,
   onToggleSelect,
   onToggleAll,
+  onDetail,
   onTrace,
   healthMap,
 }: FeatureTableProps) {
@@ -108,9 +110,9 @@ export function FeatureTable({
   const stickyNameW    = 200;
 
   return (
-    <div className="overflow-x-auto rounded-xl border border-gray-100">
+    <div className="h-full overflow-auto">
       <table className="w-full text-sm border-separate border-spacing-0">
-        <thead>
+        <thead className="sticky top-0 z-20">
           <tr className="bg-gray-50">
             <th
               className="px-4 py-3 text-left text-xs font-medium text-gray-500 border-b border-gray-100 whitespace-nowrap sticky left-0 z-20 bg-gray-50"
@@ -137,7 +139,7 @@ export function FeatureTable({
             <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 border-b border-gray-100 whitespace-nowrap w-20">Serving</th>
             <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 border-b border-gray-100 whitespace-nowrap w-36">Yd Serving Req#</th>
             <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 border-b border-gray-100 whitespace-nowrap w-24">Health</th>
-            <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 border-b border-gray-100 whitespace-nowrap w-20">Action</th>
+            <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 border-b border-gray-100 whitespace-nowrap w-28">Action</th>
           </tr>
         </thead>
         <tbody>
@@ -199,13 +201,22 @@ export function FeatureTable({
                 <td className="px-4 py-3 border-b border-gray-50 w-24">
                   <HealthTag status={health.status} count={health.count} />
                 </td>
-                <td className="px-4 py-3 border-b border-gray-50 w-20">
-                  <button
-                    onClick={(e) => { e.stopPropagation(); onTrace(feature); }}
-                    className="text-[11px] text-teal-600 hover:text-teal-800 hover:underline transition-colors whitespace-nowrap"
-                  >
-                    Trace
-                  </button>
+                <td className="px-4 py-3 border-b border-gray-50 w-28">
+                  <div className="flex items-center gap-2 whitespace-nowrap">
+                    <button
+                      onClick={(e) => { e.stopPropagation(); onDetail(feature); }}
+                      className="text-[11px] text-teal-600 hover:text-teal-800 hover:underline transition-colors"
+                    >
+                      Detail
+                    </button>
+                    <span className="w-px h-3 bg-gray-200" />
+                    <button
+                      onClick={(e) => { e.stopPropagation(); onTrace(feature); }}
+                      className="text-[11px] text-teal-600 hover:text-teal-800 hover:underline transition-colors"
+                    >
+                      Trace
+                    </button>
+                  </div>
                 </td>
               </tr>
             );

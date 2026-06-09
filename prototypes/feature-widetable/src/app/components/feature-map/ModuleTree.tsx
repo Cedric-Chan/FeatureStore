@@ -1,14 +1,15 @@
 import React, { useState } from "react";
-import { ChevronRight, ChevronDown, Search, Layers, FolderOpen, Folder } from "lucide-react";
+import { ChevronRight, ChevronDown, Search, Layers, FolderOpen, Folder, ChevronsDownUp, ChevronsUpDown } from "lucide-react";
 import { Module } from "./types";
 
 interface ModuleTreeProps {
   modules: Module[];
   selectedNode: { type: "module" | "group"; id: string } | null;
   onSelectNode: (node: { type: "module" | "group"; id: string } | null) => void;
+  className?: string;
 }
 
-export function ModuleTree({ modules, selectedNode, onSelectNode }: ModuleTreeProps) {
+export function ModuleTree({ modules, selectedNode, onSelectNode, className }: ModuleTreeProps) {
   const [expandedModules, setExpandedModules] = useState<Set<string>>(
     new Set(modules.map((m) => m.id))
   );
@@ -24,6 +25,13 @@ export function ModuleTree({ modules, selectedNode, onSelectNode }: ModuleTreePr
       }
       return next;
     });
+  };
+
+  const allExpanded =
+    modules.length > 0 && modules.every((m) => expandedModules.has(m.id));
+
+  const toggleAll = () => {
+    setExpandedModules(allExpanded ? new Set() : new Set(modules.map((m) => m.id)));
   };
 
   const getModuleFeatureCount = (m: Module) =>
@@ -44,18 +52,27 @@ export function ModuleTree({ modules, selectedNode, onSelectNode }: ModuleTreePr
     .filter(Boolean) as Module[];
 
   return (
-    <div className="w-56 shrink-0 bg-white rounded-xl border border-gray-100 shadow-sm flex flex-col overflow-hidden">
+    <div className={`bg-white rounded-xl border border-gray-100 shadow-sm flex flex-col overflow-hidden ${className ?? ""}`}>
       {/* Header */}
       <div className="px-4 py-3 border-b border-gray-100 bg-gradient-to-r from-gray-50 to-white">
         <div className="flex items-center gap-2 mb-2.5">
           <Layers size={14} className="text-[#13c2c2]" />
           <span className="text-sm font-medium text-gray-700">Module Navigator</span>
+          <button
+            type="button"
+            onClick={toggleAll}
+            title={allExpanded ? "Collapse all" : "Expand all"}
+            aria-label={allExpanded ? "Collapse all modules" : "Expand all modules"}
+            className="ml-auto shrink-0 p-1 rounded-md text-gray-400 hover:text-[#13c2c2] hover:bg-[#13c2c2]/10 transition-colors"
+          >
+            {allExpanded ? <ChevronsDownUp size={14} /> : <ChevronsUpDown size={14} />}
+          </button>
         </div>
         <div className="relative">
           <Search size={13} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-400" />
           <input
             type="text"
-            placeholder="Search module..."
+            placeholder="Search FeatureGroup..."
             value={treeSearch}
             onChange={(e) => setTreeSearch(e.target.value)}
             className="w-full pl-7 pr-3 py-1.5 text-xs border border-gray-200 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-[#13c2c2]/30 focus:border-[#13c2c2] transition-all placeholder:text-gray-400"

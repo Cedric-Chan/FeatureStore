@@ -1,3 +1,11 @@
+export interface UsedByAsset {
+  assetType: "WideTable" | "Feature Service" | "Workflow Service";
+  assetName: string;
+  /** WideTable has no version concept → "-" */
+  version: string;
+  owner: string;
+}
+
 export interface Feature {
   id: string;
   name: string;
@@ -10,6 +18,12 @@ export interface Feature {
   serving: boolean | null;
   ydServingReq: number;
   updateTime: string;
+  // ── feature-level detail (shown in Feature Detail Modal) ──
+  returnType?: string;
+  errorHandle?: string;
+  tags?: string[];
+  description?: string;
+  usedBy?: UsedByAsset[];
 }
 
 export interface FeatureGroup {

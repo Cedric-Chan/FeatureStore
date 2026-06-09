@@ -8,6 +8,8 @@ import { FeatureCart } from "@/app/components/feature-map/FeatureCart";
 import { mockFeatures, mockModules } from "@/app/components/feature-map/mockData";
 import type { FilterState, Feature } from "@/app/components/feature-map/types";
 import { FeatureTraceModal } from "@/app/components/feature-group/FeatureLogicModal";
+import { FeatureDetailModal } from "@/app/components/feature-map/FeatureDetailModal";
+import { TagFilterPane } from "@/app/components/feature-map/TagFilterPane";
 
 const DEFAULT_FILTERS: FilterState = {
   keyword: "",
@@ -28,6 +30,9 @@ export function FeatureMapPage() {
   );
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(20);
+  const [features, setFeatures] = useState<Feature[]>(mockFeatures);
+  const [detailTarget, setDetailTarget] = useState<Feature | null>(null);
+  const [selectedTags, setSelectedTags] = useState<string[]>([]);
   const [lineageTarget, setLineageTarget] = useState<{
     featureName: string;
     hasTraining: boolean;
@@ -35,7 +40,7 @@ export function FeatureMapPage() {
   } | null>(null);
 
   const filteredFeatures = useMemo(() => {
-    let result = [...mockFeatures];
+    let result = [...features];
 
     if (selectedNode) {
       if (selectedNode.type === "module") {
@@ -73,8 +78,13 @@ export function FeatureMapPage() {
       result = result.filter((f) => f.serving !== true);
     }
 
+    // Tag filter — AND: feature must carry every selected tag.
+    if (selectedTags.length > 0) {
+      result = result.filter((f) => selectedTags.every((t) => f.tags?.includes(t)));
+    }
+
     return result;
-  }, [appliedFilters, selectedNode]);
+  }, [appliedFilters, selectedNode, features, selectedTags]);
 
   const paginatedFeatures = useMemo(() => {
     const start = (page - 1) * pageSize;
@@ -96,8 +106,8 @@ export function FeatureMapPage() {
   }, [paginatedFeatures]);
 
   const selectedFeatures = useMemo(
-    () => mockFeatures.filter((f) => selectedIds.has(f.id)),
-    [selectedIds]
+    () => features.filter((f) => selectedIds.has(f.id)),
+    [selectedIds, features]
   );
 
   const handleToggleSelect = (id: string) => {
@@ -131,6 +141,7 @@ export function FeatureMapPage() {
   const handleReset = () => {
     setFilters(DEFAULT_FILTERS);
     setAppliedFilters(DEFAULT_FILTERS);
+    setSelectedTags([]);
     setPage(1);
   };
 
@@ -152,9 +163,20 @@ export function FeatureMapPage() {
     });
   };
 
+  const handleDetail = (feature: Feature) => setDetailTarget(feature);
+
+  const handleSaveDetail = (
+    id: string,
+    patch: { tags: string[]; description: string }
+  ) => {
+    setFeatures((prev) =>
+      prev.map((f) => (f.id === id ? { ...f, ...patch } : f))
+    );
+  };
+
   return (
-    <div className="min-h-full bg-[#f5f7fa]">
-      <header className="bg-white border-b border-gray-100 px-6 py-3 flex items-center gap-3 shadow-sm">
+    <div className="h-full flex flex-col bg-[#f5f7fa] min-h-0">
+      <header className="bg-white border-b border-gray-100 px-6 py-3 flex items-center gap-3 shadow-sm shrink-0">
         <div className="flex items-center gap-2.5">
           <div className="w-7 h-7 rounded-lg bg-[#13c2c2] flex items-center justify-center shadow-sm">
             <Database size={14} className="text-white" />
@@ -169,12 +191,15 @@ export function FeatureMapPage() {
         </div>
       </header>
 
-      <main className="p-5 flex flex-col gap-4 max-w-[1600px] mx-auto">
+      <main className="p-5 flex flex-col gap-4 max-w-[1600px] mx-auto w-full flex-1 min-h-0">
         <FilterBar filters={filters} onFiltersChange={setFilters} onSearch={handleSearch} onReset={handleReset} />
-        <div className="flex gap-4 items-start">
-          <ModuleTree modules={mockModules} selectedNode={selectedNode} onSelectNode={setSelectedNode} />
-          <div className="flex-1 min-w-0 flex flex-col gap-3">
-            <div className="bg-white rounded-xl border border-gray-100 shadow-sm px-4 py-2.5 flex items-center justify-between">
+        <div className="flex gap-4 items-stretch flex-1 min-h-0">
+          <div className="w-56 shrink-0 flex flex-col gap-4 min-h-0">
+            <ModuleTree className="shrink-0 max-h-[42%]" modules={mockModules} selectedNode={selectedNode} onSelectNode={setSelectedNode} />
+            <TagFilterPane className="flex-1 min-h-0" scopedFeatures={filteredFeatures} selectedTags={selectedTags} onChange={setSelectedTags} />
+          </div>
+          <div className="flex-1 min-w-0 flex flex-col gap-3 min-h-0">
+            <div className="bg-white rounded-xl border border-gray-100 shadow-sm px-4 py-2.5 flex items-center justify-between shrink-0">
               <div className="flex items-center gap-2">
                 {selectedIds.size > 0 ? (
                   <div className="flex items-center gap-2">
@@ -187,10 +212,10 @@ export function FeatureMapPage() {
               </div>
               <FeatureCart selectedFeatures={selectedFeatures} onRemove={handleRemoveFromCart} onClear={handleClearCart} />
             </div>
-            <div className="bg-white rounded-xl border border-gray-100 shadow-sm overflow-hidden">
-              <FeatureTable features={paginatedFeatures} selectedIds={selectedIds} onToggleSelect={handleToggleSelect} onToggleAll={handleToggleAll} onTrace={handleTrace} healthMap={healthMap} />
+            <div className="bg-white rounded-xl border border-gray-100 shadow-sm overflow-hidden flex-1 min-h-0">
+              <FeatureTable features={paginatedFeatures} selectedIds={selectedIds} onToggleSelect={handleToggleSelect} onToggleAll={handleToggleAll} onDetail={handleDetail} onTrace={handleTrace} healthMap={healthMap} />
             </div>
-            <div className="bg-white rounded-xl border border-gray-100 shadow-sm px-4 py-3">
+            <div className="bg-white rounded-xl border border-gray-100 shadow-sm px-4 py-3 shrink-0">
               <Pagination total={filteredFeatures.length} page={page} pageSize={pageSize} onPageChange={setPage} onPageSizeChange={(s) => { setPageSize(s); setPage(1); }} />
             </div>
           </div>
@@ -198,6 +223,8 @@ export function FeatureMapPage() {
       </main>
 
       <FeatureTraceModal open={!!lineageTarget} featureName={lineageTarget?.featureName ?? ""} hasTraining={lineageTarget?.hasTraining ?? false} hasServing={lineageTarget?.hasServing ?? false} onClose={() => setLineageTarget(null)} />
+
+      <FeatureDetailModal open={!!detailTarget} feature={detailTarget} onClose={() => setDetailTarget(null)} onSave={handleSaveDetail} />
     </div>
   );
 }
